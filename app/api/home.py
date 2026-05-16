@@ -49,6 +49,26 @@ def _task_to_out(t: models.Task) -> schemas.TaskOut:
     )
 
 
+@router.get("/news", response_model=list[schemas.NewsOut])
+def list_news(user: models.User = Depends(current_user), db: Session = Depends(get_db)) -> list[schemas.NewsOut]:
+    rows = (
+        db.query(models.News)
+        .filter(models.News.is_active.is_(True))
+        .order_by(models.News.published_at.desc())
+        .all()
+    )
+    return [
+        schemas.NewsOut(
+            id=n.id,
+            image_url=n.image_url,
+            title=n.title,
+            body=n.body,
+            published_at=n.published_at,
+        )
+        for n in rows
+    ]
+
+
 @router.get("", response_model=schemas.HomePayload)
 def get_home(user: models.User = Depends(current_user), db: Session = Depends(get_db)) -> schemas.HomePayload:
     settings = get_settings()

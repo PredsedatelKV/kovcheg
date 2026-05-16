@@ -1,13 +1,10 @@
-import { get, post } from "/static/api.js";
+import { get, post, iconHtml } from "/static/api.js";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-const CATEGORIES = ["Все", "Ресурсы", "Ускорители", "Декор", "Другое"];
-
 let state = {
   mode: "shop", // shop | market
-  category: "Все",
 };
 
 export async function renderKoverna(root) {
@@ -22,29 +19,17 @@ export async function renderKoverna(root) {
     </section>
 
     <div class="toggle" id="mode-toggle">
-      <button data-mode="shop" class="${state.mode === "shop" ? "active" : ""}">🛍️ Магазин</button>
-      <button data-mode="market" class="${state.mode === "market" ? "active" : ""}">🏷️ Рынок</button>
+      <button data-mode="shop" class="${state.mode === "shop" ? "active" : ""}">Магазин</button>
+      <button data-mode="market" class="${state.mode === "market" ? "active" : ""}">Рынок</button>
     </div>
 
     <div id="market-tools"></div>
-
-    <div class="chips-row" id="cats">
-      ${CATEGORIES.map((c) => `<button class="pill ${c === state.category ? "active" : ""}" data-cat="${c}">${c}</button>`).join("")}
-    </div>
-
     <div id="content"></div>
   `;
 
   root.querySelectorAll("#mode-toggle button").forEach((b) =>
     b.addEventListener("click", () => {
       state.mode = b.dataset.mode;
-      renderKoverna(root);
-    }),
-  );
-
-  root.querySelectorAll("#cats .pill").forEach((b) =>
-    b.addEventListener("click", () => {
-      state.category = b.dataset.cat;
       renderKoverna(root);
     }),
   );
@@ -58,18 +43,17 @@ export async function renderKoverna(root) {
 
 async function renderShop(root) {
   const products = await get("/api/shop/products");
-  const filtered = products.filter((p) => state.category === "Все" || p.item.category === state.category);
   const content = root.querySelector("#content");
   content.innerHTML =
-    filtered.length === 0
-      ? `<div class="empty">Нет товаров в этой категории</div>`
-      : `<div class="product-grid">${filtered
+    products.length === 0
+      ? `<div class="empty">В магазине пока пусто</div>`
+      : `<div class="product-grid">${products
           .map(
             (p) => `
             <div class="product">
-              <div class="icon-big">${p.item.icon}</div>
+              <div class="icon-big">${iconHtml(p.item.icon, "xl", p.item.name)}</div>
               <div class="name">${escapeHtml(p.item.name)}</div>
-              <div class="price"><span class="coin">🪙</span> ${p.price}</div>
+              <div class="price">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${p.price}</div>
               <button class="btn btn-sm" data-buy="${p.id}">Купить</button>
             </div>`,
           )
@@ -99,19 +83,18 @@ async function renderMarket(root) {
   tools.querySelector("#my-listings-btn").addEventListener("click", openMyListings);
 
   const listings = await get("/api/market/listings");
-  const filtered = listings.filter((l) => state.category === "Все" || l.item.category === state.category);
   const content = root.querySelector("#content");
   content.innerHTML =
-    filtered.length === 0
+    listings.length === 0
       ? `<div class="empty">На рынке пока ничего — выставь товар, чтобы начать!</div>`
-      : `<div class="product-grid">${filtered
+      : `<div class="product-grid">${listings
           .map(
             (l) => `
             <div class="product">
-              <div class="icon-big">${l.item.icon}</div>
+              <div class="icon-big">${iconHtml(l.item.icon, "xl", l.item.name)}</div>
               <div class="name">${escapeHtml(l.item.name)}</div>
               <div class="card-sub">от ${escapeHtml(l.seller_name)} · ×${l.quantity}</div>
-              <div class="price" style="margin-top:6px"><span class="coin">🪙</span> ${l.price}</div>
+              <div class="price" style="margin-top:6px">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${l.price}</div>
               <button class="btn btn-sm" data-buy-listing="${l.id}">Купить</button>
             </div>`,
           )
@@ -142,7 +125,7 @@ async function openSellDialog() {
     <h2>Выставить на продажу</h2>
     <label class="field-label">Предмет</label>
     <select class="input" id="item">${inv
-      .map((r) => `<option value="${r.item.id}" data-max="${r.quantity}">${r.item.icon} ${escapeHtml(r.item.name)} (есть ${r.quantity})</option>`)
+      .map((r) => `<option value="${r.item.id}" data-max="${r.quantity}">${escapeHtml(r.item.name)} (есть ${r.quantity})</option>`)
       .join("")}</select>
     <label class="field-label">Количество</label>
     <input class="input" id="qty" type="number" min="1" value="1" />
@@ -179,12 +162,12 @@ async function openMyListings() {
             .map(
               (l) => `
               <div class="listing-row">
-                <div class="ico">${l.item.icon}</div>
+                <div class="ico">${iconHtml(l.item.icon, "md", l.item.name)}</div>
                 <div class="meta">
                   <div class="name">${escapeHtml(l.item.name)}</div>
                   <div class="author">×${l.quantity}</div>
                 </div>
-                <div class="price">🪙 ${l.price}</div>
+                <div class="price">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${l.price}</div>
                 <button class="btn btn-sm btn-outline" data-unlist="${l.id}">Снять</button>
               </div>`,
             )
