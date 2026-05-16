@@ -48,7 +48,7 @@ export async function renderHome(root) {
         <h1>${welcome}</h1>
         <div class="subtitle">${escapeHtml(data.server_time_msk)} мск</div>
       </div>
-      <div class="hero-art" title="Ковчег">🧱</div>
+      <div class="hero-art" title="Ковчег"><img src="/static/img/cube.svg" alt="Ковчег" class="hero-img"/></div>
     </section>
 
     ${bannerCarousel(data.banners)}

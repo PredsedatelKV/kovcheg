@@ -18,7 +18,7 @@ export async function renderKoverna(root) {
         <div class="subtitle">${state.mode === "shop" ? "Магазин официальных товаров" : "Рынок игроков"}</div>
         <div class="subtitle" style="margin-top:4px">${state.mode === "shop" ? "Покупайте товары в магазине — они сразу попадут в ваш инвентарь." : "Покупайте товары у других жителей."}</div>
       </div>
-      <div class="hero-art">🛒</div>
+      <div class="hero-art"><img src="/static/img/shop.svg" alt="Лавка" class="hero-img"/></div>
     </section>
 
     <div class="toggle" id="mode-toggle">

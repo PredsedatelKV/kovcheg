@@ -9,7 +9,7 @@ export async function renderProfile(root) {
   const user = data.user;
   const photoOrEmoji = user.photo_url
     ? `<img src="${escapeHtml(user.photo_url)}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />`
-    : "🪖";
+    : `<img src="/static/img/head.svg" alt="Гражданин" class="hero-img hero-img-head"/>`;
 
   root.innerHTML = `
     <section class="page-header">

@@ -97,6 +97,15 @@ body {
   place-items: center;
   font-size: 46px;
   box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.page-header .hero-art .hero-img {
+  width: 78px;
+  height: 78px;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  display: block;
 }
 
 /* Cards */
@@ -582,18 +591,19 @@ body {
 /* Avatar / hero head for profile */
 .hero-head {
   width: 96px; height: 96px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #6CC36C, #2E7D32);
+  border-radius: 18px;
+  background: var(--surface-2);
   display: grid; place-items: center;
   font-size: 50px;
   box-shadow: var(--shadow);
   position: relative;
+  overflow: hidden;
 }
-.hero-head::after {
-  content: "★";
-  position: absolute;
-  top: -2px; right: 6px;
-  color: #E84545;
-  font-size: 18px;
-  text-shadow: 0 1px 2px rgba(0,0,0,.3);
+.hero-head .hero-img-head {
+  width: 86px;
+  height: 96px;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  display: block;
 }
