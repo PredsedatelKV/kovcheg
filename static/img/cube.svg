@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 84" shape-rendering="crispEdges" aria-hidden="true">
+  <!-- isometric Minecraft-style white block -->
+  <polygon points="40,4 76,22 40,40 4,22" fill="#ffffff" stroke="#1f2330" stroke-width="2" stroke-linejoin="miter"/>
+  <polygon points="4,22 40,40 40,78 4,60" fill="#d8dce4" stroke="#1f2330" stroke-width="2" stroke-linejoin="miter"/>
+  <polygon points="76,22 40,40 40,78 76,60" fill="#b6bac3" stroke="#1f2330" stroke-width="2" stroke-linejoin="miter"/>
+  <!-- pixel highlights on top face -->
+  <polygon points="10,22 22,28 22,32 10,26" fill="#f3f4f7"/>
+  <polygon points="58,28 70,22 70,26 58,32" fill="#f3f4f7"/>
+  <!-- subtle edge speckles -->
+  <rect x="14" y="32" width="4" height="2" fill="#c6cbd4"/>
+  <rect x="62" y="32" width="4" height="2" fill="#9ea4ae"/>
+  <rect x="34" y="52" width="4" height="2" fill="#c6cbd4"/>
+  <rect x="42" y="52" width="4" height="2" fill="#9ea4ae"/>
+</svg>
