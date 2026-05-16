@@ -1,7 +1,10 @@
-import { get, post } from "/static/api.js";
+import { get, post, iconHtml } from "/static/api.js";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const fmtDate = (iso) =>
+  new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
 
 function bannerCarousel(banners) {
   if (!banners.length) return "";
@@ -20,21 +23,33 @@ function bannerCarousel(banners) {
     </div>`;
 }
 
+function taskRow(t) {
+  return `
+    <div class="task-row" data-task-id="${t.id}">
+      <div class="ico">${iconHtml(t.icon, "md", t.name)}</div>
+      <div class="meta">
+        <h4>${escapeHtml(t.name)}</h4>
+        <p>Награда: ${t.reward} монет</p>
+      </div>
+      <button class="btn btn-sm" data-action="start" data-task-id="${t.id}">Начать</button>
+    </div>`;
+}
+
 function tasksList(tasks) {
   if (!tasks.length) return `<div class="empty">Заданий пока нет</div>`;
-  return `<div class="tasks-list">${tasks
-    .map(
-      (t) => `
-        <div class="task-row" data-task-id="${t.id}">
-          <div class="ico">${t.icon}</div>
-          <div class="meta">
-            <h4>${escapeHtml(t.name)}</h4>
-            <p>Награда: ${t.reward} монет</p>
-          </div>
-          <button class="btn btn-sm" data-action="start" data-task-id="${t.id}">Начать</button>
-        </div>`,
-    )
-    .join("")}</div>`;
+  return `<div class="tasks-list">${tasks.map(taskRow).join("")}</div>`;
+}
+
+function newsCard(n) {
+  return `
+    <div class="card news-card">
+      <img src="${escapeHtml(n.image_url)}" alt="" />
+      <div class="news-body">
+        <h3>${escapeHtml(n.title)}</h3>
+        <p>${escapeHtml(n.body)}</p>
+        <div class="date">${fmtDate(n.published_at)}</div>
+      </div>
+    </div>`;
 }
 
 export async function renderHome(root) {
@@ -54,7 +69,7 @@ export async function renderHome(root) {
     ${bannerCarousel(data.banners)}
 
     <div class="card wheel-card" id="wheel-card">
-      <div class="wheel-thumb">🎡</div>
+      <div class="wheel-thumb"></div>
       <div>
         <h3 class="card-title">Ежедневное колесо фортуны</h3>
         <p class="card-sub">Крутите колесо и получайте ценные награды каждый день!</p>
@@ -62,42 +77,37 @@ export async function renderHome(root) {
       <span class="arrow">›</span>
     </div>
 
-    <h2 class="section-title">Новость <button class="see-all">Смотреть все</button></h2>
-    ${
-      data.news
-        ? `<div class="card news-card">
-            <img src="${escapeHtml(data.news.image_url)}" alt="" />
-            <div class="news-body">
-              <h3>${escapeHtml(data.news.title)}</h3>
-              <p>${escapeHtml(data.news.body)}</p>
-              <div class="date">${new Date(data.news.published_at).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}</div>
-            </div>
-          </div>`
-        : ""
-    }
+    <h2 class="section-title">Новости <button class="see-all" data-action="all-news">Смотреть все</button></h2>
+    ${data.news ? newsCard(data.news) : ""}
 
     <h2 class="section-title">План</h2>
     ${
       data.daily_plan
         ? `<div class="card plan-card">
-            <div class="plan-icon">📜</div>
+            <div class="plan-icon">${iconHtml(data.daily_plan.icon, "lg", "План")}</div>
             <div style="flex:1">
               <h3 class="card-title">${escapeHtml(data.daily_plan.name)}</h3>
               <p class="card-sub">${escapeHtml(data.daily_plan.description.split("\n")[0])}</p>
               <span class="mandatory-tag">Обязательный</span>
             </div>
-            <span class="lock">🔒</span>
+            <span class="lock">${iconHtml("/static/img/ui/lock.svg", "sm", "Заблокировано")}</span>
           </div>`
         : ""
     }
 
-    <h2 class="section-title">Задания <button class="see-all" data-action="profile-tab">Смотреть все</button></h2>
-    ${tasksList(data.tasks.slice(0, 6))}
+    <h2 class="section-title">Задания <button class="see-all" data-action="all-tasks">Смотреть все</button></h2>
+    ${tasksList(data.tasks.slice(0, 3))}
 
     <div class="quick-actions">
-      <button class="chip" data-action="legal" data-slug="constitution">📖 <span>Конституция</span></button>
-      <button class="chip" data-action="legal" data-slug="laws">⚖️ <span>Законодательство</span></button>
-      <button class="chip" data-action="channel">✉️ <span>Телеграм канал</span></button>
+      <button class="chip" data-action="legal" data-slug="constitution">
+        ${iconHtml("/static/img/ui/book.svg", "sm", "")}<span>Конституция</span>
+      </button>
+      <button class="chip" data-action="legal" data-slug="laws">
+        ${iconHtml("/static/img/ui/scales.svg", "sm", "")}<span>Законодательство</span>
+      </button>
+      <button class="chip" data-action="channel">
+        ${iconHtml("/static/img/ui/mail.svg", "sm", "")}<span>Телеграм канал</span>
+      </button>
     </div>
   `;
 
@@ -112,19 +122,27 @@ export async function renderHome(root) {
   }
 
   root.querySelector("#wheel-card").addEventListener("click", openWheel);
+
+  const allTasksList = data.tasks;
   root.querySelectorAll('[data-action="start"]').forEach((btn) => {
     btn.addEventListener("click", async (ev) => {
       ev.stopPropagation();
       const id = btn.dataset.taskId;
-      openTaskDetails(data.tasks.find((t) => String(t.id) === String(id)));
+      openTaskDetails(allTasksList.find((t) => String(t.id) === String(id)));
     });
   });
   root.querySelectorAll(".task-row").forEach((row) => {
     row.addEventListener("click", () => {
       const id = row.dataset.taskId;
-      openTaskDetails(data.tasks.find((t) => String(t.id) === String(id)));
+      openTaskDetails(allTasksList.find((t) => String(t.id) === String(id)));
     });
   });
+
+  root.querySelector('[data-action="all-tasks"]').addEventListener("click", () =>
+    openAllTasks(allTasksList),
+  );
+  root.querySelector('[data-action="all-news"]').addEventListener("click", openAllNews);
+
   root.querySelectorAll('[data-action="legal"]').forEach((btn) =>
     btn.addEventListener("click", () => openLegal(btn.dataset.slug)),
   );
@@ -136,18 +154,64 @@ export async function renderHome(root) {
       window.Telegram?.WebApp?.openLink?.(url) || window.open(url, "_blank");
     }
   });
-  const seeAllBtn = root.querySelector('[data-action="profile-tab"]');
-  seeAllBtn?.addEventListener("click", () => window.kov.setTab("profile"));
+}
+
+function openAllTasks(tasks) {
+  const body = tasks.length
+    ? `<div class="tasks-list">${tasks.map(taskRow).join("")}</div>`
+    : `<div class="empty">Заданий пока нет</div>`;
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Все задания</h2>
+    <p class="card-sub" style="margin: 0 0 14px">Открой задание, чтобы прочитать детали и начать.</p>
+    ${body}
+  `);
+  modal.querySelectorAll('[data-action="start"]').forEach((btn) =>
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const id = btn.dataset.taskId;
+      const t = tasks.find((x) => String(x.id) === String(id));
+      window.closeModal();
+      setTimeout(() => openTaskDetails(t), 80);
+    }),
+  );
+  modal.querySelectorAll(".task-row").forEach((row) =>
+    row.addEventListener("click", () => {
+      const id = row.dataset.taskId;
+      const t = tasks.find((x) => String(x.id) === String(id));
+      window.closeModal();
+      setTimeout(() => openTaskDetails(t), 80);
+    }),
+  );
+}
+
+async function openAllNews() {
+  let items = [];
+  try {
+    items = await get("/api/home/news");
+  } catch (e) {
+    window.kov.toast(e.message);
+    return;
+  }
+  const body = items.length
+    ? `<div style="display:flex;flex-direction:column;gap:14px">${items.map(newsCard).join("")}</div>`
+    : `<div class="empty">Новостей пока нет</div>`;
+  window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Все новости</h2>
+    <p class="card-sub" style="margin: 0 0 14px">Последние события и объявления.</p>
+    ${body}
+  `);
 }
 
 function openTaskDetails(t) {
   if (!t) return;
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
-    <div class="task-card-icon">${t.icon}</div>
+    <div class="task-card-icon">${iconHtml(t.icon, "xl", t.name)}</div>
     <h2 style="text-align:center;margin-top:0">${escapeHtml(t.name)}</h2>
     <p style="color:var(--text-soft); text-align:center; margin: 6px 0 14px">${escapeHtml(t.description)}</p>
-    <div class="task-card-reward">Награда: <span style="color: var(--accent)">🪙</span> ${t.reward} монет</div>
+    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${t.reward} монет</div>
     <button class="btn" id="start-btn">Начать</button>
     <button class="btn btn-secondary" style="margin-top:8px" onclick="closeModal()">Закрыть</button>
   `);
@@ -194,6 +258,14 @@ async function openWheel() {
       const x2 = cx + radius * Math.cos(e), y2 = cy + radius * Math.sin(e);
       return `M${cx},${cy} L${x1},${y1} A${radius},${radius} 0 ${large} 1 ${x2},${y2} Z`;
     };
+    const renderSectorIcon = (s, x, y, mid) => {
+      const size = 28;
+      const isFile = typeof s.icon === "string" && (s.icon.startsWith("/") || s.icon.startsWith("http"));
+      if (isFile) {
+        return `<image href="${s.icon}" x="${x - size / 2}" y="${y - size / 2}" width="${size}" height="${size}" style="image-rendering: pixelated;" transform="rotate(${mid}, ${x}, ${y})"/>`;
+      }
+      return `<text x="${x}" y="${y}" text-anchor="middle" transform="rotate(${mid}, ${x}, ${y})">${s.icon}</text>`;
+    };
     const slices = sectors
       .map((s, i) => {
         const start = i * seg;
@@ -205,7 +277,7 @@ async function openWheel() {
         const ty = cy + r * Math.sin(rad);
         return `
           <path d="${arcPath(start, end)}" fill="${colors[i % colors.length]}" stroke="#fff" stroke-width="2"/>
-          <text x="${tx}" y="${ty}" text-anchor="middle" transform="rotate(${mid}, ${tx}, ${ty})">${s.icon}</text>
+          ${renderSectorIcon(s, tx, ty, mid)}
         `;
       })
       .join("");
@@ -218,13 +290,13 @@ async function openWheel() {
         <div class="wheel-wrap">
           <div class="wheel-pointer"></div>
           <svg class="wheel-svg" id="wheel-svg" viewBox="0 0 280 280">${slices}</svg>
-          <div class="wheel-center">🏰</div>
+          <div class="wheel-center">${iconHtml("/static/img/ui/castle.svg", "md", "")}</div>
         </div>
         <button class="btn" id="spin-btn" ${status.can_spin ? "" : "disabled"}>
           ${status.can_spin ? "Крутить" : "Доступно завтра"}
         </button>
         <div class="wheel-prize" id="prize">
-          <div class="ic" id="prize-ic">🎁</div>
+          <div class="ic" id="prize-ic">${iconHtml("/static/img/ui/box.svg", "lg", "")}</div>
           <div class="lbl" id="prize-lbl"></div>
         </div>
       </div>
@@ -239,24 +311,17 @@ async function openWheel() {
       try {
         const result = await post("/api/wheel/spin");
         const idx = result.sector_index;
-        // We want pointer to land on idx. Pointer is at top.
-        // For each sector i, the center angle is i*seg + seg/2 from 0(=top). We need to rotate svg so that this angle is at top (0deg).
-        // SVG rotation rotates clockwise from current. Target rotation = -(i*seg + seg/2) modulo 360, plus full spins.
         const targetAngle = -(idx * seg + seg / 2);
         const fullSpins = 5; // turns
         const finalRot = currentRot + fullSpins * 360 + (targetAngle - (currentRot % 360));
         svg.style.transform = `rotate(${finalRot}deg)`;
         currentRot = finalRot;
-
         setTimeout(() => {
-          const prize = result.result;
-          const box = modal.querySelector("#prize");
-          modal.querySelector("#prize-ic").textContent = prize.icon;
-          modal.querySelector("#prize-lbl").textContent =
-            prize.kind === "coins" ? `+${prize.prize_value} монет` : prize.prize_label;
-          box.classList.add("show");
-          window.kov.toast("Поздравляем! Награда зачислена");
-        }, 4700);
+          const prize = modal.querySelector("#prize");
+          modal.querySelector("#prize-ic").innerHTML = iconHtml(result.result.icon, "lg", "");
+          modal.querySelector("#prize-lbl").textContent = result.result.prize_label;
+          prize.classList.add("show");
+        }, 4600);
       } catch (e) {
         window.kov.toast(e.message);
         spinBtn.disabled = false;

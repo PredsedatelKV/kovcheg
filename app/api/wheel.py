@@ -14,14 +14,14 @@ router = APIRouter(prefix="/api/wheel", tags=["wheel"])
 
 # Призы для колеса. Должны совпадать по порядку и количеству с фронтом.
 SECTORS: list[dict] = [
-    {"label": "50 монет", "kind": "coins", "value": 50, "icon": "🪙", "weight": 25},
-    {"label": "Сундук", "kind": "item", "value": 0, "icon": "🧰", "item_code": "builders_chest", "weight": 8},
-    {"label": "25 монет", "kind": "coins", "value": 25, "icon": "🪙", "weight": 30},
-    {"label": "200 монет", "kind": "coins", "value": 200, "icon": "💰", "weight": 5},
-    {"label": "50 монет", "kind": "coins", "value": 50, "icon": "🪙", "weight": 20},
-    {"label": "Ускоритель", "kind": "item", "value": 0, "icon": "⏳", "item_code": "booster_1h", "weight": 6},
-    {"label": "10 монет", "kind": "coins", "value": 10, "icon": "🪙", "weight": 30},
-    {"label": "Свиток опыта", "kind": "item", "value": 0, "icon": "📜", "item_code": "exp_scroll", "weight": 6},
+    {"label": "50 монет", "kind": "coins", "value": 50, "icon": "/static/img/ui/coin.svg", "weight": 25},
+    {"label": "Сундук", "kind": "item", "value": 0, "icon": "/static/img/items/builders_chest.svg", "item_code": "builders_chest", "weight": 8},
+    {"label": "25 монет", "kind": "coins", "value": 25, "icon": "/static/img/ui/coin.svg", "weight": 30},
+    {"label": "200 монет", "kind": "coins", "value": 200, "icon": "/static/img/ui/money_bag.svg", "weight": 5},
+    {"label": "50 монет", "kind": "coins", "value": 50, "icon": "/static/img/ui/coin.svg", "weight": 20},
+    {"label": "Ускоритель", "kind": "item", "value": 0, "icon": "/static/img/items/booster_1h.svg", "item_code": "booster_1h", "weight": 6},
+    {"label": "10 монет", "kind": "coins", "value": 10, "icon": "/static/img/ui/coin.svg", "weight": 30},
+    {"label": "Свиток опыта", "kind": "item", "value": 0, "icon": "/static/img/items/exp_scroll.svg", "item_code": "exp_scroll", "weight": 6},
 ]
 
 

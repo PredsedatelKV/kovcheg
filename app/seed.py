@@ -35,18 +35,85 @@ def _get_or_create_item(
     return item
 
 
+# Icons for existing rows are migrated to file paths on every startup so a
+# user can drop new SVG/PNG files into static/img/* without touching the DB.
+ITEM_ICON_BY_CODE: dict[str, str] = {
+    "apples": "/static/img/items/apples.svg",
+    "logs": "/static/img/items/logs.svg",
+    "stone": "/static/img/items/stone.svg",
+    "wheat": "/static/img/items/wheat.svg",
+    "iron_ore": "/static/img/items/iron_ore.svg",
+    "booster_1h": "/static/img/items/booster_1h.svg",
+    "plot_5x5": "/static/img/items/plot_5x5.svg",
+    "builders_chest": "/static/img/items/builders_chest.svg",
+    "exp_scroll": "/static/img/items/exp_scroll.svg",
+}
+
+TASK_ICON_BY_NAME: dict[str, str] = {
+    "Добыча ресурсов": "/static/img/tasks/mining.svg",
+    "Помощь жителям": "/static/img/tasks/helping.svg",
+    "Защита поселения": "/static/img/tasks/defense.svg",
+    "Посади 10 деревьев": "/static/img/tasks/trees.svg",
+    "Добыть 50 камня": "/static/img/tasks/stone.svg",
+    "Ежедневный план": "/static/img/tasks/scroll.svg",
+}
+
+
+def migrate_icons(db: Session) -> None:
+    """Force icons to current paths on each boot so existing rows pick up new assets."""
+    for code, path in ITEM_ICON_BY_CODE.items():
+        item = db.query(models.Item).filter(models.Item.code == code).one_or_none()
+        if item is not None and item.icon != path:
+            item.icon = path
+    for name, path in TASK_ICON_BY_NAME.items():
+        task = db.query(models.Task).filter(models.Task.name == name).one_or_none()
+        if task is not None and task.icon != path:
+            task.icon = path
+
+
 def seed(db: Session) -> None:
     # Items
-    apples = _get_or_create_item(db, "apples", name="Ящик яблок", icon="🍎", description="Свежие яблоки из садов Ковчега.")
-    logs = _get_or_create_item(db, "logs", name="Связка брёвен", icon="🪵", description="Древесина для строительства.")
-    stone = _get_or_create_item(db, "stone", name="Камень", icon="🪨", description="Базовый строительный материал.")
-    wheat = _get_or_create_item(db, "wheat", name="Пшеница", icon="🌾", description="Зерно для запасов.")
-    iron = _get_or_create_item(db, "iron_ore", name="Железная руда", icon="⛏️", description="Сырьё для кузницы.", rarity="Редкий")
+    apples = _get_or_create_item(
+        db,
+        "apples",
+        name="Ящик яблок",
+        icon="/static/img/items/apples.svg",
+        description="Свежие яблоки из садов Ковчега.",
+    )
+    logs = _get_or_create_item(
+        db,
+        "logs",
+        name="Связка брёвен",
+        icon="/static/img/items/logs.svg",
+        description="Древесина для строительства.",
+    )
+    stone = _get_or_create_item(
+        db,
+        "stone",
+        name="Камень",
+        icon="/static/img/items/stone.svg",
+        description="Базовый строительный материал.",
+    )
+    wheat = _get_or_create_item(
+        db,
+        "wheat",
+        name="Пшеница",
+        icon="/static/img/items/wheat.svg",
+        description="Зерно для запасов.",
+    )
+    iron = _get_or_create_item(
+        db,
+        "iron_ore",
+        name="Железная руда",
+        icon="/static/img/items/iron_ore.svg",
+        description="Сырьё для кузницы.",
+        rarity="Редкий",
+    )
     booster = _get_or_create_item(
         db,
         "booster_1h",
         name="Ускорение 1ч",
-        icon="⏳",
+        icon="/static/img/items/booster_1h.svg",
         description="Ускоряет выполнение задания на 1 час.",
         category="Ускорители",
         can_activate=True,
@@ -55,7 +122,7 @@ def seed(db: Session) -> None:
         db,
         "plot_5x5",
         name="Участок 5×5",
-        icon="🏡",
+        icon="/static/img/items/plot_5x5.svg",
         description="Свободный участок для застройки.",
         category="Декор",
         rarity="Редкий",
@@ -64,7 +131,7 @@ def seed(db: Session) -> None:
         db,
         "builders_chest",
         name="Сундук строителя",
-        icon="🧰",
+        icon="/static/img/items/builders_chest.svg",
         description="Стартовый набор инструментов.",
         category="Декор",
     )
@@ -72,7 +139,7 @@ def seed(db: Session) -> None:
         db,
         "exp_scroll",
         name="Свиток опыта",
-        icon="📜",
+        icon="/static/img/items/exp_scroll.svg",
         description="Даёт небольшой буст опыта.",
         category="Ускорители",
         rarity="Редкий",
@@ -105,7 +172,7 @@ def seed(db: Session) -> None:
         {
             "name": "Добыча ресурсов",
             "description": "Отправляйтесь в шахты и леса, добывайте ресурсы для развития вашего поселения. Соберите 50 единиц камня и 30 единиц дерева.",
-            "icon": "⛏️",
+            "icon": "/static/img/tasks/mining.svg",
             "reward": 25,
             "target_progress": 80,
             "is_daily_plan": False,
@@ -114,7 +181,7 @@ def seed(db: Session) -> None:
         {
             "name": "Помощь жителям",
             "description": "Помогите соседям с их делами: посадите дерево, наколите дров или принесите воды.",
-            "icon": "🧰",
+            "icon": "/static/img/tasks/helping.svg",
             "reward": 30,
             "target_progress": 1,
             "is_daily_plan": False,
@@ -123,7 +190,7 @@ def seed(db: Session) -> None:
         {
             "name": "Защита поселения",
             "description": "Постойте на страже у врат Ковчега — отчитайтесь о смене в боте.",
-            "icon": "🛡️",
+            "icon": "/static/img/tasks/defense.svg",
             "reward": 20,
             "target_progress": 1,
             "is_daily_plan": False,
@@ -132,7 +199,7 @@ def seed(db: Session) -> None:
         {
             "name": "Посади 10 деревьев",
             "description": "Внесите вклад в развитие поселения — посадите 10 деревьев в лесу или на свободных участках.",
-            "icon": "🌳",
+            "icon": "/static/img/tasks/trees.svg",
             "reward": 25,
             "target_progress": 10,
             "is_daily_plan": False,
@@ -141,7 +208,7 @@ def seed(db: Session) -> None:
         {
             "name": "Добыть 50 камня",
             "description": "Соберите 50 единиц камня для строительства главного зала.",
-            "icon": "🪨",
+            "icon": "/static/img/tasks/stone.svg",
             "reward": 30,
             "target_progress": 50,
             "is_daily_plan": False,
@@ -150,7 +217,7 @@ def seed(db: Session) -> None:
         {
             "name": "Ежедневный план",
             "description": "Выполняйте задания каждый день и становитесь сильнее. Этот план обязателен для всех жителей Ковчега.",
-            "icon": "📜",
+            "icon": "/static/img/tasks/scroll.svg",
             "reward": 0,
             "target_progress": 5,
             "is_daily_plan": True,
@@ -174,14 +241,27 @@ def seed(db: Session) -> None:
             db.add(models.Banner(image_url=url, title=title, sort_order=order, is_active=True))
 
     # News
-    if not db.query(models.News).first():
-        db.add(
-            models.News(
-                image_url="https://picsum.photos/seed/kovcheg-news/700/500",
-                title="Новый сезон уже начался!",
-                body="Исследуйте новые земли, выполняйте задания и получайте награды.",
-            )
-        )
+    news_defs = [
+        (
+            "https://picsum.photos/seed/kovcheg-news/700/500",
+            "Новый сезон уже начался!",
+            "Исследуйте новые земли, выполняйте задания и получайте награды.",
+        ),
+        (
+            "https://picsum.photos/seed/kovcheg-news-2/700/500",
+            "Открыты заявки в Совет",
+            "Жителям Ковчега доступны выборы в Совет. Подайте заявку через бота, чтобы войти в число кандидатов.",
+        ),
+        (
+            "https://picsum.photos/seed/kovcheg-news-3/700/500",
+            "Рынок расширен",
+            "Теперь на рынке можно выставлять любые предметы из инвентаря — и сразу получать монеты после продажи.",
+        ),
+    ]
+    for url, title, body in news_defs:
+        existing = db.query(models.News).filter(models.News.image_url == url).one_or_none()
+        if existing is None:
+            db.add(models.News(image_url=url, title=title, body=body))
 
     # Legal texts (placeholders)
     if not db.query(models.LegalText).filter(models.LegalText.slug == "constitution").first():
