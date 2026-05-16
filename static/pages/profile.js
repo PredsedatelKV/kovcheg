@@ -1,7 +1,33 @@
-import { get, post } from "/static/api.js";
+import { get, post, iconHtml } from "/static/api.js";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function invCell(row) {
+  return `
+    <div class="inv-cell" data-item-id="${row.item.id}">
+      <span class="qty">×${row.quantity}</span>
+      <div class="ic">${iconHtml(row.item.icon, "lg", row.item.name)}</div>
+      <div class="name">${escapeHtml(row.item.name)}</div>
+      <div class="rare">${escapeHtml(row.item.rarity)}</div>
+      <div class="acts">
+        ${row.item.can_gift ? `<button class="btn btn-outline btn-sm" data-action="gift" data-item-id="${row.item.id}">Подарить</button>` : ""}
+        ${row.item.can_activate ? `<button class="btn btn-sm" data-action="activate" data-item-id="${row.item.id}">Активировать</button>` : ""}
+      </div>
+    </div>`;
+}
+
+function userTaskRow(ut) {
+  return `
+    <div class="task-row" data-user-task-id="${ut.id}">
+      <div class="ico">${iconHtml(ut.task.icon, "md", ut.task.name)}</div>
+      <div class="meta">
+        <h4>${escapeHtml(ut.task.name)}</h4>
+        <p>Прогресс: ${ut.progress} / ${ut.task.target_progress} · Награда: ${ut.task.reward}</p>
+      </div>
+      <span style="color: var(--success); font-size:18px">●</span>
+    </div>`;
+}
 
 export async function renderProfile(root) {
   root.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
@@ -24,34 +50,19 @@ export async function renderProfile(root) {
     <div class="card">
       <div class="inv-row-title">
         <h3 class="card-title">Инвентарь</h3>
-        <button class="see-all">Смотреть все ›</button>
+        ${data.inventory.length > 8 ? `<button class="see-all" data-action="all-inv">Смотреть все ›</button>` : ""}
       </div>
       <div class="inv-grid">
         ${data.inventory.length === 0
           ? `<div class="empty" style="grid-column: 1/-1">Пока пусто. Купи что-нибудь в Коверне или получи задание.</div>`
-          : data.inventory
-              .slice(0, 8)
-              .map(
-                (row) => `
-                  <div class="inv-cell" data-item-id="${row.item.id}">
-                    <span class="qty">×${row.quantity}</span>
-                    <div class="ic">${row.item.icon}</div>
-                    <div class="name">${escapeHtml(row.item.name)}</div>
-                    <div class="rare">${escapeHtml(row.item.rarity)}</div>
-                    <div class="acts">
-                      ${row.item.can_gift ? `<button class="btn btn-outline btn-sm" data-action="gift" data-item-id="${row.item.id}">Подарить</button>` : ""}
-                      ${row.item.can_activate ? `<button class="btn btn-sm" data-action="activate" data-item-id="${row.item.id}">Активировать</button>` : ""}
-                    </div>
-                  </div>`,
-              )
-              .join("")}
+          : data.inventory.slice(0, 8).map(invCell).join("")}
       </div>
     </div>
 
     <div class="card">
       <h3 class="card-title">Кошелёк</h3>
       <div class="card-row" style="margin-top:8px">
-        <div class="wallet-balance"><span class="coin">🪙</span> Баланс: <strong>${user.balance}</strong> монет</div>
+        <div class="wallet-balance">${iconHtml("/static/img/ui/coin.svg", "md", "")} Баланс: <strong>${user.balance}</strong> монет</div>
       </div>
       <div class="wallet-actions">
         <button class="btn btn-outline" data-action="transfer">↗ Перевести</button>
@@ -63,7 +74,7 @@ export async function renderProfile(root) {
     ${
       data.daily_plan
         ? `<div class="card plan-card">
-            <div class="plan-icon">📜</div>
+            <div class="plan-icon">${iconHtml(data.daily_plan.icon, "lg", "План")}</div>
             <div style="flex:1">
               <h3 class="card-title">${escapeHtml(data.daily_plan.name)}</h3>
               <p class="card-sub">Выполняйте задания каждый день и становитесь сильнее.</p>
@@ -73,45 +84,15 @@ export async function renderProfile(root) {
         : ""
     }
 
-    <h2 class="section-title">Задания <button class="see-all">Смотреть все</button></h2>
+    <h2 class="section-title">Задания ${data.user_tasks.length > 3 ? `<button class="see-all" data-action="all-mytasks">Смотреть все</button>` : ""}</h2>
     ${
       data.user_tasks.length === 0
         ? `<div class="empty">Нет активных заданий. Начни задание на вкладке «Главная».</div>`
-        : `<div class="tasks-list">${data.user_tasks
-            .map(
-              (ut) => `
-              <div class="task-row" data-user-task-id="${ut.id}">
-                <div class="ico">${ut.task.icon}</div>
-                <div class="meta">
-                  <h4>${escapeHtml(ut.task.name)}</h4>
-                  <p>Прогресс: ${ut.progress} / ${ut.task.target_progress} · Награда: ${ut.task.reward}</p>
-                </div>
-                <span style="color: var(--success); font-size:18px">●</span>
-              </div>`,
-            )
-            .join("")}</div>`
+        : `<div class="tasks-list">${data.user_tasks.slice(0, 3).map(userTaskRow).join("")}</div>`
     }
   `;
 
-  root.querySelectorAll('[data-action="gift"]').forEach((b) =>
-    b.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openGiftDialog(b.dataset.itemId);
-    }),
-  );
-  root.querySelectorAll('[data-action="activate"]').forEach((b) =>
-    b.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      try {
-        await post("/api/profile/inventory/activate", { item_id: Number(b.dataset.itemId), recipient: "", quantity: 1 });
-        window.kov.toast("Предмет активирован");
-        renderProfile(root);
-      } catch (err) {
-        window.kov.toast(err.message);
-      }
-    }),
-  );
-
+  bindCellActions(root);
   root.querySelector('[data-action="transfer"]').addEventListener("click", () => openTransferDialog(user));
   root.querySelector('[data-action="receive"]').addEventListener("click", () => openReceiveDialog(user));
 
@@ -122,6 +103,63 @@ export async function renderProfile(root) {
       if (ut) openUserTaskDialog(ut, root);
     });
   });
+
+  root.querySelector('[data-action="all-inv"]')?.addEventListener("click", () => openAllInventory(data.inventory, root));
+  root.querySelector('[data-action="all-mytasks"]')?.addEventListener("click", () => openAllMyTasks(data.user_tasks, root));
+}
+
+function bindCellActions(scope) {
+  scope.querySelectorAll('[data-action="gift"]').forEach((b) =>
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openGiftDialog(b.dataset.itemId);
+    }),
+  );
+  scope.querySelectorAll('[data-action="activate"]').forEach((b) =>
+    b.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        await post("/api/profile/inventory/activate", { item_id: Number(b.dataset.itemId), recipient: "", quantity: 1 });
+        window.kov.toast("Предмет активирован");
+        const root = document.getElementById("view");
+        renderProfile(root);
+      } catch (err) {
+        window.kov.toast(err.message);
+      }
+    }),
+  );
+}
+
+function openAllInventory(inventory) {
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Инвентарь</h2>
+    <p class="card-sub" style="margin: 0 0 14px">Все предметы из твоего инвентаря.</p>
+    ${inventory.length === 0
+      ? `<div class="empty">Пока пусто.</div>`
+      : `<div class="inv-grid">${inventory.map(invCell).join("")}</div>`}
+  `);
+  bindCellActions(modal);
+}
+
+function openAllMyTasks(myTasks, root) {
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Мои задания</h2>
+    <p class="card-sub" style="margin: 0 0 14px">Активные задания в работе.</p>
+    ${myTasks.length === 0
+      ? `<div class="empty">Нет активных заданий.</div>`
+      : `<div class="tasks-list">${myTasks.map(userTaskRow).join("")}</div>`}
+  `);
+  modal.querySelectorAll(".task-row").forEach((row) =>
+    row.addEventListener("click", () => {
+      const id = Number(row.dataset.userTaskId);
+      const ut = myTasks.find((u) => u.id === id);
+      if (!ut) return;
+      window.closeModal();
+      setTimeout(() => openUserTaskDialog(ut, root), 80);
+    }),
+  );
 }
 
 function openTransferDialog(user) {
@@ -193,11 +231,11 @@ function openGiftDialog(itemId) {
 function openUserTaskDialog(ut, root) {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
-    <div class="task-card-icon">${ut.task.icon}</div>
+    <div class="task-card-icon">${iconHtml(ut.task.icon, "xl", ut.task.name)}</div>
     <h2 style="text-align:center;margin-top:0">${escapeHtml(ut.task.name)}</h2>
     <div style="text-align:center; margin: 2px 0 10px"><span style="background:var(--primary-soft); color:var(--primary-700); padding: 3px 10px; border-radius:8px; font-size:12px; font-weight:600">В процессе</span></div>
     <p style="color:var(--text-soft); font-size:14px; margin: 0 0 14px">${escapeHtml(ut.task.description)}</p>
-    <div class="task-card-reward">Награда: <span style="color: var(--accent)">🪙</span> ${ut.task.reward} монет</div>
+    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${ut.task.reward} монет</div>
     <button class="btn btn-secondary" onclick="closeModal()">Закрыть</button>
     <button class="btn btn-danger" id="cancel-ut" style="margin-top:8px">Прервать задание</button>
   `);

@@ -20,7 +20,7 @@ from app.api import wheel as wheel_api
 from app.bot import configure_webhook, feed_update, set_menu_button
 from app.config import get_settings
 from app.db import Base, engine, session_scope
-from app.seed import seed
+from app.seed import migrate_icons, seed
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     with session_scope() as db:
         seed(db)
+        migrate_icons(db)
     settings = get_settings()
     if settings.public_url and settings.telegram_bot_token:
         try:

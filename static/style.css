@@ -41,6 +41,26 @@ body {
   width: 100%;
 }
 
+/* Pixel-art icon classes (use file paths via iconHtml) */
+.pixel-icon {
+  display: inline-block;
+  vertical-align: middle;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  line-height: 1;
+}
+.pixel-icon-sm { width: 18px; height: 18px; }
+.pixel-icon-md { width: 28px; height: 28px; }
+.pixel-icon-lg { width: 44px; height: 44px; }
+.pixel-icon-xl { width: 64px; height: 64px; }
+.pixel-icon-emoji {
+  font-size: 1.4em;
+  line-height: 1;
+  text-align: center;
+}
+.tab-icon { width: 22px; height: 22px; image-rendering: pixelated; }
+
 /* Bottom tab bar */
 .tabbar {
   position: fixed;
