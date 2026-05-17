@@ -15,6 +15,15 @@ class UserOut(BaseModel):
     role: str
     restrictions: str | None = None
     balance: int
+    is_admin: bool = False
+
+
+class PlayerOut(BaseModel):
+    id: int
+    telegram_id: int
+    username: str | None = None
+    first_name: str
+    role: str
 
 
 class ItemOut(BaseModel):
@@ -145,3 +154,116 @@ class KovernaPayload(BaseModel):
     market_listings: list[MarketListingOut]
     my_listings: list[MarketListingOut]
     inventory: list[InventoryItemOut]
+
+
+# ----- Admin DTOs -----
+
+class AdminUserOut(BaseModel):
+    id: int
+    telegram_id: int
+    username: str | None = None
+    first_name: str
+    last_name: str | None = None
+    role: str
+    restrictions: str | None = None
+    balance: int
+    is_admin: bool = False
+
+
+class AdminUserUpdate(BaseModel):
+    first_name: str | None = None
+    role: str | None = None
+    restrictions: str | None = None
+
+
+class AdminBalanceUpdate(BaseModel):
+    delta: int  # may be negative
+    note: str | None = None
+
+
+class AdminInventoryUpdate(BaseModel):
+    item_id: int
+    delta: int  # positive to add, negative to remove
+
+
+class AdminItemBody(BaseModel):
+    code: str
+    name: str
+    description: str = ""
+    icon: str = "/static/img/ui/box.svg"
+    rarity: str = "Обычный"
+    category: str = "Ресурсы"
+    can_gift: bool = True
+    can_activate: bool = False
+
+
+class AdminNewsBody(BaseModel):
+    image_url: str = ""
+    title: str
+    body: str = ""
+    is_active: bool = True
+
+
+class AdminBannerBody(BaseModel):
+    image_url: str
+    title: str = ""
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class AdminTaskBody(BaseModel):
+    name: str
+    description: str = ""
+    icon: str = "/static/img/tasks/scroll.svg"
+    reward: int = 10
+    target_progress: int = 1
+    is_active: bool = True
+    is_daily_plan: bool = False
+    sort_order: int = 0
+
+
+class AdminShopProductBody(BaseModel):
+    item_id: int
+    price: int = Field(ge=0)
+    is_active: bool = True
+
+
+class AdminMarketListingBody(BaseModel):
+    seller_id: int
+    item_id: int
+    quantity: int = Field(ge=1)
+    price: int = Field(ge=1)
+    is_active: bool = True
+
+
+class AdminWheelPrizeBody(BaseModel):
+    label: str
+    kind: str = "coins"  # coins | item
+    value: int = 0
+    item_code: str | None = None
+    icon: str = "/static/img/ui/coin.svg"
+    weight: int = Field(ge=1, default=10)
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class AdminLegalBody(BaseModel):
+    title: str
+    body: str
+
+
+class WheelPrizeOut(BaseModel):
+    id: int
+    label: str
+    kind: str
+    value: int
+    item_code: str | None = None
+    icon: str
+    weight: int
+    sort_order: int
+    is_active: bool
+
+
+class AdminMeta(BaseModel):
+    items: list[ItemOut]
+    users: list[AdminUserOut]

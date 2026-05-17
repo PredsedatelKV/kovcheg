@@ -71,7 +71,81 @@ def migrate_icons(db: Session) -> None:
             task.icon = path
 
 
+PLAYERS: list[dict] = [
+    {
+        "telegram_id": 10001,
+        "username": "omarbutuev",
+        "first_name": "Омар",
+        "role": "Председатель",
+    },
+    {
+        "telegram_id": 10002,
+        "username": "magomet",
+        "first_name": "Магомет",
+        "role": "Гражданин",
+    },
+    {
+        "telegram_id": 10003,
+        "username": "ibragim",
+        "first_name": "Ибрагим",
+        "role": "Гражданин",
+    },
+]
+
+
+def seed_players(db: Session) -> None:
+    """Seed the three fixed citizens (Омар / Магомет / Ибрагим) and remove legacy 'Dev' user."""
+    legacy_dev = db.query(models.User).filter(models.User.telegram_id == 1).one_or_none()
+    if legacy_dev is not None:
+        db.query(models.MarketListing).filter(models.MarketListing.seller_id == legacy_dev.id).delete()
+        db.query(models.Transaction).filter(
+            (models.Transaction.sender_id == legacy_dev.id) | (models.Transaction.recipient_id == legacy_dev.id)
+        ).delete()
+        db.query(models.WheelSpin).filter(models.WheelSpin.user_id == legacy_dev.id).delete()
+        db.delete(legacy_dev)
+        db.flush()
+    for spec in PLAYERS:
+        user = db.query(models.User).filter(models.User.telegram_id == spec["telegram_id"]).one_or_none()
+        if user is None:
+            user = models.User(
+                telegram_id=spec["telegram_id"],
+                username=spec["username"],
+                first_name=spec["first_name"],
+                role=spec["role"],
+            )
+            db.add(user)
+            db.flush()
+            db.add(models.Wallet(user_id=user.id, balance=0))
+        else:
+            user.username = spec["username"]
+            if not user.first_name:
+                user.first_name = spec["first_name"]
+            if not user.role or user.role == "Гражданин" and spec["role"] != "Гражданин":
+                user.role = spec["role"]
+            if user.wallet is None:
+                db.add(models.Wallet(user_id=user.id, balance=0))
+
+
+WHEEL_PRIZES: list[dict] = [
+    {"label": "50 монет", "kind": "coins", "value": 50, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 25, "sort_order": 0},
+    {"label": "Сундук", "kind": "item", "value": 0, "item_code": "builders_chest", "icon": "/static/img/items/builders_chest.svg", "weight": 8, "sort_order": 1},
+    {"label": "25 монет", "kind": "coins", "value": 25, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 30, "sort_order": 2},
+    {"label": "200 монет", "kind": "coins", "value": 200, "item_code": None, "icon": "/static/img/ui/money_bag.svg", "weight": 5, "sort_order": 3},
+    {"label": "50 монет", "kind": "coins", "value": 50, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 20, "sort_order": 4},
+    {"label": "Ускоритель", "kind": "item", "value": 0, "item_code": "booster_1h", "icon": "/static/img/items/booster_1h.svg", "weight": 6, "sort_order": 5},
+    {"label": "10 монет", "kind": "coins", "value": 10, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 30, "sort_order": 6},
+    {"label": "Свиток опыта", "kind": "item", "value": 0, "item_code": "exp_scroll", "icon": "/static/img/items/exp_scroll.svg", "weight": 6, "sort_order": 7},
+]
+
+
+def seed_wheel_prizes(db: Session) -> None:
+    if db.query(models.WheelPrize).count() == 0:
+        for spec in WHEEL_PRIZES:
+            db.add(models.WheelPrize(**spec, is_active=True))
+
+
 def seed(db: Session) -> None:
+    seed_players(db)
     # Items
     apples = _get_or_create_item(
         db,
@@ -295,3 +369,4 @@ def seed(db: Session) -> None:
                 ),
             )
         )
+    seed_wheel_prizes(db)

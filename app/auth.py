@@ -15,6 +15,15 @@ from app.config import get_settings
 from app.db import get_db
 
 
+def is_admin(user: models.User) -> bool:
+    settings = get_settings()
+    if settings.admin_id_list and user.telegram_id in settings.admin_id_list:
+        return True
+    if user.username and user.username.lower().lstrip("@") in settings.admin_username_list:
+        return True
+    return False
+
+
 def parse_init_data(init_data: str) -> dict[str, str]:
     return dict(parse_qsl(init_data, keep_blank_values=True))
 
@@ -88,7 +97,7 @@ def current_user(
 ) -> models.User:
     settings = get_settings()
     if settings.skip_init_data_check and x_telegram_init_data == "DEV":
-        tg_user = {"id": 1, "username": "dev", "first_name": "Dev"}
+        tg_user = {"id": 10001, "username": "omarbutuev", "first_name": "Омар"}
     else:
         if not settings.telegram_bot_token:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="bot token not configured")
@@ -98,4 +107,12 @@ def current_user(
     user = upsert_user(db, tg_user)
     db.commit()
     db.refresh(user)
+    return user
+
+
+def require_admin(
+    user: models.User = Depends(current_user),
+) -> models.User:
+    if not is_admin(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ только для администратора")
     return user

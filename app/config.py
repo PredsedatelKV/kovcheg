@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = "change-me"
     public_url: str = ""  # https://<app>.fly.dev — заполняется после деплоя
     admin_ids: str = ""  # CSV TG ID-шников
+    admin_usernames: str = "omarbutuev"  # CSV TG usernames (без @)
     channel_url: str = "https://t.me/telegram"  # placeholder, заменим
     database_url: str = ""
     skip_init_data_check: bool = False  # для локальной отладки
@@ -21,6 +22,10 @@ class Settings(BaseSettings):
     @property
     def admin_id_list(self) -> list[int]:
         return [int(x) for x in self.admin_ids.split(",") if x.strip().isdigit()]
+
+    @property
+    def admin_username_list(self) -> list[str]:
+        return [x.strip().lower().lstrip("@") for x in self.admin_usernames.split(",") if x.strip()]
 
     @property
     def resolved_database_url(self) -> str:
