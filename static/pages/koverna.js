@@ -1,4 +1,4 @@
-import { get, post, iconHtml } from "/static/api.js";
+import { get, post, iconHtml, productImg } from "/static/api.js";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -51,7 +51,7 @@ async function renderShop(root) {
           .map(
             (p) => `
             <div class="product">
-              <div class="icon-big">${iconHtml(p.item.icon, "xl", p.item.name)}</div>
+              ${productImg(p.item, "xl")}
               <div class="name">${escapeHtml(p.item.name)}</div>
               <div class="price">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${p.price}</div>
               <button class="btn btn-sm" data-buy="${p.id}">Купить</button>
@@ -91,7 +91,7 @@ async function renderMarket(root) {
           .map(
             (l) => `
             <div class="product">
-              <div class="icon-big">${iconHtml(l.item.icon, "xl", l.item.name)}</div>
+              ${productImg(l.item, "xl")}
               <div class="name">${escapeHtml(l.item.name)}</div>
               <div class="card-sub">от ${escapeHtml(l.seller_name)} · ×${l.quantity}</div>
               <div class="price" style="margin-top:6px">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${l.price}</div>
@@ -162,7 +162,7 @@ async function openMyListings() {
             .map(
               (l) => `
               <div class="listing-row">
-                <div class="ico">${iconHtml(l.item.icon, "md", l.item.name)}</div>
+                ${productImg(l.item, "md")}
                 <div class="meta">
                   <div class="name">${escapeHtml(l.item.name)}</div>
                   <div class="author">×${l.quantity}</div>

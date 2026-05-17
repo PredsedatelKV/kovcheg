@@ -31,6 +31,13 @@ export const patch = (p, body) => api(p, { method: "PATCH", body: body ? JSON.st
 export const put = (p, body) => api(p, { method: "PUT", body: body ? JSON.stringify(body) : null });
 export const del = (p) => api(p, { method: "DELETE" });
 
+/** Upload a single image via multipart form. Returns `{url, filename, size}`. */
+export async function uploadImage(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  return api("/api/admin/uploads", { method: "POST", body: fd });
+}
+
 /**
  * Render an item/task icon, supporting both file paths and emoji fallbacks.
  * size: "sm" (24px), "md" (32px), "lg" (48px), "xl" (64px).
@@ -46,5 +53,24 @@ export function iconHtml(icon, size = "md", alt = "") {
   }
   // emoji fallback for legacy DB rows
   return `<span class="${cls} pixel-icon-emoji">${safe}</span>`;
+}
+
+/**
+ * Render a uniform 1:1 product/inventory image frame. If `item.image_url` is set
+ * (uploaded photo), it fills via object-fit: cover. Otherwise the pixel-art icon
+ * is centered with padding. Use one of "lg" (in inventory cells), "xl" (in shop
+ * and market product cards), or "md" (in listings).
+ */
+export function productImg(item, size = "xl") {
+  if (!item) return `<div class="img-frame img-frame-${size}"></div>`;
+  const src = item.image_url || item.icon || "/static/img/ui/box.svg";
+  const safe = String(src).trim();
+  const alt = (item.name || "").replace(/"/g, "");
+  if (safe.startsWith("/") || safe.startsWith("http")) {
+    const mode = item.image_url ? "cover" : "contain";
+    return `<div class="img-frame img-frame-${size}"><img src="${safe}" alt="${alt}" class="img-${mode}"/></div>`;
+  }
+  // emoji fallback for legacy DB rows
+  return `<div class="img-frame img-frame-${size}"><span class="img-emoji">${safe}</span></div>`;
 }
 

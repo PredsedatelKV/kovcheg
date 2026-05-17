@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml } from "/static/api.js";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -35,7 +35,7 @@ export async function renderAdmin(root) {
         <h1>Админ</h1>
         <div class="subtitle">Полный контроль над Ковчегом.</div>
       </div>
-      <div class="hero-head"><img src="/static/img/tabs/admin.svg" alt="" class="hero-img"/></div>
+      <div class="hero-head"><img src="/static/img/admin_emblem.svg" alt="" class="hero-img-head"/></div>
     </section>
 
     <div class="admin-tabs">
@@ -667,6 +667,84 @@ async function renderTasks(body) {
 }
 
 // ---------- ITEMS ----------
+function photoField(label, hint, currentUrl, key = "image_url") {
+  const preview = currentUrl
+    ? `<img src="${escapeHtml(currentUrl)}" alt=""/>`
+    : `<span class="photo-empty">Нет фото</span>`;
+  return `
+    <label class="admin-field admin-field-photo">
+      <span>${escapeHtml(label)}</span>
+      <div class="photo-uploader" data-photo-key="${escapeHtml(key)}">
+        <div class="photo-preview">${preview}</div>
+        <div class="photo-controls">
+          <input type="file" accept="image/*" class="photo-input" hidden/>
+          <button type="button" class="btn btn-secondary btn-sm photo-pick">Загрузить фото</button>
+          ${currentUrl ? `<button type="button" class="btn btn-danger btn-sm photo-clear">Убрать</button>` : ""}
+          <input type="hidden" class="photo-value" value="${escapeHtml(currentUrl || "")}"/>
+        </div>
+        ${hint ? `<small class="photo-hint">${escapeHtml(hint)}</small>` : ""}
+      </div>
+    </label>
+  `;
+}
+
+function bindPhotoUploader(scope) {
+  scope.querySelectorAll(".photo-uploader").forEach((widget) => {
+    const fileInput = widget.querySelector(".photo-input");
+    const pickBtn = widget.querySelector(".photo-pick");
+    const clearBtn = widget.querySelector(".photo-clear");
+    const valueInput = widget.querySelector(".photo-value");
+    const preview = widget.querySelector(".photo-preview");
+    pickBtn?.addEventListener("click", () => fileInput.click());
+    fileInput?.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      pickBtn.disabled = true;
+      pickBtn.textContent = "Загрузка…";
+      try {
+        const res = await uploadImage(file);
+        valueInput.value = res.url;
+        preview.innerHTML = `<img src="${res.url}" alt=""/>`;
+        let resetBtn = widget.querySelector(".photo-clear");
+        if (!resetBtn) {
+          resetBtn = document.createElement("button");
+          resetBtn.type = "button";
+          resetBtn.className = "btn btn-danger btn-sm photo-clear";
+          resetBtn.textContent = "Убрать";
+          pickBtn.after(resetBtn);
+          resetBtn.addEventListener("click", clearHandler);
+        }
+        window.kov.toast("Фото загружено");
+      } catch (err) {
+        window.kov.toast(err.message || "Не удалось загрузить");
+      } finally {
+        pickBtn.disabled = false;
+        pickBtn.textContent = "Загрузить фото";
+        fileInput.value = "";
+      }
+    });
+    function clearHandler() {
+      valueInput.value = "";
+      preview.innerHTML = `<span class="photo-empty">Нет фото</span>`;
+      const cb = widget.querySelector(".photo-clear");
+      cb?.remove();
+    }
+    clearBtn?.addEventListener("click", clearHandler);
+  });
+}
+
+function readItemForm(card, fallback = {}) {
+  const get = (k) => card.querySelector(`[data-k="${k}"]`)?.value ?? fallback[k] ?? "";
+  return {
+    name: get("name"),
+    icon: get("icon"),
+    image_url: card.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value')?.value || null,
+    description: get("description"),
+    category: get("category") || "Ресурсы",
+    rarity: get("rarity") || "Обычный",
+  };
+}
+
 async function renderItems(body) {
   const rows = await get("/api/admin/items");
   body.innerHTML = `
@@ -675,7 +753,8 @@ async function renderItems(body) {
       formGrid(
         field("Код (англ.)", `<input class="input" id="i-code"/>`),
         field("Название", `<input class="input" id="i-name"/>`),
-        field("Иконка", `<input class="input" id="i-icon" value="/static/img/ui/box.svg"/>`),
+        photoField("Фото товара", "JPG/PNG/WebP до 5 МБ — покажется в Магазине и инвентаре", null, "image_url"),
+        field("Иконка (fallback)", `<input class="input" id="i-icon" value="/static/img/ui/box.svg"/>`),
         field("Описание", `<textarea class="input" id="i-desc" rows="2"></textarea>`),
         field("Категория", `<input class="input" id="i-cat" value="Ресурсы"/>`),
         field("Редкость", `<input class="input" id="i-rare" value="Обычный"/>`),
@@ -684,11 +763,18 @@ async function renderItems(body) {
     ${rows
       .map(
         (i) => `
-      <div class="admin-card" data-id="${i.id}">
-        <h3 class="admin-card-title"><img src="${escapeHtml(i.icon)}" class="icon icon-sm" alt=""/> ${escapeHtml(i.name)} <span class="admin-badge">${escapeHtml(i.code)}</span></h3>
+      <div class="admin-card admin-card-item" data-id="${i.id}">
+        <div class="admin-card-header">
+          ${productImg(i, "md")}
+          <div>
+            <h3 class="admin-card-title">${escapeHtml(i.name)}</h3>
+            <div class="admin-badges"><span class="admin-badge">${escapeHtml(i.code)}</span><span class="admin-badge">${escapeHtml(i.category)}</span></div>
+          </div>
+        </div>
         ${formGrid(
           field("Название", `<input class="input" data-k="name" value="${escapeHtml(i.name)}"/>`),
-          field("Иконка", `<input class="input" data-k="icon" value="${escapeHtml(i.icon)}"/>`),
+          photoField("Фото товара", "JPG/PNG/WebP до 5 МБ", i.image_url, "image_url"),
+          field("Иконка (fallback)", `<input class="input" data-k="icon" value="${escapeHtml(i.icon)}"/>`),
           field("Описание", `<textarea class="input" data-k="description" rows="2">${escapeHtml(i.description || "")}</textarea>`),
           field("Категория", `<input class="input" data-k="category" value="${escapeHtml(i.category)}"/>`),
           field("Редкость", `<input class="input" data-k="rarity" value="${escapeHtml(i.rarity)}"/>`),
@@ -700,11 +786,15 @@ async function renderItems(body) {
       )
       .join("")}
   `;
+  bindPhotoUploader(body);
   body.querySelector("#i-create").addEventListener("click", async () => {
+    const newCard = body.querySelector(".admin-card");  // first card = the "new item" form
+    const photoVal = newCard.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value')?.value || null;
     const payload = {
       code: body.querySelector("#i-code").value.trim(),
       name: body.querySelector("#i-name").value.trim(),
       icon: body.querySelector("#i-icon").value.trim(),
+      image_url: photoVal,
       description: body.querySelector("#i-desc").value,
       category: body.querySelector("#i-cat").value || "Ресурсы",
       rarity: body.querySelector("#i-rare").value || "Обычный",
@@ -724,13 +814,15 @@ async function renderItems(body) {
     const id = card.dataset.id;
     const orig = rows.find((r) => r.id === Number(id));
     card.querySelector('[data-action="save"]').addEventListener("click", async () => {
+      const form = readItemForm(card, orig);
       const payload = {
         code: orig.code,
-        name: card.querySelector('[data-k="name"]').value,
-        icon: card.querySelector('[data-k="icon"]').value,
-        description: card.querySelector('[data-k="description"]').value,
-        category: card.querySelector('[data-k="category"]').value,
-        rarity: card.querySelector('[data-k="rarity"]').value,
+        name: form.name,
+        icon: form.icon,
+        image_url: form.image_url,
+        description: form.description,
+        category: form.category,
+        rarity: form.rarity,
         can_gift: orig.can_gift,
         can_activate: orig.can_activate,
       };

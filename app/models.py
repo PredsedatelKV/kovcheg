@@ -52,6 +52,7 @@ class Item(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     icon: Mapped[str] = mapped_column(String(64), default="📦")  # эмодзи или ключ ассета
+    image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)  # фото товара (если загружено)
     rarity: Mapped[str] = mapped_column(String(32), default="Обычный")  # Обычный/Редкий/Эпический
     category: Mapped[str] = mapped_column(String(32), default="Ресурсы")  # Ресурсы/Ускорители/Декор/Другое
     can_gift: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -1,4 +1,4 @@
-import { get, post, iconHtml } from "/static/api.js";
+import { get, post, iconHtml, productImg } from "/static/api.js";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -7,7 +7,7 @@ function invCell(row) {
   return `
     <div class="inv-cell" data-item-id="${row.item.id}">
       <span class="qty">×${row.quantity}</span>
-      <div class="ic">${iconHtml(row.item.icon, "lg", row.item.name)}</div>
+      ${productImg(row.item, "lg")}
       <div class="name">${escapeHtml(row.item.name)}</div>
       <div class="rare">${escapeHtml(row.item.rarity)}</div>
       <div class="acts">
