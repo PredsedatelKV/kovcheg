@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.api.profile import _item_to_out
@@ -13,13 +13,7 @@ router = APIRouter(prefix="/api/shop", tags=["shop"])
 
 @router.get("/products", response_model=list[schemas.ShopProductOut])
 def list_products(db: Session = Depends(get_db)) -> list[schemas.ShopProductOut]:
-    products = (
-        db.query(models.ShopProduct)
-        .options(joinedload(models.ShopProduct.item))
-        .filter(models.ShopProduct.is_active.is_(True))
-        .order_by(models.ShopProduct.id)
-        .all()
-    )
+    products = db.query(models.ShopProduct).filter(models.ShopProduct.is_active.is_(True)).order_by(models.ShopProduct.id).all()
     return [schemas.ShopProductOut(id=p.id, item=_item_to_out(p.item), price=p.price) for p in products]
 
 

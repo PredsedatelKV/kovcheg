@@ -91,8 +91,8 @@ function userOptions(selectedId = null) {
     .join("");
 }
 
-function cardBlock(title, inner, extraClass = "") {
-  return `<div class="admin-card ${extraClass}"><h3 class="admin-card-title">${escapeHtml(title)}</h3>${inner}</div>`;
+function cardBlock(title, inner) {
+  return `<div class="admin-card"><h3 class="admin-card-title">${escapeHtml(title)}</h3>${inner}</div>`;
 }
 
 function field(label, inputHtml) {
@@ -450,17 +450,13 @@ async function renderShop(body) {
       formGrid(
         field("Предмет", `<select class="input" id="s-item">${itemOptions()}</select>`),
         field("Цена", `<input class="input" id="s-price" type="number" min="0" value="100"/>`),
-      ) + `<p class="admin-sub">Фото берётся из карточки предмета (раздел «Предметы»).</p><button class="btn btn-sm" id="s-create">Добавить</button>`,
-      "admin-card-new",
+      ) + `<button class="btn btn-sm" id="s-create">Добавить</button>`,
     )}
     ${rows
       .map(
         (p) => `
-      <div class="admin-card admin-card-shop" data-id="${p.id}">
-        <div class="admin-card-header">
-          ${productImg(p.item, "md")}
-          <h3 class="admin-card-title">${escapeHtml(p.item.name)}</h3>
-        </div>
+      <div class="admin-card" data-id="${p.id}">
+        <h3 class="admin-card-title"><img src="${escapeHtml(p.item.icon)}" class="icon icon-sm" alt=""/> ${escapeHtml(p.item.name)}</h3>
         ${formGrid(
           field("Предмет", `<select class="input" data-k="item_id">${itemOptions(p.item.id)}</select>`),
           field("Цена", `<input class="input" data-k="price" type="number" min="0" value="${p.price}"/>`),
@@ -487,7 +483,7 @@ async function renderShop(body) {
       window.kov.toast(err.message);
     }
   });
-  body.querySelectorAll(".admin-card-shop[data-id]").forEach((card) => {
+  body.querySelectorAll('.admin-card[data-id]').forEach((card) => {
     const id = card.dataset.id;
     card.querySelector('[data-action="save"]').addEventListener("click", async () => {
       const payload = {
@@ -522,17 +518,13 @@ async function renderMarket(body) {
         field("Предмет", `<select class="input" id="m-item">${itemOptions()}</select>`),
         field("Кол-во", `<input class="input" id="m-qty" type="number" min="1" value="1"/>`),
         field("Цена", `<input class="input" id="m-price" type="number" min="1" value="100"/>`),
-      ) + `<p class="admin-sub">Фото берётся из карточки предмета (раздел «Предметы»).</p><button class="btn btn-sm" id="m-create">Добавить</button>`,
-      "admin-card-new",
+      ) + `<button class="btn btn-sm" id="m-create">Добавить</button>`,
     )}
     ${rows
       .map(
         (l) => `
-      <div class="admin-card admin-card-market" data-id="${l.id}">
-        <div class="admin-card-header">
-          ${productImg(l.item, "md")}
-          <h3 class="admin-card-title">${escapeHtml(l.item.name)}</h3>
-        </div>
+      <div class="admin-card" data-id="${l.id}">
+        <h3 class="admin-card-title"><img src="${escapeHtml(l.item.icon)}" class="icon icon-sm" alt=""/> ${escapeHtml(l.item.name)}</h3>
         <div class="admin-sub">Продаёт: ${escapeHtml(l.seller_name)} · ${l.quantity} шт · 🪙 ${l.price}</div>
         ${formGrid(
           field("Цена", `<input class="input" data-k="price" type="number" min="1" value="${l.price}"/>`),
@@ -562,7 +554,7 @@ async function renderMarket(body) {
       window.kov.toast(err.message);
     }
   });
-  body.querySelectorAll(".admin-card-market[data-id]").forEach((card) => {
+  body.querySelectorAll('.admin-card[data-id]').forEach((card) => {
     const id = card.dataset.id;
     const row = rows.find((r) => r.id === Number(id));
     card.querySelector('[data-action="save"]').addEventListener("click", async () => {
@@ -743,12 +735,10 @@ function bindPhotoUploader(scope) {
 
 function readItemForm(card, fallback = {}) {
   const get = (k) => card.querySelector(`[data-k="${k}"]`)?.value ?? fallback[k] ?? "";
-  const rawPhoto = card.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value')?.value;
-  const imageUrl = rawPhoto?.trim() ? rawPhoto.trim() : null;
   return {
     name: get("name"),
     icon: get("icon"),
-    image_url: imageUrl,
+    image_url: card.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value')?.value || null,
     description: get("description"),
     category: get("category") || "Ресурсы",
     rarity: get("rarity") || "Обычный",
@@ -769,7 +759,6 @@ async function renderItems(body) {
         field("Категория", `<input class="input" id="i-cat" value="Ресурсы"/>`),
         field("Редкость", `<input class="input" id="i-rare" value="Обычный"/>`),
       ) + `<button class="btn btn-sm" id="i-create">Добавить</button>`,
-      "admin-card-new admin-card-item-new",
     )}
     ${rows
       .map(
@@ -799,9 +788,8 @@ async function renderItems(body) {
   `;
   bindPhotoUploader(body);
   body.querySelector("#i-create").addEventListener("click", async () => {
-    const newCard = body.querySelector(".admin-card-item-new");
-    const rawPhoto = newCard?.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value')?.value;
-    const photoVal = rawPhoto?.trim() ? rawPhoto.trim() : null;
+    const newCard = body.querySelector(".admin-card");  // first card = the "new item" form
+    const photoVal = newCard.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value')?.value || null;
     const payload = {
       code: body.querySelector("#i-code").value.trim(),
       name: body.querySelector("#i-name").value.trim(),
