@@ -178,3 +178,17 @@ class LegalText(Base):
     title: Mapped[str] = mapped_column(String(128), nullable=False)
     body: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class WheelPrize(Base):
+    __tablename__ = "wheel_prizes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    label: Mapped[str] = mapped_column(String(128), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), default="coins")  # coins | item
+    value: Mapped[int] = mapped_column(Integer, default=0)
+    item_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    icon: Mapped[str] = mapped_column(String(256), default="/static/img/ui/coin.svg")
+    weight: Mapped[int] = mapped_column(Integer, default=10)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)

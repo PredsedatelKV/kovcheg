@@ -1,6 +1,8 @@
 import { renderHome } from "/static/pages/home.js";
 import { renderProfile } from "/static/pages/profile.js";
 import { renderKoverna } from "/static/pages/koverna.js";
+import { renderAdmin } from "/static/pages/admin.js";
+import { get } from "/static/api.js";
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -14,6 +16,7 @@ const TABS = {
   home: renderHome,
   profile: renderProfile,
   koverna: renderKoverna,
+  admin: renderAdmin,
 };
 
 const viewEl = document.getElementById("view");
@@ -21,6 +24,8 @@ const tabButtons = document.querySelectorAll(".tabbtn");
 
 function setTab(name) {
   if (!TABS[name]) name = "home";
+  const btn = document.querySelector(`.tabbtn[data-tab="${name}"]`);
+  if (btn && btn.hidden) name = "home";
   tabButtons.forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
   viewEl.scrollTo?.({ top: 0 });
   window.scrollTo({ top: 0 });
@@ -35,8 +40,20 @@ tabButtons.forEach((btn) => {
   btn.addEventListener("click", () => setTab(btn.dataset.tab));
 });
 
-const initial = localStorage.getItem("kovcheg.tab") || "home";
-setTab(initial);
+// Pre-fetch /me to figure out admin status; show or hide the Admin tab accordingly.
+(async () => {
+  try {
+    const me = await get("/api/profile/me");
+    window.kov && (window.kov.me = me.user);
+    if (me.user?.is_admin) {
+      document.querySelectorAll(".admin-only").forEach((el) => el.removeAttribute("hidden"));
+    }
+  } catch (err) {
+    console.warn("Failed to fetch /me for admin gate", err);
+  }
+  const initial = localStorage.getItem("kovcheg.tab") || "home";
+  setTab(initial);
+})();
 
 // Global helpers
 window.kov = {

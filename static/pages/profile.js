@@ -64,9 +64,11 @@ export async function renderProfile(root) {
       <div class="card-row" style="margin-top:8px">
         <div class="wallet-balance">${iconHtml("/static/img/ui/coin.svg", "md", "")} Баланс: <strong>${user.balance}</strong> монет</div>
       </div>
-      <div class="wallet-actions">
-        <button class="btn btn-outline" data-action="transfer">↗ Перевести</button>
-        <button class="btn btn-outline" data-action="receive">↙ Получить</button>
+      <div class="wallet-actions wallet-actions-single">
+        <button class="btn btn-transfer" data-action="transfer">
+          <img src="/static/img/ui/coin.svg" alt="" class="icon icon-md"/>
+          <span>Перевести</span>
+        </button>
       </div>
     </div>
 
@@ -94,7 +96,6 @@ export async function renderProfile(root) {
 
   bindCellActions(root);
   root.querySelector('[data-action="transfer"]').addEventListener("click", () => openTransferDialog(user));
-  root.querySelector('[data-action="receive"]').addEventListener("click", () => openReceiveDialog(user));
 
   root.querySelectorAll(".task-row").forEach((row) => {
     row.addEventListener("click", () => {
@@ -162,19 +163,38 @@ function openAllMyTasks(myTasks, root) {
   );
 }
 
-function openTransferDialog(user) {
+async function openTransferDialog(user) {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <h2>Перевод монет</h2>
-    <p style="color:var(--text-soft); font-size:13px">Баланс: ${user.balance} монет</p>
-    <label class="field-label">Получатель (username без @ или Telegram ID)</label>
-    <input class="input" id="recipient" placeholder="omar" />
+    <p style="color:var(--text-soft); font-size:13px">Баланс: <strong>${user.balance}</strong> монет</p>
+    <label class="field-label">Кому</label>
+    <select class="input" id="recipient">
+      <option value="">Загрузка…</option>
+    </select>
     <label class="field-label">Сумма</label>
-    <input class="input" id="amount" type="number" min="1" />
-    <button class="btn" id="send-btn" style="margin-top:14px">Отправить</button>
+    <input class="input" id="amount" type="number" min="1" placeholder="100" />
+    <button class="btn btn-transfer-confirm" id="send-btn">Отправить</button>
   `);
+  const select = modal.querySelector("#recipient");
+  let players = [];
+  try {
+    players = await get("/api/profile/players");
+  } catch (err) {
+    select.innerHTML = `<option value="">Не удалось загрузить</option>`;
+    window.kov.toast(err.message);
+    return;
+  }
+  if (!players.length) {
+    select.innerHTML = `<option value="">Нет других игроков</option>`;
+    return;
+  }
+  select.innerHTML = players
+    .map((p) => `<option value="uid:${p.id}">${escapeHtml(p.first_name)} (@${escapeHtml(p.username || "—")})</option>`)
+    .join("");
+
   modal.querySelector("#send-btn").addEventListener("click", async () => {
-    const recipient = modal.querySelector("#recipient").value.trim();
+    const recipient = select.value;
     const amount = Number(modal.querySelector("#amount").value);
     if (!recipient || !amount) return window.kov.toast("Заполни поля");
     try {
@@ -186,21 +206,6 @@ function openTransferDialog(user) {
       window.kov.toast(err.message);
     }
   });
-}
-
-function openReceiveDialog(user) {
-  window.kov.showModal(`
-    <button class="close" onclick="closeModal()">×</button>
-    <h2>Получить монеты</h2>
-    <p style="color:var(--text-soft); font-size:14px; margin-top:8px">Скажи отправителю свой username или Telegram ID:</p>
-    <div style="background: var(--surface-2); border-radius: 12px; padding: 14px; margin-top: 10px; text-align:center;">
-      <div style="font-size:13px; color:var(--text-soft)">Username</div>
-      <div style="font-size:18px; font-weight:700">@${user.username || "—"}</div>
-      <div style="font-size:13px; color:var(--text-soft); margin-top:10px">Telegram ID</div>
-      <div style="font-size:18px; font-weight:700">${user.telegram_id}</div>
-    </div>
-    <button class="btn btn-secondary" style="margin-top:14px" onclick="closeModal()">Закрыть</button>
-  `);
 }
 
 function openGiftDialog(itemId) {

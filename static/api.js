@@ -27,6 +27,9 @@ export async function api(path, options = {}) {
 
 export const get = (p) => api(p);
 export const post = (p, body) => api(p, { method: "POST", body: body ? JSON.stringify(body) : null });
+export const patch = (p, body) => api(p, { method: "PATCH", body: body ? JSON.stringify(body) : null });
+export const put = (p, body) => api(p, { method: "PUT", body: body ? JSON.stringify(body) : null });
+export const del = (p) => api(p, { method: "DELETE" });
 
 /**
  * Render an item/task icon, supporting both file paths and emoji fallbacks.
