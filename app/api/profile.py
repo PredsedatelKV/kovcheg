@@ -56,6 +56,7 @@ def _item_to_out(item: models.Item) -> schemas.ItemOut:
         name=item.name,
         description=item.description,
         icon=item.icon,
+        image_url=item.image_url,
         rarity=item.rarity,
         category=item.category,
         can_gift=item.can_gift,

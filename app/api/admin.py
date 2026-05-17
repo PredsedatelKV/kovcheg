@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+import re
+import time
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -8,6 +13,12 @@ from app.auth import is_admin, require_admin
 from app.db import get_db
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+
+UPLOADS_DIR = Path(__file__).resolve().parent.parent.parent / "static" / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+ALLOWED_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
+SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9._-]+")
 
 
 # ------- helpers -------
@@ -33,6 +44,7 @@ def _item_out(i: models.Item) -> schemas.ItemOut:
         name=i.name,
         description=i.description,
         icon=i.icon,
+        image_url=i.image_url,
         rarity=i.rarity,
         category=i.category,
         can_gift=i.can_gift,
@@ -204,6 +216,27 @@ def update_item(item_id: int, body: schemas.AdminItemBody, db: Session = Depends
     db.commit()
     db.refresh(item)
     return _item_out(item)
+
+
+# ------- uploads (images for products / items) -------
+
+@router.post("/uploads")
+async def upload_image(file: UploadFile) -> dict:
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="Файл не передан")
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_IMAGE_EXT:
+        raise HTTPException(status_code=400, detail=f"Расширение {ext} не поддерживается")
+    data = await file.read()
+    if len(data) == 0:
+        raise HTTPException(status_code=400, detail="Файл пустой")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="Файл слишком большой (макс. 5 МБ)")
+    stem = SAFE_NAME_RE.sub("-", Path(file.filename).stem)[:48] or "image"
+    safe_name = f"{int(time.time())}-{uuid.uuid4().hex[:8]}-{stem}{ext}"
+    dest = UPLOADS_DIR / safe_name
+    dest.write_bytes(data)
+    return {"url": f"/static/uploads/{safe_name}", "filename": safe_name, "size": len(data)}
 
 
 # ------- news -------

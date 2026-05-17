@@ -11,3 +11,9 @@ data/
 .idea/
 .vscode/
 *.db
+.screens-*.png
+TEST_PLAN.md
+test-report.md
+# user-uploaded item photos live here at runtime
+static/uploads/*
+!static/uploads/.gitkeep

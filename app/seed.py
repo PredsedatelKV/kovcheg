@@ -71,6 +71,17 @@ def migrate_icons(db: Session) -> None:
             task.icon = path
 
 
+def migrate_schema(db: Session) -> None:
+    """Lightweight in-place migrations for SQLite (add columns to existing tables)."""
+    from sqlalchemy import text  # local import to keep startup cheap
+
+    # items.image_url — добавлено в PR #5 (фото товаров в админке)
+    cols = {row[1] for row in db.execute(text("PRAGMA table_info(items)")).fetchall()}
+    if "image_url" not in cols:
+        db.execute(text("ALTER TABLE items ADD COLUMN image_url VARCHAR(512)"))
+        db.commit()
+
+
 PLAYERS: list[dict] = [
     {
         "telegram_id": 10001,

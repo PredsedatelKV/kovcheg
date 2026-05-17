@@ -32,6 +32,7 @@ class ItemOut(BaseModel):
     name: str
     description: str
     icon: str
+    image_url: str | None = None
     rarity: str
     category: str
     can_gift: bool
@@ -191,6 +192,7 @@ class AdminItemBody(BaseModel):
     name: str
     description: str = ""
     icon: str = "/static/img/ui/box.svg"
+    image_url: str | None = None
     rarity: str = "Обычный"
     category: str = "Ресурсы"
     can_gift: bool = True
