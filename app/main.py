@@ -21,7 +21,7 @@ from app.api import wheel as wheel_api
 from app.bot import configure_webhook, feed_update, set_menu_button
 from app.config import get_settings
 from app.db import Base, engine, session_scope
-from app.seed import migrate_icons, seed
+from app.seed import migrate_icons, migrate_schema, seed
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     with session_scope() as db:
+        migrate_schema(db)
         seed(db)
         migrate_icons(db)
     settings = get_settings()
