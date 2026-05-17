@@ -61,21 +61,13 @@ export function iconHtml(icon, size = "md", alt = "") {
  * is centered with padding. Use one of "lg" (in inventory cells), "xl" (in shop
  * and market product cards), or "md" (in listings).
  */
-function itemImageUrl(item) {
-  const url = item?.image_url;
-  if (url == null) return null;
-  const trimmed = String(url).trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
 export function productImg(item, size = "xl") {
   if (!item) return `<div class="img-frame img-frame-${size}"></div>`;
-  const photo = itemImageUrl(item);
-  const src = photo || item.icon || "/static/img/ui/box.svg";
+  const src = item.image_url || item.icon || "/static/img/ui/box.svg";
   const safe = String(src).trim();
   const alt = (item.name || "").replace(/"/g, "");
   if (safe.startsWith("/") || safe.startsWith("http")) {
-    const mode = photo ? "cover" : "contain";
+    const mode = item.image_url ? "cover" : "contain";
     return `<div class="img-frame img-frame-${size}"><img src="${safe}" alt="${alt}" class="img-${mode}"/></div>`;
   }
   // emoji fallback for legacy DB rows
