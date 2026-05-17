@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.api.profile import _inventory_to_out, _item_to_out, _user_to_out
@@ -27,7 +27,6 @@ def _listing_to_out(listing: models.MarketListing) -> schemas.MarketListingOut:
 def listings(user: models.User = Depends(current_user), db: Session = Depends(get_db)) -> list[schemas.MarketListingOut]:
     rows = (
         db.query(models.MarketListing)
-        .options(joinedload(models.MarketListing.item), joinedload(models.MarketListing.seller))
         .filter(models.MarketListing.is_active.is_(True), models.MarketListing.seller_id != user.id)
         .order_by(models.MarketListing.created_at.desc())
         .all()
