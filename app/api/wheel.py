@@ -12,23 +12,32 @@ from app.db import get_db
 
 router = APIRouter(prefix="/api/wheel", tags=["wheel"])
 
-# Призы для колеса. Должны совпадать по порядку и количеству с фронтом.
-SECTORS: list[dict] = [
-    {"label": "50 монет", "kind": "coins", "value": 50, "icon": "/static/img/ui/coin.svg", "weight": 25},
-    {"label": "Сундук", "kind": "item", "value": 0, "icon": "/static/img/items/builders_chest.svg", "item_code": "builders_chest", "weight": 8},
-    {"label": "25 монет", "kind": "coins", "value": 25, "icon": "/static/img/ui/coin.svg", "weight": 30},
-    {"label": "200 монет", "kind": "coins", "value": 200, "icon": "/static/img/ui/money_bag.svg", "weight": 5},
-    {"label": "50 монет", "kind": "coins", "value": 50, "icon": "/static/img/ui/coin.svg", "weight": 20},
-    {"label": "Ускоритель", "kind": "item", "value": 0, "icon": "/static/img/items/booster_1h.svg", "item_code": "booster_1h", "weight": 6},
-    {"label": "10 монет", "kind": "coins", "value": 10, "icon": "/static/img/ui/coin.svg", "weight": 30},
-    {"label": "Свиток опыта", "kind": "item", "value": 0, "icon": "/static/img/items/exp_scroll.svg", "item_code": "exp_scroll", "weight": 6},
-]
+
+def _load_sectors(db: Session) -> list[dict]:
+    rows = (
+        db.query(models.WheelPrize)
+        .filter(models.WheelPrize.is_active.is_(True))
+        .order_by(models.WheelPrize.sort_order, models.WheelPrize.id)
+        .all()
+    )
+    return [
+        {
+            "id": p.id,
+            "label": p.label,
+            "kind": p.kind,
+            "value": p.value,
+            "icon": p.icon,
+            "item_code": p.item_code,
+            "weight": p.weight,
+        }
+        for p in rows
+    ]
 
 
-def _pick_sector() -> tuple[int, dict]:
-    weights = [s["weight"] for s in SECTORS]
-    idx = random.choices(range(len(SECTORS)), weights=weights, k=1)[0]
-    return idx, SECTORS[idx]
+def _pick_sector(sectors: list[dict]) -> tuple[int, dict]:
+    weights = [max(1, s["weight"]) for s in sectors]
+    idx = random.choices(range(len(sectors)), weights=weights, k=1)[0]
+    return idx, sectors[idx]
 
 
 @router.get("/status")
@@ -44,10 +53,11 @@ def status(user: models.User = Depends(current_user), db: Session = Depends(get_
     if last is not None and (datetime.utcnow() - last.created_at) < timedelta(hours=24):
         can_spin = False
         next_at = last.created_at + timedelta(hours=24)
+    sectors = _load_sectors(db)
     return {
         "can_spin": can_spin,
         "next_spin_at": next_at.isoformat() if next_at else None,
-        "sectors": [{"label": s["label"], "icon": s["icon"], "kind": s["kind"]} for s in SECTORS],
+        "sectors": [{"label": s["label"], "icon": s["icon"], "kind": s["kind"]} for s in sectors],
     }
 
 
@@ -62,7 +72,10 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
     if last is not None and (datetime.utcnow() - last.created_at) < timedelta(hours=24):
         raise HTTPException(status_code=429, detail="Колесо доступно раз в сутки")
 
-    idx, sector = _pick_sector()
+    sectors = _load_sectors(db)
+    if not sectors:
+        raise HTTPException(status_code=500, detail="Призы колеса не настроены")
+    idx, sector = _pick_sector(sectors)
 
     if sector["kind"] == "coins":
         user.wallet.balance += sector["value"]

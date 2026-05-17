@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.auth import current_user
+from app.auth import current_user, is_admin
 from app.db import get_db
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
@@ -21,7 +21,32 @@ def _user_to_out(user: models.User) -> schemas.UserOut:
         role=user.role,
         restrictions=user.restrictions,
         balance=user.wallet.balance if user.wallet else 0,
+        is_admin=is_admin(user),
     )
+
+
+@router.get("/players", response_model=list[schemas.PlayerOut])
+def list_players(
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> list[schemas.PlayerOut]:
+    """Все игроки кроме текущего — для выпадающего списка получателя при переводе."""
+    rows = (
+        db.query(models.User)
+        .filter(models.User.id != user.id)
+        .order_by(models.User.first_name)
+        .all()
+    )
+    return [
+        schemas.PlayerOut(
+            id=p.id,
+            telegram_id=p.telegram_id,
+            username=p.username,
+            first_name=p.first_name,
+            role=p.role,
+        )
+        for p in rows
+    ]
 
 
 def _item_to_out(item: models.Item) -> schemas.ItemOut:
@@ -97,8 +122,13 @@ def me(user: models.User = Depends(current_user), db: Session = Depends(get_db))
 
 def _resolve_recipient(db: Session, recipient: str) -> models.User:
     recipient = recipient.strip().lstrip("@")
-    user: models.User | None
-    if recipient.isdigit():
+    user: models.User | None = None
+    if recipient.startswith("uid:"):
+        # internal user id (used by player picker)
+        rest = recipient[4:]
+        if rest.isdigit():
+            user = db.query(models.User).filter(models.User.id == int(rest)).one_or_none()
+    elif recipient.isdigit():
         user = db.query(models.User).filter(models.User.telegram_id == int(recipient)).one_or_none()
     else:
         user = db.query(models.User).filter(models.User.username == recipient).one_or_none()
