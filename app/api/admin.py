@@ -21,6 +21,13 @@ MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
 SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9._-]+")
 
 
+def _normalize_image_url(url: str | None) -> str | None:
+    if url is None:
+        return None
+    trimmed = url.strip()
+    return trimmed if trimmed else None
+
+
 # ------- helpers -------
 
 def _admin_user_out(u: models.User) -> schemas.AdminUserOut:
@@ -199,7 +206,9 @@ def list_items(db: Session = Depends(get_db)) -> list[schemas.ItemOut]:
 def create_item(body: schemas.AdminItemBody, db: Session = Depends(get_db)) -> schemas.ItemOut:
     if db.query(models.Item).filter(models.Item.code == body.code).one_or_none() is not None:
         raise HTTPException(status_code=400, detail="Предмет с таким кодом уже есть")
-    item = models.Item(**body.model_dump())
+    data = body.model_dump()
+    data["image_url"] = _normalize_image_url(data.get("image_url"))
+    item = models.Item(**data)
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -212,6 +221,8 @@ def update_item(item_id: int, body: schemas.AdminItemBody, db: Session = Depends
     if item is None:
         raise HTTPException(status_code=404, detail="Предмет не найден")
     for k, v in body.model_dump().items():
+        if k == "image_url":
+            v = _normalize_image_url(v)
         setattr(item, k, v)
     db.commit()
     db.refresh(item)
