@@ -81,6 +81,18 @@ def migrate_schema(db: Session) -> None:
         db.execute(text("ALTER TABLE items ADD COLUMN image_url VARCHAR(512)"))
         db.commit()
 
+    # market_listings.target_user_id — добавлено в PR #6 (адресные объявления при продаже из инвентаря)
+    mcols = {row[1] for row in db.execute(text("PRAGMA table_info(market_listings)")).fetchall()}
+    if "target_user_id" not in mcols:
+        db.execute(text("ALTER TABLE market_listings ADD COLUMN target_user_id INTEGER REFERENCES users(id)"))
+        db.commit()
+
+    # shop_products.stock — складские остатки в магазине (-1 = безлимит)
+    scols = {row[1] for row in db.execute(text("PRAGMA table_info(shop_products)")).fetchall()}
+    if "stock" not in scols:
+        db.execute(text("ALTER TABLE shop_products ADD COLUMN stock INTEGER NOT NULL DEFAULT -1"))
+        db.commit()
+
 
 PLAYERS: list[dict] = [
     {
@@ -138,13 +150,13 @@ def seed_players(db: Session) -> None:
 
 
 WHEEL_PRIZES: list[dict] = [
-    {"label": "50 монет", "kind": "coins", "value": 50, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 25, "sort_order": 0},
+    {"label": "50 Ковбаксов", "kind": "coins", "value": 50, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 25, "sort_order": 0},
     {"label": "Сундук", "kind": "item", "value": 0, "item_code": "builders_chest", "icon": "/static/img/items/builders_chest.svg", "weight": 8, "sort_order": 1},
-    {"label": "25 монет", "kind": "coins", "value": 25, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 30, "sort_order": 2},
-    {"label": "200 монет", "kind": "coins", "value": 200, "item_code": None, "icon": "/static/img/ui/money_bag.svg", "weight": 5, "sort_order": 3},
-    {"label": "50 монет", "kind": "coins", "value": 50, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 20, "sort_order": 4},
+    {"label": "25 Ковбаксов", "kind": "coins", "value": 25, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 30, "sort_order": 2},
+    {"label": "200 Ковбаксов", "kind": "coins", "value": 200, "item_code": None, "icon": "/static/img/ui/money_bag.svg", "weight": 5, "sort_order": 3},
+    {"label": "50 Ковбаксов", "kind": "coins", "value": 50, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 20, "sort_order": 4},
     {"label": "Ускоритель", "kind": "item", "value": 0, "item_code": "booster_1h", "icon": "/static/img/items/booster_1h.svg", "weight": 6, "sort_order": 5},
-    {"label": "10 монет", "kind": "coins", "value": 10, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 30, "sort_order": 6},
+    {"label": "10 Ковбаксов", "kind": "coins", "value": 10, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 30, "sort_order": 6},
     {"label": "Свиток опыта", "kind": "item", "value": 0, "item_code": "exp_scroll", "icon": "/static/img/items/exp_scroll.svg", "weight": 6, "sort_order": 7},
 ]
 
@@ -340,7 +352,7 @@ def seed(db: Session) -> None:
         (
             "https://picsum.photos/seed/kovcheg-news-3/700/500",
             "Рынок расширен",
-            "Теперь на рынке можно выставлять любые предметы из инвентаря — и сразу получать монеты после продажи.",
+            "Теперь на рынке можно выставлять любые предметы из инвентаря — и сразу получать Ковбаксы после продажи.",
         ),
     ]
     for url, title, body in news_defs:

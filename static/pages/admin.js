@@ -3,6 +3,22 @@ import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/stati
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+const TRANSLIT = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "y",
+  к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f",
+  х: "h", ц: "ts", ч: "ch", ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+};
+function slugify(s = "") {
+  return s
+    .toLowerCase()
+    .split("")
+    .map((c) => TRANSLIT[c] ?? c)
+    .join("")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 32);
+}
+
 const SECTIONS = [
   { id: "users", label: "Игроки", icon: "/static/img/tabs/profile.svg" },
   { id: "news", label: "Новости", icon: "/static/img/ui/mail.svg" },
@@ -77,7 +93,7 @@ function itemOptions(selectedId = null) {
   return META.items
     .map(
       (i) =>
-        `<option value="${i.id}" ${selectedId === i.id ? "selected" : ""}>${escapeHtml(i.name)} (${escapeHtml(i.code)})</option>`,
+        `<option value="${i.id}" ${selectedId === i.id ? "selected" : ""}>${escapeHtml(i.name)}</option>`,
     )
     .join("");
 }
@@ -86,7 +102,7 @@ function userOptions(selectedId = null) {
   return META.users
     .map(
       (u) =>
-        `<option value="${u.id}" ${selectedId === u.id ? "selected" : ""}>${escapeHtml(u.first_name)} (@${escapeHtml(u.username || "")})</option>`,
+        `<option value="${u.id}" ${selectedId === u.id ? "selected" : ""}>${escapeHtml(u.first_name)}</option>`,
     )
     .join("");
 }
@@ -119,7 +135,7 @@ async function renderUsers(body) {
       (u) => `
     <div class="admin-card">
       <h3 class="admin-card-title">${escapeHtml(u.first_name)} ${u.is_admin ? '<span class="admin-badge">admin</span>' : ""}</h3>
-      <div class="admin-sub">@${escapeHtml(u.username || "")} · TG ${u.telegram_id} · 🪙 ${u.balance}</div>
+      <div class="admin-sub">TG ${u.telegram_id} · <img src="/static/img/ui/coin.svg" alt="" class="icon icon-sm inline-coin"/> ${u.balance} Ковбаксов</div>
       ${formGrid(
         field("Имя", `<input class="input" data-k="first_name" value="${escapeHtml(u.first_name)}"/>`),
         field("Должность", `<input class="input" data-k="role" value="${escapeHtml(u.role)}"/>`),
@@ -130,7 +146,7 @@ async function renderUsers(body) {
       </div>
       <hr class="admin-sep"/>
       <div class="row gap wrap">
-        <input class="input input-sm" data-k="delta" type="number" placeholder="±монеты" style="max-width:120px"/>
+        <input class="input input-sm" data-k="delta" type="number" placeholder="±Ковбаксы" style="max-width:120px"/>
         <input class="input input-sm" data-k="note" placeholder="комментарий" style="flex:1; min-width:120px"/>
         <button class="btn btn-sm" data-action="balance" data-id="${u.id}">Применить</button>
       </div>
@@ -349,11 +365,11 @@ async function renderWheel(body) {
         field(
           "Тип",
           `<select class="input" id="w-kind">
-            <option value="coins">монеты</option>
+            <option value="coins">Ковбаксы</option>
             <option value="item">предмет</option>
           </select>`,
         ),
-        field("Значение (монет)", `<input class="input" id="w-value" type="number" value="0"/>`),
+        field("Значение (Ковбаксов)", `<input class="input" id="w-value" type="number" value="0"/>`),
         field(
           "Предмет (если предмет)",
           `<select class="input" id="w-item"><option value="">—</option>${META.items.map((i) => `<option value="${i.code}">${escapeHtml(i.name)}</option>`).join("")}</select>`,
@@ -372,7 +388,7 @@ async function renderWheel(body) {
           field(
             "Тип",
             `<select class="input" data-k="kind">
-              <option value="coins" ${p.kind === "coins" ? "selected" : ""}>монеты</option>
+              <option value="coins" ${p.kind === "coins" ? "selected" : ""}>Ковбаксы</option>
               <option value="item" ${p.kind === "item" ? "selected" : ""}>предмет</option>
             </select>`,
           ),
@@ -450,6 +466,7 @@ async function renderShop(body) {
       formGrid(
         field("Предмет", `<select class="input" id="s-item">${itemOptions()}</select>`),
         field("Цена", `<input class="input" id="s-price" type="number" min="0" value="100"/>`),
+        field("В наличии (−1 = безлимит)", `<input class="input" id="s-stock" type="number" min="-1" value="-1"/>`),
       ) + `<button class="btn btn-sm" id="s-create">Добавить</button>`,
     )}
     ${rows
@@ -460,7 +477,9 @@ async function renderShop(body) {
         ${formGrid(
           field("Предмет", `<select class="input" data-k="item_id">${itemOptions(p.item.id)}</select>`),
           field("Цена", `<input class="input" data-k="price" type="number" min="0" value="${p.price}"/>`),
+          field("В наличии (−1 = безлимит)", `<input class="input" data-k="stock" type="number" min="-1" value="${p.stock ?? -1}"/>`),
         )}
+        <div class="admin-sub">${p.stock === -1 ? "Безлимит" : p.stock === 0 ? "Закончился" : `Осталось: ${p.stock}`}</div>
         <div class="row gap">
           <button class="btn btn-sm" data-action="save">Сохранить</button>
           <button class="btn btn-sm btn-danger" data-action="delete">Удалить</button>
@@ -474,6 +493,7 @@ async function renderShop(body) {
       item_id: Number(body.querySelector("#s-item").value),
       price: Number(body.querySelector("#s-price").value),
       is_active: true,
+      stock: Number(body.querySelector("#s-stock").value),
     };
     try {
       await post("/api/admin/shop", payload);
@@ -490,6 +510,7 @@ async function renderShop(body) {
         item_id: Number(card.querySelector('[data-k="item_id"]').value),
         price: Number(card.querySelector('[data-k="price"]').value),
         is_active: true,
+        stock: Number(card.querySelector('[data-k="stock"]').value),
       };
       try {
         await patch(`/api/admin/shop/${id}`, payload);
@@ -525,7 +546,7 @@ async function renderMarket(body) {
         (l) => `
       <div class="admin-card" data-id="${l.id}">
         <h3 class="admin-card-title"><img src="${escapeHtml(l.item.icon)}" class="icon icon-sm" alt=""/> ${escapeHtml(l.item.name)}</h3>
-        <div class="admin-sub">Продаёт: ${escapeHtml(l.seller_name)} · ${l.quantity} шт · 🪙 ${l.price}</div>
+        <div class="admin-sub">Продаёт: ${escapeHtml(l.seller_name)}${l.target_user_name ? ` → ${escapeHtml(l.target_user_name)}` : ""} · ${l.quantity} шт · <img src="/static/img/ui/coin.svg" alt="" class="icon icon-sm inline-coin"/> ${l.price}</div>
         ${formGrid(
           field("Цена", `<input class="input" data-k="price" type="number" min="1" value="${l.price}"/>`),
           field("Кол-во", `<input class="input" data-k="quantity" type="number" min="1" value="${l.quantity}"/>`),
@@ -591,7 +612,7 @@ async function renderTasks(body) {
         field("Название", `<input class="input" id="t-name"/>`),
         field("Описание", `<textarea class="input" id="t-desc" rows="3"></textarea>`),
         field("Иконка", `<input class="input" id="t-icon" value="/static/img/tasks/scroll.svg"/>`),
-        field("Награда (монет)", `<input class="input" id="t-reward" type="number" value="10"/>`),
+        field("Награда (Ковбаксов)", `<input class="input" id="t-reward" type="number" value="10"/>`),
         field("Цель", `<input class="input" id="t-target" type="number" value="1"/>`),
         field("Тип", `<select class="input" id="t-plan"><option value="0">Задание</option><option value="1">Ежедневный план</option></select>`),
       ) + `<button class="btn btn-sm" id="t-create">Добавить</button>`,
@@ -741,7 +762,6 @@ function readItemForm(card, fallback = {}) {
     image_url: card.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value')?.value || null,
     description: get("description"),
     category: get("category") || "Ресурсы",
-    rarity: get("rarity") || "Обычный",
   };
 }
 
@@ -751,13 +771,11 @@ async function renderItems(body) {
     ${cardBlock(
       "Новый предмет",
       formGrid(
-        field("Код (англ.)", `<input class="input" id="i-code"/>`),
         field("Название", `<input class="input" id="i-name"/>`),
         photoField("Фото товара", "JPG/PNG/WebP до 5 МБ — покажется в Магазине и инвентаре", null, "image_url"),
         field("Иконка (fallback)", `<input class="input" id="i-icon" value="/static/img/ui/box.svg"/>`),
         field("Описание", `<textarea class="input" id="i-desc" rows="2"></textarea>`),
         field("Категория", `<input class="input" id="i-cat" value="Ресурсы"/>`),
-        field("Редкость", `<input class="input" id="i-rare" value="Обычный"/>`),
       ) + `<button class="btn btn-sm" id="i-create">Добавить</button>`,
     )}
     ${rows
@@ -768,7 +786,7 @@ async function renderItems(body) {
           ${productImg(i, "md")}
           <div>
             <h3 class="admin-card-title">${escapeHtml(i.name)}</h3>
-            <div class="admin-badges"><span class="admin-badge">${escapeHtml(i.code)}</span><span class="admin-badge">${escapeHtml(i.category)}</span></div>
+            <div class="admin-badges"><span class="admin-badge">${escapeHtml(i.category)}</span></div>
           </div>
         </div>
         ${formGrid(
@@ -777,7 +795,6 @@ async function renderItems(body) {
           field("Иконка (fallback)", `<input class="input" data-k="icon" value="${escapeHtml(i.icon)}"/>`),
           field("Описание", `<textarea class="input" data-k="description" rows="2">${escapeHtml(i.description || "")}</textarea>`),
           field("Категория", `<input class="input" data-k="category" value="${escapeHtml(i.category)}"/>`),
-          field("Редкость", `<input class="input" data-k="rarity" value="${escapeHtml(i.rarity)}"/>`),
         )}
         <div class="row gap">
           <button class="btn btn-sm" data-action="save">Сохранить</button>
@@ -790,18 +807,20 @@ async function renderItems(body) {
   body.querySelector("#i-create").addEventListener("click", async () => {
     const newCard = body.querySelector(".admin-card");  // first card = the "new item" form
     const photoVal = newCard.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value')?.value || null;
+    const nameVal = body.querySelector("#i-name").value.trim();
+    const slug = slugify(nameVal);
     const payload = {
-      code: body.querySelector("#i-code").value.trim(),
-      name: body.querySelector("#i-name").value.trim(),
+      code: slug || `item_${Date.now()}`,
+      name: nameVal,
       icon: body.querySelector("#i-icon").value.trim(),
       image_url: photoVal,
       description: body.querySelector("#i-desc").value,
       category: body.querySelector("#i-cat").value || "Ресурсы",
-      rarity: body.querySelector("#i-rare").value || "Обычный",
+      rarity: "Обычный",
       can_gift: true,
       can_activate: false,
     };
-    if (!payload.code || !payload.name) return window.kov.toast("Код и название обязательны");
+    if (!payload.name) return window.kov.toast("Название обязательно");
     try {
       await post("/api/admin/items", payload);
       window.kov.toast("Создано");
@@ -822,7 +841,7 @@ async function renderItems(body) {
         image_url: form.image_url,
         description: form.description,
         category: form.category,
-        rarity: form.rarity,
+        rarity: orig.rarity || "Обычный",
         can_gift: orig.can_gift,
         can_activate: orig.can_activate,
       };

@@ -93,6 +93,7 @@ class ShopProductOut(BaseModel):
     id: int
     item: ItemOut
     price: int
+    stock: int = -1  # -1 = unlimited
 
 
 class MarketListingOut(BaseModel):
@@ -102,6 +103,8 @@ class MarketListingOut(BaseModel):
     item: ItemOut
     quantity: int
     price: int
+    target_user_id: int | None = None
+    target_user_name: str | None = None
 
 
 class BuyRequest(BaseModel):
@@ -111,6 +114,13 @@ class BuyRequest(BaseModel):
 class ListRequest(BaseModel):
     item_id: int
     quantity: int = Field(ge=1)
+    price: int = Field(ge=1)
+
+
+class SellRequest(BaseModel):
+    item_id: int
+    recipient: str  # "uid:<id>" or username/tg_id
+    quantity: int = Field(ge=1, default=1)
     price: int = Field(ge=1)
 
 
@@ -228,6 +238,7 @@ class AdminShopProductBody(BaseModel):
     item_id: int
     price: int = Field(ge=0)
     is_active: bool = True
+    stock: int = -1  # -1 = unlimited (default)
 
 
 class AdminMarketListingBody(BaseModel):

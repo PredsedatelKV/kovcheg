@@ -12,7 +12,10 @@ router = APIRouter(prefix="/api/market", tags=["market"])
 
 
 def _listing_to_out(listing: models.MarketListing) -> schemas.MarketListingOut:
-    seller_name = listing.seller.username or listing.seller.first_name or f"id{listing.seller.telegram_id}"
+    seller_name = listing.seller.first_name or f"Игрок #{listing.seller.id}"
+    target_name = None
+    if listing.target_user_id is not None and listing.target_user is not None:
+        target_name = listing.target_user.first_name or f"Игрок #{listing.target_user.id}"
     return schemas.MarketListingOut(
         id=listing.id,
         seller_id=listing.seller_id,
@@ -20,6 +23,8 @@ def _listing_to_out(listing: models.MarketListing) -> schemas.MarketListingOut:
         item=_item_to_out(listing.item),
         quantity=listing.quantity,
         price=listing.price,
+        target_user_id=listing.target_user_id,
+        target_user_name=target_name,
     )
 
 
@@ -27,7 +32,12 @@ def _listing_to_out(listing: models.MarketListing) -> schemas.MarketListingOut:
 def listings(user: models.User = Depends(current_user), db: Session = Depends(get_db)) -> list[schemas.MarketListingOut]:
     rows = (
         db.query(models.MarketListing)
-        .filter(models.MarketListing.is_active.is_(True), models.MarketListing.seller_id != user.id)
+        .filter(
+            models.MarketListing.is_active.is_(True),
+            models.MarketListing.seller_id != user.id,
+            # Публичные (target_user_id IS NULL) или адресованные именно этому юзеру
+            (models.MarketListing.target_user_id.is_(None) | (models.MarketListing.target_user_id == user.id)),
+        )
         .order_by(models.MarketListing.created_at.desc())
         .all()
     )
@@ -69,6 +79,10 @@ def create_listing(
     db.add(listing)
     db.commit()
     db.refresh(listing)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"📜 <b>{user.first_name}</b> выставил(а) на рынок: <b>{inv.item.name}</b> ×{payload.quantity} за {payload.price} Ковбаксов"
+    )
     return _listing_to_out(listing)
 
 
@@ -95,6 +109,10 @@ def unlist(
         inv.quantity += listing.quantity
     db.commit()
     db.refresh(listing)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"↩️ <b>{user.first_name}</b> снял(а) лот: <b>{listing.item.name}</b> ×{listing.quantity}"
+    )
     return _listing_to_out(listing)
 
 
@@ -109,8 +127,10 @@ def buy_listing(
         raise HTTPException(status_code=404, detail="Объявление не найдено")
     if listing.seller_id == user.id:
         raise HTTPException(status_code=400, detail="Нельзя купить у себя")
+    if listing.target_user_id is not None and listing.target_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Это предложение адресовано другому игроку")
     if user.wallet.balance < listing.price:
-        raise HTTPException(status_code=400, detail="Недостаточно монет")
+        raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
     seller = db.query(models.User).filter(models.User.id == listing.seller_id).one()
     user.wallet.balance -= listing.price
     seller.wallet.balance += listing.price
@@ -134,6 +154,10 @@ def buy_listing(
     )
     db.commit()
     db.refresh(user)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"💱 <b>{user.first_name}</b> купил(а) на рынке <b>{listing.item.name}</b> ×{listing.quantity} у <b>{seller.first_name}</b> за {listing.price} Ковбаксов"
+    )
     return _user_to_out(user)
 
 

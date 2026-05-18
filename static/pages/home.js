@@ -29,7 +29,7 @@ function taskRow(t) {
       <div class="ico">${iconHtml(t.icon, "md", t.name)}</div>
       <div class="meta">
         <h4>${escapeHtml(t.name)}</h4>
-        <p>Награда: ${t.reward} монет</p>
+        <p>Награда: ${t.reward} Ковбаксов</p>
       </div>
       <button class="btn btn-sm" data-action="start" data-task-id="${t.id}">Начать</button>
     </div>`;
@@ -211,7 +211,7 @@ function openTaskDetails(t) {
     <div class="task-card-icon">${iconHtml(t.icon, "xl", t.name)}</div>
     <h2 style="text-align:center;margin-top:0">${escapeHtml(t.name)}</h2>
     <p style="color:var(--text-soft); text-align:center; margin: 6px 0 14px">${escapeHtml(t.description)}</p>
-    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${t.reward} монет</div>
+    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${t.reward} Ковбаксов</div>
     <button class="btn" id="start-btn">Начать</button>
     <button class="btn btn-secondary" style="margin-top:8px" onclick="closeModal()">Закрыть</button>
   `);
@@ -285,7 +285,7 @@ async function openWheel() {
     const modal = window.kov.showModal(`
       <button class="close" onclick="closeModal()">×</button>
       <h2 style="text-align:center; margin-top:0">Ежедневное колесо фортуны</h2>
-      <p style="text-align:center; color:var(--text-soft); margin:0 0 12px">Крутите колесо и выигрывайте монеты и призы!</p>
+      <p style="text-align:center; color:var(--text-soft); margin:0 0 12px">Крутите колесо и выигрывайте Ковбаксы и призы!</p>
       <div class="wheel-stage">
         <div class="wheel-wrap">
           <div class="wheel-pointer"></div>

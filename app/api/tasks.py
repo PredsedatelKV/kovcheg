@@ -35,6 +35,10 @@ def start_task(
     db.add(ut)
     db.commit()
     db.refresh(ut)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"📥 <b>{user.first_name}</b> начал(а) задание «<b>{ut.task.name}</b>» (награда {ut.task.reward})"
+    )
     return _user_task_to_out(ut)
 
 
@@ -53,4 +57,8 @@ def cancel_task(
     ut.finished_at = datetime.utcnow()
     db.commit()
     db.refresh(ut)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"🚫 <b>{user.first_name}</b> прервал(а) задание «<b>{ut.task.name}</b>»"
+    )
     return _user_task_to_out(ut)
