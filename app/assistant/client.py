@@ -15,7 +15,7 @@ async def ask_llm(messages: list[dict[str, str]], max_tokens: int | None = None,
     settings = get_settings()
 
     if not settings.llm_api_key:
-        return "⚠️ Агент не настроен: не указан API-ключ для языковой модели. Обратитесь к администратору."
+        return "⚠️ Агент не настроен: не указан API-ключ. Скажи админу."
 
     if settings.llm_provider == "gemini":
         return await _ask_gemini(messages, max_tokens, temperature)
@@ -49,7 +49,7 @@ async def _ask_openrouter(messages: list[dict[str, str]], max_tokens: int | None
         except httpx.HTTPStatusError as exc:
             log.error("OpenRouter HTTP %s: %s", exc.response.status_code, exc.response.text)
             if exc.response.status_code == 401:
-                return "⚠️ Ошибка авторизации. Проверьте API-ключ."
+                return "⚠️ Ошибка авторизации. Проверь API-ключ."
             return f"⚠️ Ошибка сети (HTTP {exc.response.status_code})."
         except httpx.RequestError as exc:
             log.error("OpenRouter request error: %s", exc)
@@ -60,22 +60,27 @@ async def _ask_openrouter(messages: list[dict[str, str]], max_tokens: int | None
 
 
 async def _ask_gemini(messages: list[dict[str, str]], max_tokens: int | None, temperature: float | None) -> str:
-    """Google Gemini API — бесплатный tier до 60 req/min."""
+    """Google Gemini API — бесплатный tier."""
     settings = get_settings()
-    model = settings.llm_model or "gemini-1.5-flash"
+    model = settings.llm_model or "gemini-2.0-flash"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.llm_api_key}"
 
-    # Разделяем system и user сообщения
+    # Выделяем system prompt и историю
     system_text = ""
-    user_text = ""
+    contents: list[dict[str, Any]] = []
+
     for m in messages:
-        if m.get("role") == "system":
-            system_text = m.get("content", "")
-        else:
-            user_text += m.get("content", "") + "\n"
+        role = m.get("role", "user")
+        text = m.get("content", "")
+        if role == "system":
+            system_text = text
+        elif role == "user":
+            contents.append({"role": "user", "parts": [{"text": text}]})
+        elif role == "assistant":
+            contents.append({"role": "model", "parts": [{"text": text}]})
 
     payload: dict[str, Any] = {
-        "contents": [{"role": "user", "parts": [{"text": user_text.strip()}]}],
+        "contents": contents,
         "generationConfig": {
             "maxOutputTokens": max_tokens or settings.llm_max_tokens,
             "temperature": temperature or settings.llm_temperature,
@@ -103,7 +108,7 @@ async def _ask_gemini(messages: list[dict[str, str]], max_tokens: int | None, te
                 if "API key not valid" in err:
                     return "⚠️ Неверный Gemini API-ключ."
             if exc.response.status_code == 429:
-                return "⏳ Лимит запросов исчерпан. Подожди минуту."
+                return "⏳ Лимит запросов исчерпан. Подожди минутку, сосед."
             return f"⚠️ Ошибка Gemini (HTTP {exc.response.status_code})."
         except httpx.RequestError as exc:
             log.error("Gemini request error: %s", exc)
