@@ -10,6 +10,7 @@ router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
 class AskRequest(BaseModel):
     question: str
+    history: list[dict[str, str]] = []
 
 
 class AskResponse(BaseModel):
@@ -20,6 +21,6 @@ class AskResponse(BaseModel):
 @router.post("/ask", response_model=AskResponse)
 async def ask_endpoint(req: AskRequest) -> AskResponse:
     if not req.question or len(req.question.strip()) < 2:
-        raise HTTPException(status_code=400, detail="Вопрос слишком короткий")
-    result = await ask(req.question.strip())
+        raise HTTPException(status_code=400, detail="Вопрос слишком короткий, сосед.")
+    result = await ask(req.question.strip(), history=req.history)
     return AskResponse(answer=result["answer"], sources=result["sources"])
