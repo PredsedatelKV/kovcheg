@@ -107,9 +107,13 @@ function gameTicTacToe() {
 
   function moshonkaMove() {
     if (!gameActive) return;
-    // Simple AI: try to win, then block, then center, then random
     const empty = board.map((v, i) => v === null ? i : -1).filter(i => i >= 0);
     if (!empty.length) return;
+    
+    // Мошонка иногда ошибается — 40% шанс сделать случайный ход
+    if (Math.random() < 0.4) {
+      return empty[Math.floor(Math.random() * empty.length)];
+    }
     
     // Try to win
     for (const idx of empty) {
@@ -117,11 +121,13 @@ function gameTicTacToe() {
       if (checkWinner(board) === "O") { board[idx] = null; return idx; }
       board[idx] = null;
     }
-    // Block player
-    for (const idx of empty) {
-      board[idx] = "X";
-      if (checkWinner(board) === "X") { board[idx] = null; return idx; }
-      board[idx] = null;
+    // Block player — тоже не всегда
+    if (Math.random() < 0.5) {
+      for (const idx of empty) {
+        board[idx] = "X";
+        if (checkWinner(board) === "X") { board[idx] = null; return idx; }
+        board[idx] = null;
+      }
     }
     // Center
     if (board[4] === null) return 4;
