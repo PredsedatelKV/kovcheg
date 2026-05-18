@@ -812,7 +812,8 @@ async function renderItems(body) {
   bindPhotoUploader(body);
   body.querySelector("#i-create").addEventListener("click", async () => {
     const newCard = body.querySelector(".admin-card");  // first card = the "new item" form
-    const photoVal = newCard.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value')?.value || null;
+    const photoEl = newCard.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value');
+    const photoVal = photoEl ? photoEl.value : null;
     const nameVal = body.querySelector("#i-name").value.trim();
     const slug = slugify(nameVal);
     const payload = {
