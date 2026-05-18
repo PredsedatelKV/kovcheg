@@ -93,6 +93,7 @@ class ShopProductOut(BaseModel):
     id: int
     item: ItemOut
     price: int
+    stock: int = -1  # -1 = unlimited
 
 
 class MarketListingOut(BaseModel):
@@ -237,6 +238,7 @@ class AdminShopProductBody(BaseModel):
     item_id: int
     price: int = Field(ge=0)
     is_active: bool = True
+    stock: int = -1  # -1 = unlimited (default)
 
 
 class AdminMarketListingBody(BaseModel):

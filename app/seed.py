@@ -87,6 +87,12 @@ def migrate_schema(db: Session) -> None:
         db.execute(text("ALTER TABLE market_listings ADD COLUMN target_user_id INTEGER REFERENCES users(id)"))
         db.commit()
 
+    # shop_products.stock — складские остатки в магазине (-1 = безлимит)
+    scols = {row[1] for row in db.execute(text("PRAGMA table_info(shop_products)")).fetchall()}
+    if "stock" not in scols:
+        db.execute(text("ALTER TABLE shop_products ADD COLUMN stock INTEGER NOT NULL DEFAULT -1"))
+        db.commit()
+
 
 PLAYERS: list[dict] = [
     {

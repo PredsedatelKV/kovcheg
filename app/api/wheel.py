@@ -112,6 +112,11 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
     db.commit()
     db.refresh(user)
 
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"🎰 <b>{user.first_name}</b> крутанул(а) колесо — выпало: <b>{sector['label']}</b>"
+    )
+
     return {
         "sector_index": idx,
         "result": schemas.SpinResult(

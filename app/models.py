@@ -109,6 +109,7 @@ class ShopProduct(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id"), nullable=False)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    stock: Mapped[int] = mapped_column(Integer, default=-1, nullable=False)  # -1 = unlimited, 0 = sold out, >0 = remaining
 
     item: Mapped[Item] = relationship("Item")
 

@@ -53,7 +53,7 @@ def _item_out(i: models.Item) -> schemas.ItemOut:
 
 
 def _shop_product_out(p: models.ShopProduct) -> schemas.ShopProductOut:
-    return schemas.ShopProductOut(id=p.id, item=_item_out(p.item), price=p.price)
+    return schemas.ShopProductOut(id=p.id, item=_item_out(p.item), price=p.price, stock=p.stock)
 
 
 def _market_listing_out(l: models.MarketListing) -> schemas.MarketListingOut:
@@ -379,7 +379,7 @@ def create_shop(body: schemas.AdminShopProductBody, db: Session = Depends(get_db
     item = db.query(models.Item).filter(models.Item.id == body.item_id).one_or_none()
     if item is None:
         raise HTTPException(status_code=404, detail="Предмет не найден")
-    p = models.ShopProduct(item_id=body.item_id, price=body.price, is_active=body.is_active)
+    p = models.ShopProduct(item_id=body.item_id, price=body.price, is_active=body.is_active, stock=body.stock)
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -394,6 +394,7 @@ def update_shop(product_id: int, body: schemas.AdminShopProductBody, db: Session
     p.item_id = body.item_id
     p.price = body.price
     p.is_active = body.is_active
+    p.stock = body.stock
     db.commit()
     db.refresh(p)
     return _shop_product_out(p)

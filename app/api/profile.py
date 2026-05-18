@@ -154,6 +154,10 @@ def transfer(
     db.add(models.Transaction(sender_id=user.id, recipient_id=recipient.id, amount=payload.amount))
     db.commit()
     db.refresh(user)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"💸 <b>{user.first_name}</b> перевел(а) <b>{payload.amount} Ковбаксов</b> → <b>{recipient.first_name}</b>"
+    )
     return _user_to_out(user)
 
 
@@ -187,6 +191,10 @@ def gift_item(
         recipient_inv.quantity += payload.quantity
     db.commit()
     db.refresh(user)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"🎁 <b>{user.first_name}</b> подарил(а) <b>{inv.item.name}</b> ×{payload.quantity} → <b>{recipient.first_name}</b>"
+    )
     return me(user=user, db=db)
 
 
@@ -220,6 +228,10 @@ def sell_item(
     db.add(listing)
     db.commit()
     db.refresh(user)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"🏷️ <b>{user.first_name}</b> выставил(а) на адресную продажу: <b>{inv.item.name}</b> ×{payload.quantity} за {payload.price} Ковбаксов → <b>{recipient.first_name}</b>"
+    )
     return me(user=user, db=db)
 
 
@@ -243,4 +255,8 @@ def activate_item(
     db.add(models.Transaction(sender_id=None, recipient_id=user.id, amount=10, note=f"activate:{inv.item.code}"))
     db.commit()
     db.refresh(user)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"✨ <b>{user.first_name}</b> активировал(а) <b>{inv.item.name}</b>"
+    )
     return me(user=user, db=db)

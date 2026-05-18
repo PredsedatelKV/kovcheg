@@ -9,7 +9,6 @@ function invCell(row) {
       <span class="qty">×${row.quantity}</span>
       ${productImg(row.item, "lg")}
       <div class="name">${escapeHtml(row.item.name)}</div>
-      <div class="rare">${escapeHtml(row.item.rarity)}</div>
     </div>`;
 }
 
@@ -129,7 +128,7 @@ function openItemActionsDialog(row) {
       ${productImg(item, "xl")}
       <h2>${escapeHtml(item.name)}</h2>
       <p class="card-sub">${escapeHtml(item.description || "")}</p>
-      <div class="item-meta">×${row.quantity} · ${escapeHtml(item.rarity)}${item.category ? ` · ${escapeHtml(item.category)}` : ""}</div>
+      <div class="item-meta">×${row.quantity}${item.category ? ` · ${escapeHtml(item.category)}` : ""}</div>
     </div>
     <div class="item-actions-grid">
       <button class="btn btn-outline" id="ia-gift" ${canGift ? "" : "disabled"}>
