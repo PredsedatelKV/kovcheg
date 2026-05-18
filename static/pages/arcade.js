@@ -466,7 +466,7 @@ function gameDice() {
         
         if (predicate(final)) {
           const win = Math.floor(actualBet * multiplier);
-          try { await post("/api/arcade/win", { amount: win }); } catch (_) {}
+          post("/api/arcade/win", { amount: win }).catch(() => {});
           balance += win;
           updateBalanceDisplay("dice-balance", balance);
           resultEl.innerHTML = `<div class="game-win">Выпало ${final}! Выигрыш: ${win} K</div>`;
