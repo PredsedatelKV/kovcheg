@@ -30,7 +30,7 @@ body {
 #app {
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
+  min-height: 100vh;
 }
 
 .view {
@@ -413,7 +413,7 @@ body {
 .chat-modal {
   display: flex;
   flex-direction: column;
-  height: 70dvh;
+  height: 70vh;
   max-height: 600px;
 }
 .chat-header {

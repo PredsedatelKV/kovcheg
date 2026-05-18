@@ -716,9 +716,9 @@ function bindPhotoUploader(scope) {
     const clearBtn = widget.querySelector(".photo-clear");
     const valueInput = widget.querySelector(".photo-value");
     const preview = widget.querySelector(".photo-preview");
-    pickBtn?.addEventListener("click", () => fileInput.click());
-    fileInput?.addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
+    if (pickBtn) pickBtn.addEventListener("click", () => fileInput.click());
+    if (fileInput) fileInput.addEventListener("change", async (e) => {
+      const file = e.target.files && e.target.files[0];
       if (!file) return;
       pickBtn.disabled = true;
       pickBtn.textContent = "Загрузка…";
@@ -755,11 +755,17 @@ function bindPhotoUploader(scope) {
 }
 
 function readItemForm(card, fallback = {}) {
-  const get = (k) => card.querySelector(`[data-k="${k}"]`)?.value ?? fallback[k] ?? "";
+  const get = (k) => {
+    const el = card.querySelector(`[data-k="${k}"]`);
+    return (el ? el.value : null) ?? fallback[k] ?? "";
+  };
   return {
     name: get("name"),
     icon: get("icon"),
-    image_url: card.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value')?.value || null,
+    image_url: (() => {
+      const el = card.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value');
+      return el ? el.value : null;
+    })(),
     description: get("description"),
     category: get("category") || "Ресурсы",
   };
