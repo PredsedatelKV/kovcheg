@@ -19,6 +19,15 @@ class Settings(BaseSettings):
     database_url: str = ""
     skip_init_data_check: bool = False  # для локальной отладки
 
+    # --- LLM / Ассистент ---
+    llm_api_key: str = ""  # ключ OpenRouter (или другого API)
+    llm_model: str = "minimax/minimax-m2.5"
+    llm_base_url: str = "https://openrouter.ai/api/v1"
+    llm_max_tokens: int = 800
+    llm_temperature: float = 0.7
+    assistant_max_chunks: int = 5  # сколько фрагментов подавать в контекст
+    assistant_rate_limit_minutes: int = 1  # ограничение частоты вопросов
+
     @property
     def admin_id_list(self) -> list[int]:
         return [int(x) for x in self.admin_ids.split(",") if x.strip().isdigit()]

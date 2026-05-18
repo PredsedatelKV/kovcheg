@@ -18,6 +18,7 @@ from app.api import profile as profile_api
 from app.api import shop as shop_api
 from app.api import tasks as tasks_api
 from app.api import wheel as wheel_api
+from app.assistant.api import router as assistant_api
 from app.bot import configure_webhook, feed_update, set_menu_button
 from app.config import get_settings
 from app.db import Base, engine, session_scope
@@ -63,6 +64,7 @@ app.include_router(shop_api.router)
 app.include_router(market_api.router)
 app.include_router(content_api.router)
 app.include_router(admin_api.router)
+app.include_router(assistant_api)
 
 
 @app.get("/healthz")

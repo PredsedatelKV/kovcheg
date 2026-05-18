@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+  kovcheg:
+    build: .
+    container_name: kovcheg-app
+    restart: unless-stopped
+    # На VPS приложение слушает только localhost, nginx проксирует снаружи
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Персистентность данных (база SQLite, хранилище знаний)
+      - ./data:/app/data
+      # Если хочешь править статику без пересборки образа:
+      - ./static:/app/static
+    networks:
+      - kovcheg-net
+
+  # Nginx — раскомментируй после настройки SSL (см. DEPLOY_VPS.md)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: kovcheg-nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+  #     - ./certbot/conf:/etc/letsencrypt:ro
+  #     - ./certbot/www:/var/www/certbot:ro
+  #   depends_on:
+  #     - kovcheg
+  #   networks:
+  #     - kovcheg-net
+
+networks:
+  kovcheg-net:
