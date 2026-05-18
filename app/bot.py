@@ -93,7 +93,7 @@ def _register_handlers(dp: Dispatcher) -> None:
             "/approve &lt;user_task_id&gt; — подтвердить выполнение задания\n"
             "/reject &lt;user_task_id&gt; — отклонить задание\n"
             "/spawn &lt;tg_id&gt; &lt;item_code&gt; &lt;qty&gt; — выдать предмет\n"
-            "/coins &lt;tg_id&gt; &lt;amount&gt; — выдать монеты\n"
+            "/coins &lt;tg_id&gt; &lt;amount&gt; — выдать Ковбаксы\n"
             "/pending — список заданий, ждущих подтверждения"
         )
         await message.answer(text)
@@ -109,7 +109,7 @@ def _register_handlers(dp: Dispatcher) -> None:
                 return
             balance = user.wallet.balance if user.wallet else 0
             await message.answer(
-                f"<b>{user.first_name}</b>\nДолжность: {user.role}\nБаланс: {balance} монет"
+                f"<b>{user.first_name}</b>\nДолжность: {user.role}\nБаланс: {balance} Ковбаксов"
             )
 
     @dp.message(Command("pending"))
@@ -171,7 +171,7 @@ def _register_handlers(dp: Dispatcher) -> None:
                 )
             )
             notify_text = (
-                f"🎉 Задание <b>{ut.task.name}</b> подтверждено!\nНаграда: {ut.task.reward} монет."
+                f"🎉 Задание <b>{ut.task.name}</b> подтверждено!\nНаграда: {ut.task.reward} Ковбаксов."
             )
             notify_tg_id = ut.user.telegram_id
 
@@ -273,7 +273,7 @@ def _register_handlers(dp: Dispatcher) -> None:
                     sender_id=None, recipient_id=user.id, amount=amount, note=f"admin:{message.from_user.id}"
                 )
             )
-        await message.answer(f"Выдано {amount} монет пользователю {tg_id}")
+        await message.answer(f"Выдано {amount} Ковбаксов пользователю {tg_id}")
 
     @dp.message(F.web_app_data)
     async def on_webapp_data(message: Message) -> None:

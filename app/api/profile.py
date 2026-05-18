@@ -148,12 +148,16 @@ def transfer(
     if recipient.id == user.id:
         raise HTTPException(status_code=400, detail="Нельзя перевести себе")
     if user.wallet.balance < payload.amount:
-        raise HTTPException(status_code=400, detail="Недостаточно монет")
+        raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
     user.wallet.balance -= payload.amount
     recipient.wallet.balance += payload.amount
     db.add(models.Transaction(sender_id=user.id, recipient_id=recipient.id, amount=payload.amount))
     db.commit()
     db.refresh(user)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"💸 <b>{user.first_name}</b> перевел(а) <b>{payload.amount} Ковбаксов</b> → <b>{recipient.first_name}</b>"
+    )
     return _user_to_out(user)
 
 
@@ -187,6 +191,47 @@ def gift_item(
         recipient_inv.quantity += payload.quantity
     db.commit()
     db.refresh(user)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"🎁 <b>{user.first_name}</b> подарил(а) <b>{inv.item.name}</b> ×{payload.quantity} → <b>{recipient.first_name}</b>"
+    )
+    return me(user=user, db=db)
+
+
+@router.post("/inventory/sell", response_model=schemas.ProfilePayload)
+def sell_item(
+    payload: schemas.SellRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> schemas.ProfilePayload:
+    """Выставить предмет на адресную продажу выбранному игроку.
+    Предмет резервируется (списывается из инвентаря) и появляется у покупателя в Коверне с пометкой «Это для тебя»."""
+    inv = (
+        db.query(models.InventoryItem)
+        .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == payload.item_id)
+        .one_or_none()
+    )
+    if inv is None or inv.quantity < payload.quantity:
+        raise HTTPException(status_code=400, detail="Недостаточно предметов")
+    recipient = _resolve_recipient(db, payload.recipient)
+    if recipient.id == user.id:
+        raise HTTPException(status_code=400, detail="Нельзя продать себе")
+    inv.quantity -= payload.quantity
+    listing = models.MarketListing(
+        seller_id=user.id,
+        item_id=payload.item_id,
+        quantity=payload.quantity,
+        price=payload.price,
+        is_active=True,
+        target_user_id=recipient.id,
+    )
+    db.add(listing)
+    db.commit()
+    db.refresh(user)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"🏷️ <b>{user.first_name}</b> выставил(а) на адресную продажу: <b>{inv.item.name}</b> ×{payload.quantity} за {payload.price} Ковбаксов → <b>{recipient.first_name}</b>"
+    )
     return me(user=user, db=db)
 
 
@@ -210,4 +255,8 @@ def activate_item(
     db.add(models.Transaction(sender_id=None, recipient_id=user.id, amount=10, note=f"activate:{inv.item.code}"))
     db.commit()
     db.refresh(user)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"✨ <b>{user.first_name}</b> активировал(а) <b>{inv.item.name}</b>"
+    )
     return me(user=user, db=db)

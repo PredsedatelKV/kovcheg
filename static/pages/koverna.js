@@ -50,11 +50,12 @@ async function renderShop(root) {
       : `<div class="product-grid">${products
           .map(
             (p) => `
-            <div class="product">
+            <div class="product${p.stock === 0 ? " product-out" : ""}">
               ${productImg(p.item, "xl")}
               <div class="name">${escapeHtml(p.item.name)}</div>
               <div class="price">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${p.price}</div>
-              <button class="btn btn-sm" data-buy="${p.id}">Купить</button>
+              <div class="card-sub">${p.stock === -1 ? "В наличии: ∞" : p.stock === 0 ? "Закончился" : `Осталось: ${p.stock}`}</div>
+              <button class="btn btn-sm" data-buy="${p.id}" ${p.stock === 0 ? "disabled" : ""}>${p.stock === 0 ? "Нет в наличии" : "Купить"}</button>
             </div>`,
           )
           .join("")}</div>`;
@@ -64,6 +65,8 @@ async function renderShop(root) {
       try {
         await post("/api/shop/buy", { product_id: Number(b.dataset.buy) });
         window.kov.toast("Куплено! Предмет в инвентаре");
+        const r = document.getElementById("view");
+        renderKoverna(r);
       } catch (e) {
         window.kov.toast(e.message);
       }
@@ -90,7 +93,8 @@ async function renderMarket(root) {
       : `<div class="product-grid">${listings
           .map(
             (l) => `
-            <div class="product">
+            <div class="product${l.target_user_id ? " product-targeted" : ""}">
+              ${l.target_user_id ? `<span class="targeted-badge">Только тебе</span>` : ""}
               ${productImg(l.item, "xl")}
               <div class="name">${escapeHtml(l.item.name)}</div>
               <div class="card-sub">от ${escapeHtml(l.seller_name)} · ×${l.quantity}</div>

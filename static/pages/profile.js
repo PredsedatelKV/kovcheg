@@ -5,15 +5,10 @@ const escapeHtml = (s = "") =>
 
 function invCell(row) {
   return `
-    <div class="inv-cell" data-item-id="${row.item.id}">
+    <div class="inv-cell" data-item-id="${row.item.id}" data-qty="${row.quantity}">
       <span class="qty">×${row.quantity}</span>
       ${productImg(row.item, "lg")}
       <div class="name">${escapeHtml(row.item.name)}</div>
-      <div class="rare">${escapeHtml(row.item.rarity)}</div>
-      <div class="acts">
-        ${row.item.can_gift ? `<button class="btn btn-outline btn-sm" data-action="gift" data-item-id="${row.item.id}">Подарить</button>` : ""}
-        ${row.item.can_activate ? `<button class="btn btn-sm" data-action="activate" data-item-id="${row.item.id}">Активировать</button>` : ""}
-      </div>
     </div>`;
 }
 
@@ -59,14 +54,18 @@ export async function renderProfile(root) {
       </div>
     </div>
 
-    <div class="card">
+    <div class="card wallet-card">
       <h3 class="card-title">Кошелёк</h3>
-      <div class="card-row" style="margin-top:8px">
-        <div class="wallet-balance">${iconHtml("/static/img/ui/coin.svg", "md", "")} Баланс: <strong>${user.balance}</strong> монет</div>
-      </div>
-      <div class="wallet-actions wallet-actions-single">
-        <button class="btn btn-transfer" data-action="transfer">
-          <img src="/static/img/ui/coin.svg" alt="" class="icon icon-md"/>
+      <div class="wallet-row">
+        <div class="wallet-balance-big">
+          <img src="/static/img/ui/coin.svg" alt="" class="wallet-coin"/>
+          <div class="wallet-balance-num">
+            <div class="wallet-balance-label">Баланс</div>
+            <div class="wallet-balance-value"><strong>${user.balance}</strong> <span class="wallet-balance-unit">Ковбаксов</span></div>
+          </div>
+        </div>
+        <button class="btn btn-transfer-compact" data-action="transfer">
+          <img src="/static/img/ui/coin.svg" alt="" class="icon icon-sm"/>
           <span>Перевести</span>
         </button>
       </div>
@@ -94,7 +93,7 @@ export async function renderProfile(root) {
     }
   `;
 
-  bindCellActions(root);
+  bindCellActions(root, data.inventory);
   root.querySelector('[data-action="transfer"]').addEventListener("click", () => openTransferDialog(user));
 
   root.querySelectorAll(".task-row").forEach((row) => {
@@ -109,26 +108,65 @@ export async function renderProfile(root) {
   root.querySelector('[data-action="all-mytasks"]')?.addEventListener("click", () => openAllMyTasks(data.user_tasks, root));
 }
 
-function bindCellActions(scope) {
-  scope.querySelectorAll('[data-action="gift"]').forEach((b) =>
-    b.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openGiftDialog(b.dataset.itemId);
-    }),
-  );
-  scope.querySelectorAll('[data-action="activate"]').forEach((b) =>
-    b.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      try {
-        await post("/api/profile/inventory/activate", { item_id: Number(b.dataset.itemId), recipient: "", quantity: 1 });
-        window.kov.toast("Предмет активирован");
-        const root = document.getElementById("view");
-        renderProfile(root);
-      } catch (err) {
-        window.kov.toast(err.message);
-      }
-    }),
-  );
+function bindCellActions(scope, inventory) {
+  scope.querySelectorAll(".inv-cell").forEach((cell) => {
+    cell.addEventListener("click", () => {
+      const id = Number(cell.dataset.itemId);
+      const row = inventory.find((r) => r.item.id === id);
+      if (row) openItemActionsDialog(row);
+    });
+  });
+}
+
+function openItemActionsDialog(row) {
+  const item = row.item;
+  const canGift = item.can_gift;
+  const canActivate = item.can_activate;
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <div class="item-actions-head">
+      ${productImg(item, "xl")}
+      <h2>${escapeHtml(item.name)}</h2>
+      <p class="card-sub">${escapeHtml(item.description || "")}</p>
+      <div class="item-meta">×${row.quantity}${item.category ? ` · ${escapeHtml(item.category)}` : ""}</div>
+    </div>
+    <div class="item-actions-grid">
+      <button class="btn btn-outline" id="ia-gift" ${canGift ? "" : "disabled"}>
+        <img src="/static/img/ui/gift.svg" alt="" class="icon icon-md"/>
+        <span>Подарить</span>
+      </button>
+      <button class="btn btn-outline" id="ia-sell">
+        <img src="/static/img/ui/coin.svg" alt="" class="icon icon-md"/>
+        <span>Продать</span>
+      </button>
+      <button class="btn" id="ia-activate" ${canActivate ? "" : "disabled"}>
+        <img src="/static/img/ui/spark.svg" alt="" class="icon icon-md"/>
+        <span>Активировать</span>
+      </button>
+    </div>
+  `);
+
+  modal.querySelector("#ia-gift").addEventListener("click", () => {
+    if (!canGift) return;
+    window.closeModal();
+    setTimeout(() => openGiftDialog(item, row.quantity), 80);
+  });
+  modal.querySelector("#ia-sell").addEventListener("click", () => {
+    window.closeModal();
+    setTimeout(() => openSellDialog(item, row.quantity), 80);
+  });
+  modal.querySelector("#ia-activate").addEventListener("click", async () => {
+    if (!canActivate) return;
+    try {
+      await post("/api/profile/inventory/activate", { item_id: item.id, recipient: "", quantity: 1 });
+      window.kov.toast("Предмет активирован");
+      window.closeModal();
+      const r = document.getElementById("view");
+      renderProfile(r);
+    } catch (err) {
+      window.kov.toast(err.message);
+    }
+  });
 }
 
 function openAllInventory(inventory) {
@@ -140,7 +178,7 @@ function openAllInventory(inventory) {
       ? `<div class="empty">Пока пусто.</div>`
       : `<div class="inv-grid">${inventory.map(invCell).join("")}</div>`}
   `);
-  bindCellActions(modal);
+  bindCellActions(modal, inventory);
 }
 
 function openAllMyTasks(myTasks, root) {
@@ -166,8 +204,8 @@ function openAllMyTasks(myTasks, root) {
 async function openTransferDialog(user) {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
-    <h2>Перевод монет</h2>
-    <p style="color:var(--text-soft); font-size:13px">Баланс: <strong>${user.balance}</strong> монет</p>
+    <h2>Перевод Ковбаксов</h2>
+    <p style="color:var(--text-soft); font-size:13px">Баланс: <strong>${user.balance}</strong> Ковбаксов</p>
     <label class="field-label">Кому</label>
     <select class="input" id="recipient">
       <option value="">Загрузка…</option>
@@ -190,7 +228,7 @@ async function openTransferDialog(user) {
     return;
   }
   select.innerHTML = players
-    .map((p) => `<option value="uid:${p.id}">${escapeHtml(p.first_name)} (@${escapeHtml(p.username || "—")})</option>`)
+    .map((p) => `<option value="uid:${p.id}">${escapeHtml(p.first_name)}</option>`)
     .join("");
 
   modal.querySelector("#send-btn").addEventListener("click", async () => {
@@ -208,25 +246,88 @@ async function openTransferDialog(user) {
   });
 }
 
-function openGiftDialog(itemId) {
+async function openGiftDialog(item, maxQty) {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
-    <h2>Подарить предмет</h2>
-    <label class="field-label">Кому (username или Telegram ID)</label>
-    <input class="input" id="r" />
-    <label class="field-label">Количество</label>
-    <input class="input" id="q" type="number" min="1" value="1" />
+    <h2>Подарить «${escapeHtml(item.name)}»</h2>
+    <label class="field-label">Кому</label>
+    <select class="input" id="r"><option value="">Загрузка…</option></select>
+    <label class="field-label">Количество (макс. ${maxQty})</label>
+    <input class="input" id="q" type="number" min="1" max="${maxQty}" value="1" />
     <button class="btn" id="ok" style="margin-top:14px">Подарить</button>
   `);
+  const select = modal.querySelector("#r");
+  let players = [];
+  try {
+    players = await get("/api/profile/players");
+  } catch (err) {
+    select.innerHTML = `<option value="">Не удалось загрузить</option>`;
+    window.kov.toast(err.message);
+    return;
+  }
+  if (!players.length) {
+    select.innerHTML = `<option value="">Нет других игроков</option>`;
+    return;
+  }
+  select.innerHTML = players
+    .map((p) => `<option value="uid:${p.id}">${escapeHtml(p.first_name)}</option>`)
+    .join("");
+
   modal.querySelector("#ok").addEventListener("click", async () => {
-    const recipient = modal.querySelector("#r").value.trim();
+    const recipient = select.value;
     const quantity = Number(modal.querySelector("#q").value);
     if (!recipient || !quantity) return window.kov.toast("Заполни поля");
     try {
-      await post("/api/profile/inventory/gift", { recipient, item_id: Number(itemId), quantity });
+      await post("/api/profile/inventory/gift", { recipient, item_id: item.id, quantity });
       window.kov.toast("Подарено");
       window.closeModal();
-      window.kov.setTab("profile");
+      renderProfile(document.getElementById("view"));
+    } catch (err) {
+      window.kov.toast(err.message);
+    }
+  });
+}
+
+async function openSellDialog(item, maxQty) {
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Продать «${escapeHtml(item.name)}»</h2>
+    <label class="field-label">Кому</label>
+    <select class="input" id="r"><option value="">Загрузка…</option></select>
+    <label class="field-label">Количество (макс. ${maxQty})</label>
+    <input class="input" id="q" type="number" min="1" max="${maxQty}" value="1" />
+    <label class="field-label">Цена (Ковбаксов)</label>
+    <input class="input" id="p" type="number" min="1" value="10" />
+    <p class="card-sub" style="font-size:12px; margin:8px 0 0">Предмет уйдёт в инвентарь покупателя, как только он подтвердит покупку в Коверне.</p>
+    <button class="btn" id="ok" style="margin-top:14px">Выставить</button>
+  `);
+  const select = modal.querySelector("#r");
+  let players = [];
+  try {
+    players = await get("/api/profile/players");
+  } catch (err) {
+    select.innerHTML = `<option value="">Не удалось загрузить</option>`;
+    window.kov.toast(err.message);
+    return;
+  }
+  if (!players.length) {
+    select.innerHTML = `<option value="">Нет других игроков</option>`;
+    return;
+  }
+  select.innerHTML = players
+    .map((p) => `<option value="uid:${p.id}">${escapeHtml(p.first_name)}</option>`)
+    .join("");
+
+  modal.querySelector("#ok").addEventListener("click", async () => {
+    const recipient = select.value;
+    const quantity = Number(modal.querySelector("#q").value);
+    const price = Number(modal.querySelector("#p").value);
+    if (!recipient || !quantity || !price) return window.kov.toast("Заполни поля");
+    try {
+      await post("/api/profile/inventory/sell", { recipient, item_id: item.id, quantity, price });
+      window.kov.toast("Выставлено на продажу");
+      window.closeModal();
+      renderProfile(document.getElementById("view"));
     } catch (err) {
       window.kov.toast(err.message);
     }
@@ -240,7 +341,7 @@ function openUserTaskDialog(ut, root) {
     <h2 style="text-align:center;margin-top:0">${escapeHtml(ut.task.name)}</h2>
     <div style="text-align:center; margin: 2px 0 10px"><span style="background:var(--primary-soft); color:var(--primary-700); padding: 3px 10px; border-radius:8px; font-size:12px; font-weight:600">В процессе</span></div>
     <p style="color:var(--text-soft); font-size:14px; margin: 0 0 14px">${escapeHtml(ut.task.description)}</p>
-    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${ut.task.reward} монет</div>
+    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${ut.task.reward} Ковбаксов</div>
     <button class="btn btn-secondary" onclick="closeModal()">Закрыть</button>
     <button class="btn btn-danger" id="cancel-ut" style="margin-top:8px">Прервать задание</button>
   `);
