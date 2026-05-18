@@ -471,9 +471,16 @@ function gameWheelRisk() {
 // ============ RENDER ============
 
 export async function renderArcade(root) {
+  console.log("[ARCADE] renderArcade called");
   root.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
-  await fetchBalance();
+  try {
+    await fetchBalance();
+    console.log("[ARCADE] Balance:", balance);
+  } catch (e) {
+    console.error("[ARCADE] fetchBalance error:", e);
+  }
   
+  console.log("[ARCADE] Rendering HTML");
   root.innerHTML = `
     <section class="page-header">
       <div>
@@ -542,6 +549,7 @@ export async function renderArcade(root) {
       </div>
     </div>
   `;
+  console.log("[ARCADE] HTML rendered");
   
   const games = {
     moshonka: gameWhereIsMoshonka,
@@ -554,10 +562,13 @@ export async function renderArcade(root) {
     wheel: gameWheelRisk,
   };
   
+  console.log("[ARCADE] Setting up event listeners");
   root.querySelectorAll(".game-tile").forEach((tile) => {
     tile.addEventListener("click", () => {
       const game = tile.dataset.game;
+      console.log("[ARCADE] Game clicked:", game);
       if (games[game]) games[game]();
     });
   });
+  console.log("[ARCADE] renderArcade complete");
 }
