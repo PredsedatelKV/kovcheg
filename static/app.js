@@ -13,7 +13,11 @@ if (tg) {
   tg.setHeaderColor?.("secondary_bg_color");
 }
 
-initSettings();
+try {
+  initSettings();
+} catch (e) {
+  console.error("Settings init failed:", e);
+}
 
 const TABS = {
   home: renderHome,
@@ -27,15 +31,24 @@ const viewEl = document.getElementById("view");
 const tabButtons = document.querySelectorAll(".tabbtn");
 
 function setTab(name) {
-  if (!TABS[name]) name = "home";
+  console.log("setTab:", name);
+  if (!TABS[name]) {
+    console.error("Unknown tab:", name);
+    name = "home";
+  }
+  if (typeof TABS[name] !== "function") {
+    console.error("Tab not a function:", name, TABS[name]);
+    viewEl.innerHTML = `<div class="card"><h3>Ошибка</h3><p>Вкладка "${name}" не загружается. Попробуй обновить страницу (Ctrl+F5).</p><button class="btn" onclick="location.reload()">Перезагрузить</button></div>`;
+    return;
+  }
   const btn = document.querySelector(`.tabbtn[data-tab="${name}"]`);
   if (btn && btn.hidden) name = "home";
   tabButtons.forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
   viewEl.scrollTo?.({ top: 0 });
   window.scrollTo({ top: 0 });
   TABS[name](viewEl).catch((err) => {
-    viewEl.innerHTML = `<div class="card"><h3>Ошибка</h3><p>${err.message}</p><button class="btn" onclick="location.reload()">Перезагрузить</button></div>`;
-    console.error(err);
+    console.error("Tab render error:", name, err);
+    viewEl.innerHTML = `<div class="card"><h3>Ошибка загрузки вкладки</h3><p>${err.message}</p><button class="btn" onclick="location.reload()">Перезагрузить</button></div>`;
   });
   localStorage.setItem("kovcheg.tab", name);
 }
