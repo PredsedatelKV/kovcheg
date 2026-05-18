@@ -248,8 +248,6 @@ def activate_item(
     )
     if inv is None or inv.quantity < 1:
         raise HTTPException(status_code=400, detail="Нет предмета")
-    if not inv.item.can_activate:
-        raise HTTPException(status_code=400, detail="Этот предмет нельзя активировать")
     inv.quantity -= 1
     user.wallet.balance += 10
     db.add(models.Transaction(sender_id=None, recipient_id=user.id, amount=10, note=f"activate:{inv.item.code}"))

@@ -1,18 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
-  <!-- фон головы -->
-  <rect x="4" y="2" width="8" height="8" fill="#F9D8B1"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <!-- голова -->
+  <rect x="8" y="4" width="16" height="12" fill="#F9D8B1"/>
   <!-- брови -->
-  <rect x="5" y="3" width="2" height="1" fill="#3D2918"/>
-  <rect x="9" y="3" width="2" height="1" fill="#3D2918"/>
+  <rect x="9" y="6" width="5" height="1" fill="#5D4037"/>
+  <rect x="18" y="6" width="5" height="1" fill="#5D4037"/>
   <!-- глаза -->
-  <rect x="6" y="5" width="1" height="1" fill="#3D2918"/>
-  <rect x="9" y="5" width="1" height="1" fill="#3D2918"/>
-  <!-- нос -->
-  <rect x="7" y="6" width="2" height="1" fill="#C4956A"/>
-  <rect x="6" y="7" width="4" height="1" fill="#C4956A"/>
-  <!-- тело -->
-  <rect x="4" y="10" width="8" height="5" fill="#6B8C42"/>
-  <!-- руки -->
-  <rect x="2" y="11" width="2" height="4" fill="#5A7A38"/>
-  <rect x="12" y="11" width="2" height="4" fill="#5A7A38"/>
+  <rect x="10" y="8" width="3" height="2" fill="#3E2723"/>
+  <rect x="19" y="8" width="3" height="2" fill="#3E2723"/>
+  <!-- нос (большой, как у жителя) -->
+  <rect x="14" y="10" width="4" height="1" fill="#E8B89A"/>
+  <rect x="14" y="11" width="4" height="2" fill="#D4A07A"/>
+  <rect x="14" y="13" width="4" height="1" fill="#C4956A"/>
+  <!-- рот -->
+  <rect x="12" y="14" width="8" height="1" fill="#C4956A"/>
+  <!-- тело (роба жителя) -->
+  <rect x="8" y="16" width="16" height="14" fill="#6D4C41"/>
+  <!-- складки робы -->
+  <rect x="10" y="16" width="2" height="14" fill="#5D4037"/>
+  <rect x="20" y="16" width="2" height="14" fill="#5D4037"/>
+  <!-- воротник -->
+  <rect x="12" y="16" width="8" height="2" fill="#4E342E"/>
+  <!-- пояс -->
+  <rect x="8" y="22" width="16" height="2" fill="#3E2723"/>
 </svg>

@@ -10,7 +10,7 @@ const fmtDate = (iso) =>
 function bannerCarousel(banners) {
   if (!banners.length) return "";
   return `
-    <div class="carousel">
+    <div class="carousel narrow">
       <div class="carousel-track" id="bn-track">
         ${banners
           .map(
@@ -24,13 +24,37 @@ function bannerCarousel(banners) {
     </div>`;
 }
 
+function assistantCard() {
+  return `
+    <div class="card assistant-card" id="assistant-card">
+      <div class="assistant-avatar-big">
+        <img src="/static/img/villager.svg" alt="Мошонка"/>
+      </div>
+      <div class="assistant-meta">
+        <div class="assistant-label">Ассистент</div>
+        <h3 class="assistant-name">Мошонка</h3>
+        <p class="assistant-sub">Верный спутник граждан Ковчега</p>
+      </div>
+      <span class="assistant-arrow">›</span>
+    </div>`;
+}
+
+function compactCard(opts) {
+  return `
+    <div class="card compact-card ${opts.cssClass || ""}" id="${opts.id}">
+      <div class="compact-icon">${iconHtml(opts.icon, "md", opts.title)}</div>
+      <div class="compact-title">${escapeHtml(opts.title)}</div>
+      <div class="compact-sub">${escapeHtml(opts.sub)}</div>
+    </div>`;
+}
+
 function taskRow(t) {
   return `
     <div class="task-row" data-task-id="${t.id}">
       <div class="ico">${iconHtml(t.icon, "md", t.name)}</div>
       <div class="meta">
         <h4>${escapeHtml(t.name)}</h4>
-        <p>Награда: ${t.reward} Ковбаксов</p>
+        <p>Награда: ${t.reward} K</p>
       </div>
       <button class="btn btn-sm" data-action="start" data-task-id="${t.id}">Начать</button>
     </div>`;
@@ -69,28 +93,12 @@ export async function renderHome(root) {
 
     ${bannerCarousel(data.banners)}
 
-    <div class="card assistant-card" id="assistant-card">
-      <div class="assistant-avatar">
-        <img src="/static/img/villager.svg" alt="Мошонка" class="pixel-icon pixel-icon-lg"/>
-      </div>
-      <div style="flex:1;min-width:0">
-        <h3 class="card-title">Ассистент Мошонка</h3>
-        <p class="card-sub">Житель Ковчега — спроси его о правилах, истории и жизни общины</p>
-      </div>
-      <span class="arrow">›</span>
-    </div>
+    ${assistantCard()}
 
-    <div class="card wheel-card" id="wheel-card">
-      <div class="wheel-thumb"></div>
-      <div>
-        <h3 class="card-title">Ежедневное колесо фортуны</h3>
-        <p class="card-sub">Крутите колесо и получайте ценные награды каждый день!</p>
-      </div>
-      <span class="arrow">›</span>
+    <div class="compact-row">
+      ${compactCard({ id: "wheel-card", icon: "/static/img/ui/wheel.svg", title: "Колесо", sub: "Фортуны", cssClass: "wheel-compact" })}
+      ${compactCard({ id: "news-card", icon: "/static/img/ui/mail.svg", title: "Новости", sub: "Последние", cssClass: "news-compact" })}
     </div>
-
-    <h2 class="section-title">Новости <button class="see-all" data-action="all-news">Смотреть все</button></h2>
-    ${data.news ? newsCard(data.news) : ""}
 
     <h2 class="section-title">План</h2>
     ${
@@ -123,7 +131,6 @@ export async function renderHome(root) {
     </div>
   `;
 
-  // Banner dots
   const track = root.querySelector("#bn-track");
   const dots = root.querySelectorAll("#bn-dots .dot");
   if (track && dots.length) {
@@ -134,8 +141,8 @@ export async function renderHome(root) {
   }
 
   root.querySelector("#assistant-card").addEventListener("click", openAssistantChat);
-
   root.querySelector("#wheel-card").addEventListener("click", openWheel);
+  root.querySelector("#news-card").addEventListener("click", openAllNews);
 
   const allTasksList = data.tasks;
   root.querySelectorAll('[data-action="start"]').forEach((btn) => {
@@ -155,7 +162,6 @@ export async function renderHome(root) {
   root.querySelector('[data-action="all-tasks"]').addEventListener("click", () =>
     openAllTasks(allTasksList),
   );
-  root.querySelector('[data-action="all-news"]').addEventListener("click", openAllNews);
 
   root.querySelectorAll('[data-action="legal"]').forEach((btn) =>
     btn.addEventListener("click", () => openLegal(btn.dataset.slug)),
@@ -225,7 +231,7 @@ function openTaskDetails(t) {
     <div class="task-card-icon">${iconHtml(t.icon, "xl", t.name)}</div>
     <h2 style="text-align:center;margin-top:0">${escapeHtml(t.name)}</h2>
     <p style="color:var(--text-soft); text-align:center; margin: 6px 0 14px">${escapeHtml(t.description)}</p>
-    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${t.reward} Ковбаксов</div>
+    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${t.reward} K</div>
     <button class="btn" id="start-btn">Начать</button>
     <button class="btn btn-secondary" style="margin-top:8px" onclick="closeModal()">Закрыть</button>
   `);
@@ -254,7 +260,6 @@ async function openLegal(slug) {
   }
 }
 
-// Wheel: client-side animation, server picks the prize
 async function openWheel() {
   try {
     const status = await get("/api/wheel/status");
@@ -299,7 +304,7 @@ async function openWheel() {
     const modal = window.kov.showModal(`
       <button class="close" onclick="closeModal()">×</button>
       <h2 style="text-align:center; margin-top:0">Ежедневное колесо фортуны</h2>
-      <p style="text-align:center; color:var(--text-soft); margin:0 0 12px">Крутите колесо и выигрывайте Ковбаксы и призы!</p>
+      <p style="text-align:center; color:var(--text-soft); margin:0 0 12px">Крутите колесо и выигрывайте K и призы!</p>
       <div class="wheel-stage">
         <div class="wheel-wrap">
           <div class="wheel-pointer"></div>
@@ -326,7 +331,7 @@ async function openWheel() {
         const result = await post("/api/wheel/spin");
         const idx = result.sector_index;
         const targetAngle = -(idx * seg + seg / 2);
-        const fullSpins = 5; // turns
+        const fullSpins = 5;
         const finalRot = currentRot + fullSpins * 360 + (targetAngle - (currentRot % 360));
         svg.style.transform = `rotate(${finalRot}deg)`;
         currentRot = finalRot;
