@@ -26,11 +26,11 @@ function bannerCarousel(banners) {
 
 function assistantCard() {
   return `
-    <div class="card assistant-card" id="assistant-card">
-      <div class="assistant-villager">
+    <div class="card assistant-card-wide" id="assistant-card">
+      <div class="assistant-bust">
         <img src="/static/img/villager.svg" alt="Мошонка"/>
       </div>
-      <div class="assistant-meta">
+      <div class="assistant-text">
         <div class="assistant-label">Ассистент</div>
         <h3 class="assistant-name">Мошонка</h3>
         <p class="assistant-sub">Верный спутник граждан Ковчега</p>
@@ -39,28 +39,41 @@ function assistantCard() {
     </div>`;
 }
 
-function compactCard(opts) {
+function bigSquareCard(opts) {
   if (opts.type === "wheel") {
     return `
-      <div class="card compact-card ${opts.cssClass || ""}" id="${opts.id}">
-        <div class="compact-thumb wheel-thumb-mini"></div>
-        <div class="compact-title">${escapeHtml(opts.title)}</div>
-        <div class="compact-sub">${escapeHtml(opts.sub)}</div>
+      <div class="card big-square ${opts.cssClass || ""}" id="${opts.id}">
+        <div class="big-square-visual wheel-visual"></div>
+        <div class="big-square-title">${escapeHtml(opts.title)}</div>
+        <div class="big-square-sub">${escapeHtml(opts.sub)}</div>
       </div>`;
   }
   if (opts.type === "news" && opts.imageUrl) {
     return `
-      <div class="card compact-card ${opts.cssClass || ""}" id="${opts.id}">
-        <div class="compact-thumb news-thumb-mini" style="background-image:url('${escapeHtml(opts.imageUrl)}')"></div>
-        <div class="compact-title">${escapeHtml(opts.title)}</div>
-        <div class="compact-sub">${escapeHtml(opts.sub)}</div>
+      <div class="card big-square ${opts.cssClass || ""}" id="${opts.id}">
+        <div class="big-square-visual news-visual" style="background-image:url('${escapeHtml(opts.imageUrl)}')"></div>
+        <div class="big-square-title">${escapeHtml(opts.title)}</div>
+        <div class="big-square-sub">${escapeHtml(opts.sub)}</div>
       </div>`;
   }
   return `
-    <div class="card compact-card ${opts.cssClass || ""}" id="${opts.id}">
-      <div class="compact-icon">${iconHtml(opts.icon, "md", opts.title)}</div>
-      <div class="compact-title">${escapeHtml(opts.title)}</div>
-      <div class="compact-sub">${escapeHtml(opts.sub)}</div>
+    <div class="card big-square ${opts.cssClass || ""}" id="${opts.id}">
+      <div class="big-square-icon">${iconHtml(opts.icon, "lg", opts.title)}</div>
+      <div class="big-square-title">${escapeHtml(opts.title)}</div>
+      <div class="big-square-sub">${escapeHtml(opts.sub)}</div>
+    </div>`;
+}
+
+function fullNewsCard(n) {
+  if (!n) return "";
+  return `
+    <div class="card full-news-card" id="full-news-card">
+      <div class="full-news-image" style="background-image:url('${escapeHtml(n.image_url)}')"></div>
+      <div class="full-news-body">
+        <h3>${escapeHtml(n.title)}</h3>
+        <p>${escapeHtml(n.body)}</p>
+        <div class="full-news-date">${fmtDate(n.published_at)}</div>
+      </div>
     </div>`;
 }
 
@@ -81,23 +94,12 @@ function tasksList(tasks) {
   return `<div class="tasks-list">${tasks.map(taskRow).join("")}</div>`;
 }
 
-function newsCard(n) {
-  return `
-    <div class="card news-card">
-      <img src="${escapeHtml(n.image_url)}" alt="" />
-      <div class="news-body">
-        <h3>${escapeHtml(n.title)}</h3>
-        <p>${escapeHtml(n.body)}</p>
-        <div class="date">${fmtDate(n.published_at)}</div>
-      </div>
-    </div>`;
-}
-
 export async function renderHome(root) {
   root.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
   const data = await get("/api/home");
   const user = data.user;
   const welcome = `${escapeHtml(user.first_name || "Гражданин")}, Добро пожаловать!`;
+  
   root.innerHTML = `
     <section class="page-header">
       <div>
@@ -111,10 +113,12 @@ export async function renderHome(root) {
 
     ${assistantCard()}
 
-    <div class="compact-row">
-      ${compactCard({ id: "wheel-card", type: "wheel", title: "Колесо", sub: "Фортуны", cssClass: "wheel-compact" })}
-      ${compactCard({ id: "news-card", type: "news", title: "Новости", sub: data.news ? escapeHtml(data.news.title.substring(0, 20)) + "..." : "Последние", imageUrl: data.news?.image_url, cssClass: "news-compact" })}
+    <div class="square-row">
+      ${bigSquareCard({ id: "wheel-card", type: "wheel", title: "Колесо", sub: "Фортуны", cssClass: "wheel-square" })}
+      ${bigSquareCard({ id: "news-card", type: "news", title: "Новости", sub: "Последние", imageUrl: data.news?.image_url, cssClass: "news-square" })}
     </div>
+
+    ${data.news ? fullNewsCard(data.news) : ""}
 
     <h2 class="section-title">План</h2>
     ${
@@ -158,7 +162,8 @@ export async function renderHome(root) {
 
   root.querySelector("#assistant-card").addEventListener("click", openAssistantChat);
   root.querySelector("#wheel-card").addEventListener("click", openWheel);
-  root.querySelector("#news-card").addEventListener("click", openAllNews);
+  root.querySelector("#news-card")?.addEventListener("click", openAllNews);
+  root.querySelector("#full-news-card")?.addEventListener("click", openAllNews);
 
   const allTasksList = data.tasks;
   root.querySelectorAll('[data-action="start"]').forEach((btn) => {
@@ -230,7 +235,7 @@ async function openAllNews() {
     return;
   }
   const body = items.length
-    ? `<div style="display:flex;flex-direction:column;gap:14px">${items.map(newsCard).join("")}</div>`
+    ? `<div style="display:flex;flex-direction:column;gap:14px">${items.map(fullNewsCard).join("")}</div>`
     : `<div class="empty">Новостей пока нет</div>`;
   window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>

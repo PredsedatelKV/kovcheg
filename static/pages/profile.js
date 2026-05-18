@@ -157,7 +157,7 @@ function openItemActionsDialog(row) {
   modal.querySelector("#ia-activate").addEventListener("click", async () => {
     try {
       await post("/api/profile/inventory/activate", { item_id: item.id, recipient: "", quantity: 1 });
-      window.kov.toast("Предмет активирован");
+      window.kov.toast(`✨ «${item.name}» активирован! +10 K`);
       window.closeModal();
       const r = document.getElementById("view");
       renderProfile(r);
@@ -277,7 +277,7 @@ async function openGiftDialog(item, maxQty) {
     if (!recipient || !quantity) return window.kov.toast("Заполни поля");
     try {
       await post("/api/profile/inventory/gift", { recipient, item_id: item.id, quantity });
-      window.kov.toast("Подарено");
+      window.kov.toast(`🎁 Подарено: «${item.name}» ×${quantity}`);
       window.closeModal();
       renderProfile(document.getElementById("view"));
     } catch (err) {
@@ -323,7 +323,7 @@ async function openSellDialog(item, maxQty) {
     if (!recipient || !quantity || !price) return window.kov.toast("Заполни поля");
     try {
       await post("/api/profile/inventory/sell", { recipient, item_id: item.id, quantity, price });
-      window.kov.toast("Выставлено на продажу");
+      window.kov.toast(`🏷️ Выставлено: «${item.name}» ×${quantity} за ${price} K`);
       window.closeModal();
       renderProfile(document.getElementById("view"));
     } catch (err) {
