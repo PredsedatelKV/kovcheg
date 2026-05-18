@@ -685,26 +685,42 @@ function gameWheelRisk() {
       
       const mult = parseFloat(chosen.label.replace("x", ""));
       const win = Math.floor(bet * mult);
+      const chosenIdx = sectors.indexOf(chosen);
       
+      // Roulette animation - light up sectors sequentially
       wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("active"));
-      const idx = sectors.indexOf(chosen);
-      wheel.children[idx].classList.add("active");
-      animateElement(wheel.children[idx], "popIn", 300);
+      let currentIdx = 0;
+      let spins = 0;
+      const maxSpins = 20 + chosenIdx;
       
-      if (mult > 1) {
-        post("/api/arcade/win", { amount: win }).catch(() => {});
-        balance += win;
-        updateBalanceDisplay("wheel-balance", balance);
-        resultEl.innerHTML = `<div class="game-win">${chosen.label}! Выигрыш: ${win} K</div>`;
-        animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
-      } else if (mult === 1) {
-        post("/api/arcade/win", { amount: bet }).catch(() => {});
-        balance += bet;
-        updateBalanceDisplay("wheel-balance", balance);
-        resultEl.innerHTML = `<div class="game-neutral">x1. Ставка возвращена.</div>`;
-      } else {
-        resultEl.innerHTML = `<div class="game-lose">${chosen.label}. Ставка потеряна.</div>`;
-      }
+      const spinInterval = setInterval(() => {
+        wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("highlight"));
+        wheel.children[currentIdx].classList.add("highlight");
+        currentIdx = (currentIdx + 1) % sectors.length;
+        spins++;
+        
+        if (spins >= maxSpins) {
+          clearInterval(spinInterval);
+          wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("highlight"));
+          wheel.children[chosenIdx].classList.add("active");
+          animateElement(wheel.children[chosenIdx], "popIn", 300);
+          
+          if (mult > 1) {
+            post("/api/arcade/win", { amount: win }).catch(() => {});
+            balance += win;
+            updateBalanceDisplay("wheel-balance", balance);
+            resultEl.innerHTML = `<div class="game-win">${chosen.label}! Выигрыш: ${win} K</div>`;
+            animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
+          } else if (mult === 1) {
+            post("/api/arcade/win", { amount: bet }).catch(() => {});
+            balance += bet;
+            updateBalanceDisplay("wheel-balance", balance);
+            resultEl.innerHTML = `<div class="game-neutral">x1. Ставка возвращена.</div>`;
+          } else {
+            resultEl.innerHTML = `<div class="game-lose">${chosen.label}. Ставка потеряна.</div>`;
+          }
+        }
+      }, 100);
     });
   });
 }
@@ -736,7 +752,7 @@ export async function renderArcade(root) {
         <div class="game-tile-reward">3-8 K</div>
       </div>
       <div class="game-tile" data-game="tictactoe">
-        <div class="game-tile-icon"><img src="/static/img/ui/book.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-icon"><img src="/static/img/ui/tictactoe.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Крестики-нолики</div>
         <div class="game-tile-desc">Играй против Мошонки</div>
         <div class="game-tile-reward">10 K</div>
@@ -748,7 +764,7 @@ export async function renderArcade(root) {
         <div class="game-tile-reward">15 K</div>
       </div>
       <div class="game-tile" data-game="harvest">
-        <div class="game-tile-icon"><img src="/static/img/ui/pumpkin.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-icon"><img src="/static/img/ui/harvest.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Собери урожай</div>
         <div class="game-tile-desc">Собирай тыквы за время</div>
         <div class="game-tile-reward">1 K/тыква</div>

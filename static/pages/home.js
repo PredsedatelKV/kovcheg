@@ -45,12 +45,13 @@ function bigSquareCard(opts) {
       <div class="card big-square ${opts.cssClass || ''}" id="${opts.id}">
         <div class="big-square-visual wheel-visual">
           <svg viewBox="0 0 100 100" class="wheel-mini-svg">
-            <circle cx="50" cy="50" r="45" fill="#F2B33C" stroke="#fff" stroke-width="2"/>
+            <path d="M50,50 L50,5 A45,45 0 0,1 95,50 Z" fill="#F2B33C"/>
+            <path d="M50,50 L95,50 A45,45 0 0,1 50,95 Z" fill="#6CB6FB"/>
+            <path d="M50,50 L50,95 A45,45 0 0,1 5,50 Z" fill="#E25C73"/>
+            <path d="M50,50 L5,50 A45,45 0 0,1 50,5 Z" fill="#6BD995"/>
             <line x1="50" y1="5" x2="50" y2="95" stroke="#fff" stroke-width="1.5"/>
             <line x1="5" y1="50" x2="95" y2="50" stroke="#fff" stroke-width="1.5"/>
-            <line x1="18" y1="18" x2="82" y2="82" stroke="#fff" stroke-width="1.5"/>
-            <line x1="82" y1="18" x2="18" y2="82" stroke="#fff" stroke-width="1.5"/>
-            <circle cx="50" cy="50" r="8" fill="#fff"/>
+            <circle cx="50" cy="50" r="6" fill="#fff" stroke="#ddd" stroke-width="1"/>
           </svg>
         </div>
         <div class="big-square-footer">

@@ -1155,23 +1155,52 @@ body {
 }
 .product {
   background: var(--surface);
-  border-radius: var(--radius);
-  padding: 12px;
+  border-radius: 14px;
+  padding: 10px;
   text-align: center;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: center;
   box-shadow: var(--shadow);
   transition: transform 0.18s ease, box-shadow 0.18s ease;
-  min-height: 230px;
+  border: 1px solid var(--border);
 }
 .product:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(24, 39, 75, 0.10); }
 .product:active { transform: scale(0.985); }
-.product .icon-big { font-size: 50px; line-height: 1; margin: 4px 0 8px; }
-.product .name { font-weight: 600; font-size: 14px; min-height: 36px; display: flex; align-items: center; justify-content: center; line-height: 1.2; }
-.product .price { color: var(--text-soft); font-size: 14px; margin: 4px 0 10px; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.product .img-frame-xl {
+  width: 72px;
+  height: 72px;
+  margin: 4px auto 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.product .img-frame-xl img {
+  width: 56px;
+  height: 56px;
+  image-rendering: auto;
+}
+.product .name {
+  font-weight: 600;
+  font-size: 13px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.2;
+  margin-bottom: 4px;
+}
+.product .price {
+  color: var(--text-soft);
+  font-size: 13px;
+  margin: 4px 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
 .product .price .coin { color: var(--accent); }
-.product .btn { padding: 8px 0; font-size: 14px; margin-top: auto; }
+.product .btn { padding: 8px 0; font-size: 13px; margin-top: auto; width: 100%; }
 
 .listing-row {
   background: var(--surface);
@@ -1523,9 +1552,10 @@ body {
   font-weight: 700;
   color: white;
   font-size: 13px;
-  transition: transform 0.15s;
+  transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
 }
 .risk-sector.active { transform: scale(1.1); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+.risk-sector.highlight { filter: brightness(1.4); transform: scale(1.05); box-shadow: 0 0 15px rgba(255,255,255,0.5); }
 
 /* ============ SETTINGS ============ */
 .settings-section { margin: 16px 0; }

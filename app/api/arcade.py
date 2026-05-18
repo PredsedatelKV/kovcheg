@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/arcade", tags=["arcade"])
 
 @router.post("/win")
 def arcade_win(
-    amount: int,
+    amount: int = Body(..., embed=True),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> schemas.UserOut:
@@ -46,7 +46,7 @@ def arcade_win(
 
 @router.post("/bet")
 def arcade_bet(
-    amount: int,
+    amount: int = Body(..., embed=True),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> schemas.UserOut:
