@@ -27,7 +27,7 @@ function bannerCarousel(banners) {
 function assistantCard() {
   return `
     <div class="card assistant-card" id="assistant-card">
-      <div class="assistant-avatar-big">
+      <div class="assistant-villager">
         <img src="/static/img/villager.svg" alt="Мошонка"/>
       </div>
       <div class="assistant-meta">
@@ -40,6 +40,22 @@ function assistantCard() {
 }
 
 function compactCard(opts) {
+  if (opts.type === "wheel") {
+    return `
+      <div class="card compact-card ${opts.cssClass || ""}" id="${opts.id}">
+        <div class="compact-thumb wheel-thumb-mini"></div>
+        <div class="compact-title">${escapeHtml(opts.title)}</div>
+        <div class="compact-sub">${escapeHtml(opts.sub)}</div>
+      </div>`;
+  }
+  if (opts.type === "news" && opts.imageUrl) {
+    return `
+      <div class="card compact-card ${opts.cssClass || ""}" id="${opts.id}">
+        <div class="compact-thumb news-thumb-mini" style="background-image:url('${escapeHtml(opts.imageUrl)}')"></div>
+        <div class="compact-title">${escapeHtml(opts.title)}</div>
+        <div class="compact-sub">${escapeHtml(opts.sub)}</div>
+      </div>`;
+  }
   return `
     <div class="card compact-card ${opts.cssClass || ""}" id="${opts.id}">
       <div class="compact-icon">${iconHtml(opts.icon, "md", opts.title)}</div>
@@ -96,8 +112,8 @@ export async function renderHome(root) {
     ${assistantCard()}
 
     <div class="compact-row">
-      ${compactCard({ id: "wheel-card", icon: "/static/img/ui/wheel.svg", title: "Колесо", sub: "Фортуны", cssClass: "wheel-compact" })}
-      ${compactCard({ id: "news-card", icon: "/static/img/ui/mail.svg", title: "Новости", sub: "Последние", cssClass: "news-compact" })}
+      ${compactCard({ id: "wheel-card", type: "wheel", title: "Колесо", sub: "Фортуны", cssClass: "wheel-compact" })}
+      ${compactCard({ id: "news-card", type: "news", title: "Новости", sub: data.news ? escapeHtml(data.news.title.substring(0, 20)) + "..." : "Последние", imageUrl: data.news?.image_url, cssClass: "news-compact" })}
     </div>
 
     <h2 class="section-title">План</h2>
