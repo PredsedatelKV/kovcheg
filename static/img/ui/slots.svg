@@ -1,8 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges">
-  <rect x="4" y="8" width="24" height="16" fill="#6b5a42"/>
-  <rect x="8" y="4" width="16" height="8" fill="#8b7355"/>
-  <rect x="8" y="12" width="4" height="4" fill="#f2b33c"/>
-  <rect x="14" y="12" width="4" height="4" fill="#f2b33c"/>
-  <rect x="20" y="12" width="4" height="4" fill="#f2b33c"/>
-  <rect x="8" y="20" width="16" height="4" fill="#5a4a35"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="slotBody" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFD700"/>
+      <stop offset="100%" style="stop-color:#FFA000"/>
+    </linearGradient>
+    <linearGradient id="slotScreen" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#E8E8E8"/>
+      <stop offset="100%" style="stop-color:#BDBDBD"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="48" height="48" rx="8" fill="url(#slotBody)"/>
+  <rect x="12" y="12" width="40" height="40" rx="6" fill="#E65100"/>
+  <rect x="16" y="16" width="32" height="32" rx="4" fill="url(#slotScreen)"/>
+  <rect x="20" y="20" width="8" height="8" rx="2" fill="#F44336"/>
+  <rect x="28" y="20" width="8" height="8" rx="2" fill="#4CAF50"/>
+  <rect x="36" y="20" width="8" height="8" rx="2" fill="#2196F3"/>
+  <rect x="20" y="32" width="8" height="8" rx="2" fill="#FF9800"/>
+  <rect x="28" y="32" width="8" height="8" rx="2" fill="#9C27B0"/>
+  <rect x="36" y="32" width="8" height="8" rx="2" fill="#FFEB3B"/>
+  <rect x="24" y="4" width="16" height="6" rx="3" fill="#FF6F00"/>
+  <circle cx="32" cy="7" r="2" fill="#FFD700"/>
 </svg>

@@ -1712,3 +1712,143 @@ html.dark .game-tile.casino { background: linear-gradient(180deg, #3d2e1e 0%, va
   text-align: center;
   margin-top: 12px;
 }
+
+/* ============ ANIMATIONS ============ */
+@keyframes popIn {
+  0% { transform: scale(0.5); opacity: 0; }
+  70% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 5px rgba(242, 179, 60, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(242, 179, 60, 0.6); }
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes slotBounce {
+  0% { transform: translateY(-20px); }
+  60% { transform: translateY(5px); }
+  100% { transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ============ GAME STYLES ============ */
+.game-bushes {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin: 20px 0;
+}
+.game-bush {
+  width: 80px;
+  height: 80px;
+  border-radius: 16px;
+  border: 3px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, border-color 0.2s;
+}
+.game-bush:hover:not(:disabled) { transform: scale(1.1); border-color: var(--primary); }
+.game-bush:active:not(:disabled) { transform: scale(0.95); }
+.game-bush.revealed { animation: popIn 0.3s ease-out; }
+.game-bush.found { border-color: #4CAF50; background: #E8F5E9; }
+.game-bush.missed { border-color: #E53935; background: #FFEBEE; }
+
+/* Tic-tac-toe */
+.game-ttt-board {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  max-width: 240px;
+  margin: 20px auto;
+}
+.ttt-cell {
+  aspect-ratio: 1;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.ttt-cell:hover:not(.taken) { border-color: var(--primary); transform: scale(1.05); }
+.ttt-cell.taken { cursor: default; }
+.ttt-icon { width: 40px; height: 40px; image-rendering: auto; }
+
+/* Minesweeper */
+.game-mine-board {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  max-width: 280px;
+  margin: 20px auto;
+}
+.mine-cell {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s;
+}
+.mine-cell:hover:not(.revealed) { transform: scale(1.05); }
+.mine-cell.revealed { background: #E8E8E8; border-color: #CCC; cursor: default; }
+.mine-cell.mine-hit { background: #FFCDD2; border-color: #E53935; animation: shake 0.5s; }
+.mine-cell.mine-show { background: #FFCDD2; border-color: #E53935; }
+.mine-cell.flagged { background: #FFF9C4; border-color: #F2B33C; }
+.mine-icon { width: 28px; height: 28px; image-rendering: auto; }
+.mine-num { font-weight: 700; font-size: 18px; }
+.mine-num-1 { color: #2196F3; }
+.mine-num-2 { color: #4CAF50; }
+.mine-num-3 { color: #F44336; }
+.mine-num-4 { color: #9C27B0; }
+
+/* Game icons */
+.game-icon, .game-icon-sm, .game-icon-lg {
+  image-rendering: auto;
+  display: block;
+}
+.game-icon { width: 32px; height: 32px; }
+.game-icon-sm { width: 20px; height: 20px; }
+.game-icon-lg { width: 48px; height: 48px; }
+
+/* Rocket animation */
+.rocket-img { transition: transform 0.3s ease-out; }
+
+/* See-all clickable text */
+.see-all-text {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 0;
+  font-weight: 500;
+}
+.see-all-text:hover { text-decoration: underline; }

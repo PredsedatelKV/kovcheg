@@ -1,8 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges">
-  <rect x="6" y="6" width="20" height="20" fill="#f5f5f5" stroke="#333" stroke-width="2"/>
-  <rect x="10" y="10" width="4" height="4" fill="#333"/>
-  <rect x="18" y="10" width="4" height="4" fill="#333"/>
-  <rect x="10" y="18" width="4" height="4" fill="#333"/>
-  <rect x="18" y="18" width="4" height="4" fill="#333"/>
-  <rect x="14" y="14" width="4" height="4" fill="#333"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="diceGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFFFFF"/>
+      <stop offset="100%" style="stop-color:#E0E0E0"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="40" height="40" rx="8" fill="url(#diceGrad)" stroke="#BDBDBD" stroke-width="2"/>
+  <circle cx="24" cy="24" r="4" fill="#424242"/>
+  <circle cx="40" cy="24" r="4" fill="#424242"/>
+  <circle cx="24" cy="40" r="4" fill="#424242"/>
+  <circle cx="40" cy="40" r="4" fill="#424242"/>
+  <circle cx="32" cy="32" r="4" fill="#424242"/>
 </svg>

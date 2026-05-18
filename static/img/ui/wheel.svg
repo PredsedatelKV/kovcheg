@@ -1,14 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges" aria-hidden="true">
-  <rect x="10" y="4" width="12" height="2" fill="#1f2330"/>
-  <rect x="6" y="6" width="20" height="2" fill="#1f2330"/>
-  <rect x="4" y="8" width="24" height="16" fill="#1f2330"/>
-  <rect x="6" y="24" width="20" height="2" fill="#1f2330"/>
-  <rect x="10" y="26" width="12" height="2" fill="#1f2330"/>
-  <rect x="6" y="8" width="10" height="8" fill="#f2b33c"/>
-  <rect x="16" y="8" width="10" height="8" fill="#6cb6fb"/>
-  <rect x="6" y="16" width="10" height="8" fill="#6bd995"/>
-  <rect x="16" y="16" width="10" height="8" fill="#e25c73"/>
-  <rect x="14" y="14" width="4" height="4" fill="#f5f5f5"/>
-  <rect x="13" y="13" width="6" height="1" fill="#bdc3cb"/>
-  <rect x="13" y="18" width="6" height="1" fill="#bdc3cb"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="wheelGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFD700"/>
+      <stop offset="100%" style="stop-color:#FFA000"/>
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="26" fill="url(#wheelGrad)" stroke="#FF8F00" stroke-width="2"/>
+  <line x1="32" y1="6" x2="32" y2="58" stroke="#FFF" stroke-width="2"/>
+  <line x1="6" y1="32" x2="58" y2="32" stroke="#FFF" stroke-width="2"/>
+  <line x1="13.6" y1="13.6" x2="50.4" y2="50.4" stroke="#FFF" stroke-width="2"/>
+  <line x1="50.4" y1="13.6" x2="13.6" y2="50.4" stroke="#FFF" stroke-width="2"/>
+  <circle cx="32" cy="32" r="6" fill="#FFF" stroke="#FF8F00" stroke-width="2"/>
+  <polygon points="32,2 36,10 28,10" fill="#F44336"/>
 </svg>

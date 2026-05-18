@@ -1,8 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges">
-  <rect x="12" y="4" width="8" height="4" fill="#e55454"/>
-  <rect x="10" y="8" width="12" height="4" fill="#ff8a65"/>
-  <rect x="8" y="12" width="16" height="4" fill="#f2b33c"/>
-  <rect x="12" y="16" width="8" height="8" fill="#6cb6fb"/>
-  <rect x="14" y="24" width="4" height="4" fill="#6bd995"/>
-  <rect x="10" y="28" width="12" height="4" fill="#6bd995"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="rocketBody" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#E0E0E0"/>
+      <stop offset="100%" style="stop-color:#9E9E9E"/>
+    </linearGradient>
+    <linearGradient id="rocketFire" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF5722"/>
+      <stop offset="100%" style="stop-color:#FFC107"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="32" cy="24" rx="10" ry="18" fill="url(#rocketBody)"/>
+  <ellipse cx="32" cy="16" rx="6" ry="8" fill="#F5F5F5"/>
+  <circle cx="32" cy="20" r="4" fill="#42A5F5"/>
+  <circle cx="32" cy="20" r="2" fill="#90CAF9"/>
+  <path d="M22 36 L14 50 L22 44 Z" fill="#F44336"/>
+  <path d="M42 36 L50 50 L42 44 Z" fill="#F44336"/>
+  <path d="M26 42 L32 58 L38 42 Z" fill="url(#rocketFire)"/>
+  <path d="M28 44 L32 54 L36 44 Z" fill="#FFC107"/>
+  <path d="M30 46 L32 50 L34 46 Z" fill="#FFF9C4"/>
 </svg>

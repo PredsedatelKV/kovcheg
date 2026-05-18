@@ -45,7 +45,7 @@ export async function renderProfile(root) {
     <div class="card">
       <div class="inv-row-title">
         <h3 class="card-title">Инвентарь</h3>
-        ${data.inventory.length > 8 ? `<button class="see-all" data-action="all-inv">Смотреть все ›</button>` : ""}
+        ${data.inventory.length > 8 ? `<span class="see-all-text" data-action="all-inv">Смотреть все ›</span>` : ""}
       </div>
       <div class="inv-grid">
         ${data.inventory.length === 0
