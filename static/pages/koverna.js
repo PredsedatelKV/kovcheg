@@ -90,7 +90,8 @@ async function renderMarket(root) {
       : `<div class="product-grid">${listings
           .map(
             (l) => `
-            <div class="product">
+            <div class="product${l.target_user_id ? " product-targeted" : ""}">
+              ${l.target_user_id ? `<span class="targeted-badge">Только тебе</span>` : ""}
               ${productImg(l.item, "xl")}
               <div class="name">${escapeHtml(l.item.name)}</div>
               <div class="card-sub">от ${escapeHtml(l.seller_name)} · ×${l.quantity}</div>

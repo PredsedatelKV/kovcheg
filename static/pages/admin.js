@@ -86,7 +86,7 @@ function userOptions(selectedId = null) {
   return META.users
     .map(
       (u) =>
-        `<option value="${u.id}" ${selectedId === u.id ? "selected" : ""}>${escapeHtml(u.first_name)} (@${escapeHtml(u.username || "")})</option>`,
+        `<option value="${u.id}" ${selectedId === u.id ? "selected" : ""}>${escapeHtml(u.first_name)}</option>`,
     )
     .join("");
 }
@@ -119,7 +119,7 @@ async function renderUsers(body) {
       (u) => `
     <div class="admin-card">
       <h3 class="admin-card-title">${escapeHtml(u.first_name)} ${u.is_admin ? '<span class="admin-badge">admin</span>' : ""}</h3>
-      <div class="admin-sub">@${escapeHtml(u.username || "")} · TG ${u.telegram_id} · 🪙 ${u.balance}</div>
+      <div class="admin-sub">TG ${u.telegram_id} · <img src="/static/img/ui/coin.svg" alt="" class="icon icon-sm inline-coin"/> ${u.balance} Ковбаксов</div>
       ${formGrid(
         field("Имя", `<input class="input" data-k="first_name" value="${escapeHtml(u.first_name)}"/>`),
         field("Должность", `<input class="input" data-k="role" value="${escapeHtml(u.role)}"/>`),
@@ -130,7 +130,7 @@ async function renderUsers(body) {
       </div>
       <hr class="admin-sep"/>
       <div class="row gap wrap">
-        <input class="input input-sm" data-k="delta" type="number" placeholder="±монеты" style="max-width:120px"/>
+        <input class="input input-sm" data-k="delta" type="number" placeholder="±Ковбаксы" style="max-width:120px"/>
         <input class="input input-sm" data-k="note" placeholder="комментарий" style="flex:1; min-width:120px"/>
         <button class="btn btn-sm" data-action="balance" data-id="${u.id}">Применить</button>
       </div>
@@ -349,11 +349,11 @@ async function renderWheel(body) {
         field(
           "Тип",
           `<select class="input" id="w-kind">
-            <option value="coins">монеты</option>
+            <option value="coins">Ковбаксы</option>
             <option value="item">предмет</option>
           </select>`,
         ),
-        field("Значение (монет)", `<input class="input" id="w-value" type="number" value="0"/>`),
+        field("Значение (Ковбаксов)", `<input class="input" id="w-value" type="number" value="0"/>`),
         field(
           "Предмет (если предмет)",
           `<select class="input" id="w-item"><option value="">—</option>${META.items.map((i) => `<option value="${i.code}">${escapeHtml(i.name)}</option>`).join("")}</select>`,
@@ -372,7 +372,7 @@ async function renderWheel(body) {
           field(
             "Тип",
             `<select class="input" data-k="kind">
-              <option value="coins" ${p.kind === "coins" ? "selected" : ""}>монеты</option>
+              <option value="coins" ${p.kind === "coins" ? "selected" : ""}>Ковбаксы</option>
               <option value="item" ${p.kind === "item" ? "selected" : ""}>предмет</option>
             </select>`,
           ),
@@ -525,7 +525,7 @@ async function renderMarket(body) {
         (l) => `
       <div class="admin-card" data-id="${l.id}">
         <h3 class="admin-card-title"><img src="${escapeHtml(l.item.icon)}" class="icon icon-sm" alt=""/> ${escapeHtml(l.item.name)}</h3>
-        <div class="admin-sub">Продаёт: ${escapeHtml(l.seller_name)} · ${l.quantity} шт · 🪙 ${l.price}</div>
+        <div class="admin-sub">Продаёт: ${escapeHtml(l.seller_name)}${l.target_user_name ? ` → ${escapeHtml(l.target_user_name)}` : ""} · ${l.quantity} шт · <img src="/static/img/ui/coin.svg" alt="" class="icon icon-sm inline-coin"/> ${l.price}</div>
         ${formGrid(
           field("Цена", `<input class="input" data-k="price" type="number" min="1" value="${l.price}"/>`),
           field("Кол-во", `<input class="input" data-k="quantity" type="number" min="1" value="${l.quantity}"/>`),
@@ -591,7 +591,7 @@ async function renderTasks(body) {
         field("Название", `<input class="input" id="t-name"/>`),
         field("Описание", `<textarea class="input" id="t-desc" rows="3"></textarea>`),
         field("Иконка", `<input class="input" id="t-icon" value="/static/img/tasks/scroll.svg"/>`),
-        field("Награда (монет)", `<input class="input" id="t-reward" type="number" value="10"/>`),
+        field("Награда (Ковбаксов)", `<input class="input" id="t-reward" type="number" value="10"/>`),
         field("Цель", `<input class="input" id="t-target" type="number" value="1"/>`),
         field("Тип", `<select class="input" id="t-plan"><option value="0">Задание</option><option value="1">Ежедневный план</option></select>`),
       ) + `<button class="btn btn-sm" id="t-create">Добавить</button>`,

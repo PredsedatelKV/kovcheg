@@ -412,45 +412,70 @@ body {
 .inv-cell .acts { display: flex; gap: 4px; margin-top: 6px; }
 .inv-cell .acts button { flex: 1; padding: 4px 0; font-size: 10px; }
 
-/* Wallet */
-.wallet-balance {
+/* Wallet — большая сумма слева + компактная кнопка перевода справа */
+.wallet-card { padding-bottom: 14px; }
+.wallet-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 18px;
-  font-weight: 700;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 10px;
 }
-.wallet-balance .coin { font-size: 22px; }
-.wallet-row { display: flex; align-items: center; gap: 12px; }
-.wallet-row .label { color: var(--text-soft); font-size: 13px; }
-.wallet-actions { display: flex; gap: 10px; margin-top: 12px; }
-.wallet-actions .btn { flex: 1; }
-.wallet-actions-single {
+.wallet-balance-big {
   display: flex;
-  justify-content: center;
-  margin-top: 18px;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
 }
-.wallet-actions-single .btn-transfer {
-  flex: none;
+.wallet-balance-big .wallet-coin {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  image-rendering: pixelated;
+}
+.wallet-balance-num { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wallet-balance-label {
+  font-size: 12px;
+  color: var(--text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 600;
+}
+.wallet-balance-value {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.05;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wallet-balance-value strong { font-size: 32px; font-weight: 800; }
+.wallet-balance-unit {
+  font-size: 14px;
+  color: var(--text-soft);
+  font-weight: 600;
+  margin-left: 4px;
+}
+.btn-transfer-compact {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
   background: linear-gradient(180deg, var(--primary), var(--primary-700));
   color: #fff;
   border: none;
-  border-radius: 18px;
-  padding: 16px 36px;
-  font-size: 17px;
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.2px;
-  box-shadow: 0 8px 22px rgba(47, 123, 245, 0.32);
-  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.15s ease;
-  min-width: 220px;
-  justify-content: center;
+  box-shadow: 0 6px 14px rgba(47, 123, 245, 0.28);
+  transition: transform 0.16s ease, filter 0.15s ease;
 }
-.wallet-actions-single .btn-transfer:hover { transform: translateY(-1px); filter: brightness(1.04); }
-.wallet-actions-single .btn-transfer:active { transform: translateY(1px) scale(0.99); box-shadow: 0 4px 12px rgba(47, 123, 245, 0.24); }
-.wallet-actions-single .btn-transfer .icon-md { width: 22px; height: 22px; }
+.btn-transfer-compact:hover { transform: translateY(-1px); filter: brightness(1.05); }
+.btn-transfer-compact:active { transform: translateY(1px) scale(0.97); }
+.btn-transfer-compact .icon-sm { width: 18px; height: 18px; }
 
 .btn-transfer-confirm {
   margin-top: 16px;
@@ -459,6 +484,71 @@ body {
   font-size: 16px;
   font-weight: 700;
 }
+
+/* Item actions modal (Inventory → click item) */
+.item-actions-head {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.item-actions-head h2 { margin: 6px 0 0; font-size: 18px; }
+.item-actions-head .img-frame { width: 96px; height: 96px; }
+.item-actions-head .card-sub { margin: 0; font-size: 13px; max-width: 280px; }
+.item-meta {
+  font-size: 12px;
+  color: var(--text-soft);
+  font-weight: 600;
+  background: var(--surface-2, rgba(0,0,0,0.04));
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+.item-actions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.item-actions-grid .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.item-actions-grid .btn:last-child { grid-column: 1 / -1; }
+.item-actions-grid .btn[disabled] { opacity: 0.45; pointer-events: none; }
+.item-actions-grid .icon-md { width: 20px; height: 20px; }
+
+/* clickable inventory cell — visual hint */
+.inv-cell { cursor: pointer; }
+.inv-cell:active { transform: scale(0.97); }
+.inv-cell:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+
+/* Targeted (address) market listing */
+.product-targeted {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  position: relative;
+}
+.targeted-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  z-index: 2;
+}
+.inline-coin { vertical-align: middle; margin: 0 2px; }
 
 /* Admin panel */
 .admin-tabs {

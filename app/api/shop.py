@@ -29,7 +29,7 @@ def buy(
     if product is None:
         raise HTTPException(status_code=404, detail="Товар не найден")
     if user.wallet.balance < product.price:
-        raise HTTPException(status_code=400, detail="Недостаточно монет")
+        raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
     user.wallet.balance -= product.price
     inv = (
         db.query(models.InventoryItem)

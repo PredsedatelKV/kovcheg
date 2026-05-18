@@ -102,6 +102,8 @@ class MarketListingOut(BaseModel):
     item: ItemOut
     quantity: int
     price: int
+    target_user_id: int | None = None
+    target_user_name: str | None = None
 
 
 class BuyRequest(BaseModel):
@@ -111,6 +113,13 @@ class BuyRequest(BaseModel):
 class ListRequest(BaseModel):
     item_id: int
     quantity: int = Field(ge=1)
+    price: int = Field(ge=1)
+
+
+class SellRequest(BaseModel):
+    item_id: int
+    recipient: str  # "uid:<id>" or username/tg_id
+    quantity: int = Field(ge=1, default=1)
     price: int = Field(ge=1)
 
 

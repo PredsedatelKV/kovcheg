@@ -122,9 +122,11 @@ class MarketListing(Base):
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    target_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
-    seller: Mapped[User] = relationship("User")
+    seller: Mapped[User] = relationship("User", foreign_keys=[seller_id])
+    target_user: Mapped["User | None"] = relationship("User", foreign_keys=[target_user_id])
     item: Mapped[Item] = relationship("Item")
 
 
