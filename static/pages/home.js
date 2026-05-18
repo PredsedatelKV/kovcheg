@@ -42,7 +42,7 @@ function assistantCard() {
 function bigSquareCard(opts) {
   if (opts.type === "wheel") {
     return `
-      <div class="card big-square ${opts.cssClass || ""}" id="${opts.id}">
+      <div class="card big-square ${opts.cssClass || ''}" id="${opts.id}">
         <div class="big-square-visual wheel-visual">
           <svg viewBox="0 0 100 100" class="wheel-mini-svg">
             <circle cx="50" cy="50" r="45" fill="#F2B33C" stroke="#fff" stroke-width="2"/>
@@ -59,10 +59,11 @@ function bigSquareCard(opts) {
         </div>
       </div>`;
   }
-  if (opts.type === "news" && opts.imageUrl) {
+  if (opts.type === "news") {
+    const hasImage = opts.imageUrl;
     return `
-      <div class="card big-square ${opts.cssClass || ""}" id="${opts.id}">
-        <div class="big-square-visual news-visual" style="background-image:url('${escapeHtml(opts.imageUrl)}')"></div>
+      <div class="card big-square ${opts.cssClass || ''}" id="${opts.id}">
+        ${hasImage ? `<div class="big-square-visual news-visual" style="background-image:url('${escapeHtml(opts.imageUrl)}')"></div>` : `<div class="big-square-icon">${iconHtml("/static/img/ui/mail.svg", "lg", "Новости")}</div>`}
         <div class="big-square-footer">
           <span class="big-square-title">${escapeHtml(opts.title)}</span>
           <span class="big-square-arrow">›</span>
@@ -70,7 +71,7 @@ function bigSquareCard(opts) {
       </div>`;
   }
   return `
-    <div class="card big-square ${opts.cssClass || ""}" id="${opts.id}">
+    <div class="card big-square ${opts.cssClass || ''}" id="${opts.id}">
       <div class="big-square-icon">${iconHtml(opts.icon, "lg", opts.title)}</div>
       <div class="big-square-footer">
         <span class="big-square-title">${escapeHtml(opts.title)}</span>

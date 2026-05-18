@@ -1,98 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240" shape-rendering="geometricPrecision">
-  <defs>
-    <linearGradient id="skinGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#FFDFC4;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#E8B89A;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="robeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#5D4037;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#3E2723;stop-opacity:1" />
-    </linearGradient>
-  </defs>
-  
-  <!-- Папаха (большая меховая шапка) -->
-  <ellipse cx="100" cy="70" rx="75" ry="55" fill="#4E342E"/>
-  <ellipse cx="100" cy="68" rx="72" ry="52" fill="#5D4037"/>
-  <ellipse cx="100" cy="65" rx="68" ry="48" fill="#6D4C41"/>
-  <ellipse cx="100" cy="62" rx="64" ry="44" fill="#795548"/>
-  <ellipse cx="100" cy="58" rx="58" ry="38" fill="#8D6E63"/>
-  
-  <!-- Мех папахи -->
-  <ellipse cx="100" cy="90" rx="70" ry="20" fill="#5D4037"/>
-  <ellipse cx="100" cy="88" rx="66" ry="16" fill="#6D4C41"/>
-  <ellipse cx="100" cy="86" rx="62" ry="14" fill="#8D6E63"/>
-  
-  <!-- Лицо -->
-  <rect x="50" y="80" width="100" height="100" rx="25" fill="url(#skinGrad)"/>
-  
-  <!-- Уши -->
-  <ellipse cx="42" cy="125" rx="14" ry="22" fill="#E8B89A"/>
-  <ellipse cx="158" cy="125" rx="14" ry="22" fill="#E8B89A"/>
-  <ellipse cx="42" cy="125" rx="10" ry="16" fill="#FFDFC4"/>
-  <ellipse cx="158" cy="125" rx="10" ry="16" fill="#FFDFC4"/>
-  
-  <!-- Бровь (unibrow толстая) -->
-  <rect x="55" y="105" width="90" height="12" rx="4" fill="#4E342E"/>
-  <rect x="58" y="107" width="84" height="8" rx="2" fill="#5D4037"/>
-  
-  <!-- Глаза -->
-  <ellipse cx="78" cy="132" rx="14" ry="18" fill="#81C784"/>
-  <ellipse cx="122" cy="132" rx="14" ry="18" fill="#81C784"/>
-  <ellipse cx="78" cy="132" rx="10" ry="14" fill="#66BB6A"/>
-  <ellipse cx="122" cy="132" rx="10" ry="14" fill="#66BB6A"/>
-  <ellipse cx="78" cy="135" rx="6" ry="8" fill="#2E7D32"/>
-  <ellipse cx="122" cy="135" rx="6" ry="8" fill="#2E7D32"/>
-  <circle cx="80" cy="133" r="3" fill="white"/>
-  <circle cx="124" cy="133" r="3" fill="white"/>
-  
-  <!-- Мешки под глазами -->
-  <ellipse cx="78" cy="148" rx="12" ry="5" fill="#D7CCC8" opacity="0.6"/>
-  <ellipse cx="122" cy="148" rx="12" ry="5" fill="#D7CCC8" opacity="0.6"/>
-  
-  <!-- Нос (огромный, как у жителя) -->
-  <path d="M 85 145 Q 100 135 115 145 Q 120 160 115 175 Q 100 185 85 175 Q 80 160 85 145" fill="#E8A87C"/>
-  <path d="M 88 150 Q 100 142 112 150 Q 116 160 112 170 Q 100 178 88 170 Q 84 160 88 150" fill="#FFCC80"/>
-  <ellipse cx="100" cy="175" rx="18" ry="8" fill="#D4946A"/>
-  
-  <!-- Ноздри -->
-  <ellipse cx="94" cy="172" rx="5" ry="3" fill="#A67B5B"/>
-  <ellipse cx="106" cy="172" rx="5" ry="3" fill="#A67B5B"/>
-  
-  <!-- Усы -->
-  <path d="M 65 155 Q 80 150 95 158 Q 105 158 115 150 Q 130 145 140 155" fill="none" stroke="#5D4037" stroke-width="6" stroke-linecap="round"/>
-  <path d="M 65 155 Q 80 152 95 160 Q 105 160 115 152 Q 130 148 140 155" fill="none" stroke="#8D6E63" stroke-width="3" stroke-linecap="round"/>
-  
-  <!-- Борода (пышная) -->
-  <ellipse cx="100" cy="200" rx="55" ry="35" fill="#D7CCC8"/>
-  <ellipse cx="100" cy="198" rx="50" ry="30" fill="#BCAAA4"/>
-  <ellipse cx="100" cy="195" rx="42" ry="24" fill="#A1887F"/>
-  
-  <!-- Улыбка -->
-  <path d="M 75 185 Q 100 205 125 185" fill="none" stroke="#FF7043" stroke-width="5" stroke-linecap="round"/>
-  <path d="M 78 183 Q 100 200 122 183" fill="none" stroke="#FF8A65" stroke-width="2" stroke-linecap="round"/>
-  
-  <!-- Рот (открытый от улыбки) -->
-  <ellipse cx="100" cy="192" rx="15" ry="8" fill="#FFAB91"/>
-  <ellipse cx="100" cy="192" rx="10" ry="4" fill="#FF8A65"/>
-  
-  <!-- Зубы -->
-  <rect x="92" y="188" width="5" height="5" rx="1" fill="white"/>
-  <rect x="98" y="188" width="5" height="5" rx="1" fill="white"/>
-  <rect x="104" y="188" width="5" height="5" rx="1" fill="white"/>
-  
-  <!-- Роба (плечи) -->
-  <path d="M 25 220 Q 100 200 175 220 L 175 240 L 25 240 Z" fill="url(#robeGrad)"/>
-  <path d="M 35 220 Q 100 205 165 220 L 165 235 L 35 235 Z" fill="#6D4C41"/>
-  
-  <!-- Воротник -->
-  <path d="M 55 215 Q 100 225 145 215" fill="none" stroke="#4E342E" stroke-width="8" stroke-linecap="round"/>
-  <path d="M 60 213 Q 100 220 140 213" fill="none" stroke="#8D6E63" stroke-width="3" stroke-linecap="round"/>
-  
-  <!-- Пуговицы -->
-  <circle cx="100" cy="228" r="4" fill="#3E2723"/>
-  <circle cx="100" cy="236" r="4" fill="#3E2723"/>
-  
-  <!-- Складки на бороде -->
-  <path d="M 70 180 Q 65 200 75 215" fill="none" stroke="#A1887F" stroke-width="2" opacity="0.5"/>
-  <path d="M 130 180 Q 135 200 125 215" fill="none" stroke="#A1887F" stroke-width="2" opacity="0.5"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" shape-rendering="crispEdges">
+  <circle cx="50" cy="50" r="48" fill="#d4a574"/>
+  <rect x="30" y="20" width="40" height="8" fill="#8b4513"/>
+  <rect x="28" y="24" width="44" height="6" fill="#8b4513"/>
+  <rect x="35" y="36" width="8" height="8" fill="#2d5a27"/>
+  <rect x="57" y="36" width="8" height="8" fill="#2d5a27"/>
+  <rect x="38" y="42" width="4" height="4" fill="#fff"/>
+  <rect x="60" y="42" width="4" height="4" fill="#fff"/>
+  <rect x="40" y="56" width="20" height="4" fill="#8b4513"/>
+  <rect x="35" y="64" width="30" height="4" fill="#4a6fa5"/>
+  <rect x="30" y="68" width="40" height="12" fill="#4a6fa5"/>
 </svg>

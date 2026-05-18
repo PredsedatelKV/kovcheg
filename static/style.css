@@ -339,43 +339,77 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   text-align: center;
-  padding: 0;
+  padding: 16px 12px;
   cursor: pointer;
-  aspect-ratio: 1 / 1;
+  min-height: 160px;
   transition: transform 0.14s ease, box-shadow 0.14s ease;
   overflow: hidden;
   position: relative;
 }
 .big-square:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(24,39,75,0.12); }
 .big-square:active { transform: scale(0.97); }
+.big-square-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 12px;
+}
+.big-square-icon .pixel-icon-lg {
+  width: 48px;
+  height: 48px;
+}
 .big-square-visual {
   width: 100%;
   flex: 1;
   min-height: 0;
-  border-radius: 14px 14px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
   background-size: cover;
   background-position: center;
 }
 .wheel-visual {
-  background: conic-gradient(#F2B33C 0 25%, #6CB6FB 25% 50%, #E25C73 50% 75%, #6BD995 75% 100%);
-  box-shadow: inset 0 0 0 4px white, 0 2px 8px rgba(0,0,0,0.1);
+  background: linear-gradient(135deg, #f2b33c22, #6cb6fb22);
+  border-radius: 12px;
+}
+.wheel-mini-svg {
+  width: 72px;
+  height: 72px;
+  animation: spin 20s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 .news-visual {
   background-color: var(--surface-2);
+  border-radius: 12px;
+  min-height: 80px;
+}
+.big-square-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 4px 0;
+  margin-top: auto;
 }
 .big-square-title {
   font-weight: 700;
-  font-size: 15px;
-  margin: 10px 0 2px;
-  padding: 0 8px;
+  font-size: 14px;
+  text-align: left;
+  flex: 1;
 }
-.big-square-sub {
-  font-size: 12px;
-  color: var(--text-soft);
-  margin: 0 0 10px;
-  padding: 0 8px;
+.big-square-arrow {
+  color: var(--text-muted);
+  font-size: 20px;
+  font-weight: 300;
+  margin-left: 8px;
 }
 .wheel-square { background: linear-gradient(180deg, #FFF8E1 0%, #FFFFFF 100%); border-color: #FFECB3; }
 .news-square { background: linear-gradient(180deg, #E3F2FD 0%, #FFFFFF 100%); border-color: #BBDEFB; }
