@@ -26,7 +26,7 @@ export function openAssistantChat() {
       container.innerHTML = `
         <div class="chat-empty">
           <img src="/static/img/villager.svg" alt="Мошонка" class="chat-empty-avatar"/>
-          <p>Привет, путник! Я Мошонка — житель Ковчега.<br>Живу в канаве у стены, охраняю тыквенную грядку.<br>Спроси что-нибудь про общину!</p>
+          <p>Привет, путник! Я Мошонка — житель Ковчега.<br>Знаю все тропы и правила нашей общины.<br>Спроси что-нибудь — помогу!</p>
         </div>
       `;
       return;
@@ -49,7 +49,7 @@ export function openAssistantChat() {
         <div class="chat-avatar"><img src="/static/img/villager.svg" alt="Мошонка"/></div>
         <div>
           <div class="chat-name">Ассистент Мошонка</div>
-          <div class="chat-status">Житель канавы у стены</div>
+          <div class="chat-status">Верный спутник граждан Ковчега</div>
         </div>
         <div class="chat-actions">
           <button class="chat-clear" id="chat-clear" title="Очистить чат">🗑</button>

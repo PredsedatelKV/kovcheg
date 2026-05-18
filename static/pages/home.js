@@ -43,24 +43,39 @@ function bigSquareCard(opts) {
   if (opts.type === "wheel") {
     return `
       <div class="card big-square ${opts.cssClass || ""}" id="${opts.id}">
-        <div class="big-square-visual wheel-visual"></div>
-        <div class="big-square-title">${escapeHtml(opts.title)}</div>
-        <div class="big-square-sub">${escapeHtml(opts.sub)}</div>
+        <div class="big-square-visual wheel-visual">
+          <svg viewBox="0 0 100 100" class="wheel-mini-svg">
+            <circle cx="50" cy="50" r="45" fill="#F2B33C" stroke="#fff" stroke-width="2"/>
+            <line x1="50" y1="5" x2="50" y2="95" stroke="#fff" stroke-width="1.5"/>
+            <line x1="5" y1="50" x2="95" y2="50" stroke="#fff" stroke-width="1.5"/>
+            <line x1="18" y1="18" x2="82" y2="82" stroke="#fff" stroke-width="1.5"/>
+            <line x1="82" y1="18" x2="18" y2="82" stroke="#fff" stroke-width="1.5"/>
+            <circle cx="50" cy="50" r="8" fill="#fff"/>
+          </svg>
+        </div>
+        <div class="big-square-footer">
+          <span class="big-square-title">${escapeHtml(opts.title)}</span>
+          <span class="big-square-arrow">›</span>
+        </div>
       </div>`;
   }
   if (opts.type === "news" && opts.imageUrl) {
     return `
       <div class="card big-square ${opts.cssClass || ""}" id="${opts.id}">
         <div class="big-square-visual news-visual" style="background-image:url('${escapeHtml(opts.imageUrl)}')"></div>
-        <div class="big-square-title">${escapeHtml(opts.title)}</div>
-        <div class="big-square-sub">${escapeHtml(opts.sub)}</div>
+        <div class="big-square-footer">
+          <span class="big-square-title">${escapeHtml(opts.title)}</span>
+          <span class="big-square-arrow">›</span>
+        </div>
       </div>`;
   }
   return `
     <div class="card big-square ${opts.cssClass || ""}" id="${opts.id}">
       <div class="big-square-icon">${iconHtml(opts.icon, "lg", opts.title)}</div>
-      <div class="big-square-title">${escapeHtml(opts.title)}</div>
-      <div class="big-square-sub">${escapeHtml(opts.sub)}</div>
+      <div class="big-square-footer">
+        <span class="big-square-title">${escapeHtml(opts.title)}</span>
+        <span class="big-square-arrow">›</span>
+      </div>
     </div>`;
 }
 
@@ -114,8 +129,8 @@ export async function renderHome(root) {
     ${assistantCard()}
 
     <div class="square-row">
-      ${bigSquareCard({ id: "wheel-card", type: "wheel", title: "Колесо фортуны", sub: "Крути и выигрывай!", cssClass: "wheel-square" })}
-      ${bigSquareCard({ id: "news-card", type: "news", title: (data.news && data.news.title) || "Новости", sub: data.news ? "Последняя новость" : "Пока пусто", imageUrl: data.news && data.news.image_url, cssClass: "news-square" })}
+      ${bigSquareCard({ id: "wheel-card", type: "wheel", title: "Колесо фортуны", cssClass: "wheel-square" })}
+      ${bigSquareCard({ id: "news-card", type: "news", title: (data.news && data.news.title) || "Новости", imageUrl: data.news && data.news.image_url, cssClass: "news-square" })}
     </div>
 
     <h2 class="section-title">План</h2>
