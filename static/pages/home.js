@@ -98,7 +98,7 @@ export async function renderHome(root) {
   root.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
   const data = await get("/api/home");
   const user = data.user;
-  const welcome = `${escapeHtml(user.first_name || "Гражданин")}, Добро пожаловать!`;
+  const welcome = "Добро пожаловать!";
   
   root.innerHTML = `
     <section class="page-header">
@@ -138,15 +138,18 @@ export async function renderHome(root) {
     <h2 class="section-title">Задания <button class="see-all" data-action="all-tasks">Смотреть все</button></h2>
     ${tasksList(data.tasks.slice(0, 3))}
 
-    <div class="quick-actions">
-      <button class="chip" data-action="legal" data-slug="constitution">
-        ${iconHtml("/static/img/ui/book.svg", "sm", "")}<span>Конституция</span>
+    <div class="quick-actions-grid">
+      <button class="chip big-chip" data-action="legal" data-slug="constitution">
+        ${iconHtml("/static/img/ui/book.svg", "md", "")}<span>Конституция</span>
       </button>
-      <button class="chip" data-action="legal" data-slug="laws">
-        ${iconHtml("/static/img/ui/scales.svg", "sm", "")}<span>Законодательство</span>
+      <button class="chip big-chip" data-action="legal" data-slug="laws">
+        ${iconHtml("/static/img/ui/scales.svg", "md", "")}<span>Законодательство</span>
       </button>
-      <button class="chip" data-action="channel">
-        ${iconHtml("/static/img/ui/mail.svg", "sm", "")}<span>Телеграм канал</span>
+      <button class="chip big-chip" data-action="channel">
+        ${iconHtml("/static/img/ui/mail.svg", "md", "")}<span>Телеграм канал</span>
+      </button>
+      <button class="chip big-chip" data-action="settings">
+        ${iconHtml("/static/img/ui/spark.svg", "md", "")}<span>Настройки</span>
       </button>
     </div>
   `;
@@ -187,15 +190,9 @@ export async function renderHome(root) {
   root.querySelectorAll('[data-action="legal"]').forEach((btn) =>
     btn.addEventListener("click", () => openLegal(btn.dataset.slug)),
   );
-  root.querySelector('[data-action="channel"]').addEventListener("click", () => {
-    const url = data.channel_url;
-    if (window.Telegram?.WebApp?.openTelegramLink && /t\.me\//.test(url)) {
-      window.Telegram.WebApp.openTelegramLink(url);
-    } else {
-      window.Telegram?.WebApp?.openLink?.(url) || window.open(url, "_blank");
-    }
+  root.querySelector('[data-action="settings"]')?.addEventListener("click", () => {
+    import("/static/pages/settings.js").then((m) => m.openSettings());
   });
-}
 
 function openAllTasks(tasks) {
   const body = tasks.length

@@ -1,21 +1,25 @@
 import { renderHome } from "/static/pages/home.js";
 import { renderProfile } from "/static/pages/profile.js";
 import { renderKoverna } from "/static/pages/koverna.js";
+import { renderArcade } from "/static/pages/arcade.js";
 import { renderAdmin } from "/static/pages/admin.js";
+import { initSettings } from "/static/pages/settings.js";
 import { get } from "/static/api.js";
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
   tg.ready();
   tg.expand();
-  // Apply Telegram theme colors lightly — keep our brand though
   tg.setHeaderColor?.("secondary_bg_color");
 }
+
+initSettings();
 
 const TABS = {
   home: renderHome,
   profile: renderProfile,
   koverna: renderKoverna,
+  arcade: renderArcade,
   admin: renderAdmin,
 };
 
