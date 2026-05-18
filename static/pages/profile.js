@@ -103,8 +103,10 @@ export async function renderProfile(root) {
     });
   });
 
-  root.querySelector('[data-action="all-inv"]')?.addEventListener("click", () => openAllInventory(data.inventory, root));
-  root.querySelector('[data-action="all-mytasks"]')?.addEventListener("click", () => openAllMyTasks(data.user_tasks, root));
+  const allInvBtn = root.querySelector('[data-action="all-inv"]');
+  if (allInvBtn) allInvBtn.addEventListener("click", () => openAllInventory(data.inventory, root));
+  const allMyTasksBtn = root.querySelector('[data-action="all-mytasks"]');
+  if (allMyTasksBtn) allMyTasksBtn.addEventListener("click", () => openAllMyTasks(data.user_tasks, root));
 }
 
 function bindCellActions(scope, inventory) {

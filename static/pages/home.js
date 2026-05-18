@@ -114,11 +114,9 @@ export async function renderHome(root) {
     ${assistantCard()}
 
     <div class="square-row">
-      ${bigSquareCard({ id: "wheel-card", type: "wheel", title: "Колесо", sub: "Фортуны", cssClass: "wheel-square" })}
-      ${bigSquareCard({ id: "news-card", type: "news", title: "Новости", sub: "Последние", imageUrl: data.news?.image_url, cssClass: "news-square" })}
+      ${bigSquareCard({ id: "wheel-card", type: "wheel", title: "Колесо фортуны", sub: "Крути и выигрывай!", cssClass: "wheel-square" })}
+      ${bigSquareCard({ id: "news-card", type: "news", title: (data.news && data.news.title) || "Новости", sub: data.news ? "Последняя новость" : "Пока пусто", imageUrl: data.news && data.news.image_url, cssClass: "news-square" })}
     </div>
-
-    ${data.news ? fullNewsCard(data.news) : ""}
 
     <h2 class="section-title">План</h2>
     ${
@@ -165,8 +163,8 @@ export async function renderHome(root) {
 
   root.querySelector("#assistant-card").addEventListener("click", openAssistantChat);
   root.querySelector("#wheel-card").addEventListener("click", openWheel);
-  root.querySelector("#news-card")?.addEventListener("click", openAllNews);
-  root.querySelector("#full-news-card")?.addEventListener("click", openAllNews);
+  const newsCard = root.querySelector("#news-card");
+  if (newsCard) newsCard.addEventListener("click", openAllNews);
 
   const allTasksList = data.tasks;
   root.querySelectorAll('[data-action="start"]').forEach((btn) => {
@@ -190,7 +188,8 @@ export async function renderHome(root) {
   root.querySelectorAll('[data-action="legal"]').forEach((btn) =>
     btn.addEventListener("click", () => openLegal(btn.dataset.slug)),
   );
-  root.querySelector('[data-action="settings"]')?.addEventListener("click", () => {
+  const settingsBtn = root.querySelector('[data-action="settings"]');
+  if (settingsBtn) settingsBtn.addEventListener("click", () => {
     import("/static/pages/settings.js").then((m) => m.openSettings());
   });
 }

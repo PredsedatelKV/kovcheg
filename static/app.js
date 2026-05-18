@@ -51,7 +51,7 @@ tabButtons.forEach((btn) => {
   try {
     const me = await get("/api/profile/me");
     window.kov && (window.kov.me = me.user);
-    if (me.user?.is_admin) {
+    if (me.user && me.user.is_admin) {
       document.querySelectorAll(".admin-only").forEach((el) => el.removeAttribute("hidden"));
     }
   } catch (err) {
