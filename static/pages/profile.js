@@ -18,7 +18,7 @@ function userTaskRow(ut) {
       <div class="ico">${iconHtml(ut.task.icon, "md", ut.task.name)}</div>
       <div class="meta">
         <h4>${escapeHtml(ut.task.name)}</h4>
-        <p>Прогресс: ${ut.progress} / ${ut.task.target_progress} · Награда: ${ut.task.reward}</p>
+        <p>Награда: ${ut.task.reward} K</p>
       </div>
       <span style="color: var(--success); font-size:18px">●</span>
     </div>`;
@@ -61,7 +61,7 @@ export async function renderProfile(root) {
           <img src="/static/img/ui/coin.svg" alt="" class="wallet-coin"/>
           <div class="wallet-balance-num">
             <div class="wallet-balance-label">Баланс</div>
-            <div class="wallet-balance-value"><strong>${user.balance}</strong> <span class="wallet-balance-unit">Ковбаксов</span></div>
+            <div class="wallet-balance-value"><strong>${user.balance}</strong> <span class="wallet-balance-unit">K</span></div>
           </div>
         </div>
         <button class="btn btn-transfer-compact" data-action="transfer">
@@ -121,7 +121,6 @@ function bindCellActions(scope, inventory) {
 function openItemActionsDialog(row) {
   const item = row.item;
   const canGift = item.can_gift;
-  const canActivate = item.can_activate;
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <div class="item-actions-head">
@@ -139,7 +138,7 @@ function openItemActionsDialog(row) {
         <img src="/static/img/ui/coin.svg" alt="" class="icon icon-md"/>
         <span>Продать</span>
       </button>
-      <button class="btn" id="ia-activate" ${canActivate ? "" : "disabled"}>
+      <button class="btn" id="ia-activate">
         <img src="/static/img/ui/spark.svg" alt="" class="icon icon-md"/>
         <span>Активировать</span>
       </button>
@@ -156,7 +155,6 @@ function openItemActionsDialog(row) {
     setTimeout(() => openSellDialog(item, row.quantity), 80);
   });
   modal.querySelector("#ia-activate").addEventListener("click", async () => {
-    if (!canActivate) return;
     try {
       await post("/api/profile/inventory/activate", { item_id: item.id, recipient: "", quantity: 1 });
       window.kov.toast("Предмет активирован");
@@ -204,8 +202,8 @@ function openAllMyTasks(myTasks, root) {
 async function openTransferDialog(user) {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
-    <h2>Перевод Ковбаксов</h2>
-    <p style="color:var(--text-soft); font-size:13px">Баланс: <strong>${user.balance}</strong> Ковбаксов</p>
+    <h2>Перевод K</h2>
+    <p style="color:var(--text-soft); font-size:13px">Баланс: <strong>${user.balance}</strong> K</p>
     <label class="field-label">Кому</label>
     <select class="input" id="recipient">
       <option value="">Загрузка…</option>
@@ -296,7 +294,7 @@ async function openSellDialog(item, maxQty) {
     <select class="input" id="r"><option value="">Загрузка…</option></select>
     <label class="field-label">Количество (макс. ${maxQty})</label>
     <input class="input" id="q" type="number" min="1" max="${maxQty}" value="1" />
-    <label class="field-label">Цена (Ковбаксов)</label>
+    <label class="field-label">Цена (K)</label>
     <input class="input" id="p" type="number" min="1" value="10" />
     <p class="card-sub" style="font-size:12px; margin:8px 0 0">Предмет уйдёт в инвентарь покупателя, как только он подтвердит покупку в Коверне.</p>
     <button class="btn" id="ok" style="margin-top:14px">Выставить</button>
@@ -341,10 +339,23 @@ function openUserTaskDialog(ut, root) {
     <h2 style="text-align:center;margin-top:0">${escapeHtml(ut.task.name)}</h2>
     <div style="text-align:center; margin: 2px 0 10px"><span style="background:var(--primary-soft); color:var(--primary-700); padding: 3px 10px; border-radius:8px; font-size:12px; font-weight:600">В процессе</span></div>
     <p style="color:var(--text-soft); font-size:14px; margin: 0 0 14px">${escapeHtml(ut.task.description)}</p>
-    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${ut.task.reward} Ковбаксов</div>
-    <button class="btn btn-secondary" onclick="closeModal()">Закрыть</button>
+    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${ut.task.reward} K</div>
+    <button class="btn" id="complete-ut">Выполнено</button>
+    <button class="btn btn-secondary" style="margin-top:8px" onclick="closeModal()">Закрыть</button>
     <button class="btn btn-danger" id="cancel-ut" style="margin-top:8px">Прервать задание</button>
   `);
+
+  modal.querySelector("#complete-ut").addEventListener("click", async () => {
+    try {
+      await post(`/api/tasks/${ut.id}/complete`);
+      window.kov.toast(`Задание выполнено! +${ut.task.reward} K`);
+      window.closeModal();
+      renderProfile(root);
+    } catch (e) {
+      window.kov.toast(e.message);
+    }
+  });
+
   modal.querySelector("#cancel-ut").addEventListener("click", async () => {
     try {
       await post(`/api/tasks/${ut.id}/cancel`);
