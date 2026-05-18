@@ -6,11 +6,11 @@ import { renderAdmin } from "/static/pages/admin.js";
 import { initSettings } from "/static/pages/settings.js";
 import { get } from "/static/api.js";
 
-const tg = window.Telegram?.WebApp;
+const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
   tg.ready();
   tg.expand();
-  tg.setHeaderColor?.("secondary_bg_color");
+  tg.setHeaderColor && tg.setHeaderColor("secondary_bg_color");
 }
 
 try {
@@ -62,7 +62,7 @@ tabButtons.forEach((btn) => {
   try {
     const me = await get("/api/profile/me");
     window.kov && (window.kov.me = me.user);
-    if (me.user?.is_admin) {
+    if (me.user && me.user.is_admin) {
       document.querySelectorAll(".admin-only").forEach((el) => el.removeAttribute("hidden"));
     }
   } catch (err) {

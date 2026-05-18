@@ -106,7 +106,8 @@ export async function renderProfile(root) {
     });
   });
 
-  root.querySelector('[data-action="expand-inv"]')?.addEventListener("click", () => {
+  const expandInvBtn = root.querySelector('[data-action="expand-inv"]');
+  if (expandInvBtn) expandInvBtn.addEventListener("click", () => {
     const grid = root.querySelector("#inv-grid");
     const hint = root.querySelector("#inv-hint");
     const btn = root.querySelector('[data-action="expand-inv"]');
@@ -123,7 +124,8 @@ export async function renderProfile(root) {
     }
     bindCellActions(grid, data.inventory);
   });
-  root.querySelector('[data-action="all-mytasks"]')?.addEventListener("click", () => openAllMyTasks(data.user_tasks, root));
+  const allMytasksBtn = root.querySelector('[data-action="all-mytasks"]');
+  if (allMytasksBtn) allMytasksBtn.addEventListener("click", () => openAllMyTasks(data.user_tasks, root));
 }
 
 function bindCellActions(scope, inventory) {
