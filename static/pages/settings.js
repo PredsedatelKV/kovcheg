@@ -11,7 +11,7 @@ let audio = null;
 function getSettings() {
   try {
     return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") };
-  } catch {
+  } catch (_) {
     return { ...DEFAULT_SETTINGS };
   }
 }

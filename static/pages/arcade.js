@@ -10,7 +10,7 @@ async function fetchBalance() {
     const me = await get("/api/profile/me");
     balance = me.user.balance;
     return balance;
-  } catch {
+  } catch (_) {
     return 0;
   }
 }
@@ -51,7 +51,7 @@ function gameWhereIsMoshonka() {
         try {
           await post("/api/profile/transfer", { recipient: "self", amount: reward }); // placeholder
           result.innerHTML = `<div class="game-win">🎉 Угадал! Мошонка доволен. +${reward} K</div>`;
-        } catch {
+        } catch (_) {
           result.innerHTML = `<div class="game-win">🎉 Угадал! (Демо режим)</div>`;
         }
       } else {
