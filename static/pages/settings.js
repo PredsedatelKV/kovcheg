@@ -48,9 +48,13 @@ function applyTheme(dark) {
 }
 
 export function initSettings() {
-  const s = getSettings();
-  applyTheme(s.darkMode);
-  if (s.musicTrack) playMusic(s.musicTrack, s.musicVolume);
+  try {
+    const s = getSettings();
+    applyTheme(s.darkMode);
+    if (s.musicTrack) playMusic(s.musicTrack, s.musicVolume);
+  } catch (e) {
+    console.error("initSettings failed:", e);
+  }
 }
 
 export function openSettings() {

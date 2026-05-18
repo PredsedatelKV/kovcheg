@@ -65,8 +65,7 @@ async function renderShop(root) {
       try {
         await post("/api/shop/buy", { product_id: Number(b.dataset.buy) });
         window.kov.toast("Куплено! Предмет в инвентаре");
-        const r = document.getElementById("view");
-        renderKoverna(r);
+        await renderShop(root);
       } catch (e) {
         window.kov.toast(e.message);
       }
@@ -109,8 +108,7 @@ async function renderMarket(root) {
       try {
         await post("/api/market/buy", { listing_id: Number(b.dataset.buyListing) });
         window.kov.toast("Куплено! Предмет в инвентаре");
-        const r = document.getElementById("view");
-        renderKoverna(r);
+        await renderMarket(root);
       } catch (e) {
         window.kov.toast(e.message);
       }
