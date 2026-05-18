@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from aiogram import Bot, Dispatcher, F
@@ -16,6 +17,7 @@ from aiogram.types import (
     WebAppInfo,
 )
 
+import app.assistant as assistant
 from app import models
 from app.config import get_settings
 from app.db import session_scope
@@ -24,6 +26,7 @@ log = logging.getLogger(__name__)
 
 _bot: Bot | None = None
 _dp: Dispatcher | None = None
+_last_assistant_requests: dict[int, datetime] = {}
 
 
 def get_bot() -> Bot:
@@ -88,6 +91,8 @@ def _register_handlers(dp: Dispatcher) -> None:
             "/start — открыть приложение\n"
             "/help — помощь\n"
             "/me — информация о тебе\n"
+            "\n"
+            "Агент Ковчега: просто напиши вопрос — и получи ответ из материалов общины.\n"
             "\n"
             "Админские команды (только для админов):\n"
             "/approve &lt;user_task_id&gt; — подтвердить выполнение задания\n"
@@ -281,6 +286,48 @@ def _register_handlers(dp: Dispatcher) -> None:
         if message.web_app_data is None:
             return
         await message.answer(f"Принято из mini-app: {message.web_app_data.data}")
+
+    @dp.message(F.text)
+    async def handle_agent(message: Message) -> None:
+        """Агент Ковчега — отвечает на произвольные текстовые вопросы."""
+        if not message.from_user or not message.text:
+            return
+        # Пропускаем команды (они обработаны ранее фильтрами Command)
+        if message.text.startswith("/"):
+            return
+
+        settings = get_settings()
+        now = datetime.now(timezone.utc)
+        tg_id = message.from_user.id
+
+        # Rate limiting
+        last = _last_assistant_requests.get(tg_id)
+        limit_seconds = settings.assistant_rate_limit_minutes * 60
+        if last and (now - last).total_seconds() < limit_seconds:
+            await message.answer(
+                f"⏳ Слишком часто. Подожди {settings.assistant_rate_limit_minutes} мин.\n"
+                "Или задай вопрос через mini-app."
+            )
+            return
+
+        _last_assistant_requests[tg_id] = now
+
+        # Показываем "печатает..."
+        try:
+            await message.bot.send_chat_action(message.chat.id, "typing")
+        except Exception:
+            pass
+
+        try:
+            result = await assistant.ask(message.text)
+            answer = result["answer"]
+            # Telegram ограничение 4096 символов
+            if len(answer) > 4000:
+                answer = answer[:4000] + "\n\n...(ответ обрезан)"
+            await message.answer(answer)
+        except Exception as exc:
+            log.error("Agent error for user %s: %s", tg_id, exc)
+            await message.answer("⚠️ Агент временно недоступен. Попробуй позже.")
 
 
 async def feed_update(payload: dict[str, Any]) -> None:

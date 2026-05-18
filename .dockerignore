@@ -1,0 +1,11 @@
+.git
+.idea
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.env
+.venv
+venv
+node_modules
+data/assistant/*.json

@@ -1,4 +1,5 @@
 import { get, post, iconHtml } from "/static/api.js";
+import { openAssistantChat } from "/static/pages/assistant.js";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -68,6 +69,17 @@ export async function renderHome(root) {
 
     ${bannerCarousel(data.banners)}
 
+    <div class="card assistant-card" id="assistant-card">
+      <div class="assistant-avatar">
+        <img src="/static/img/villager.svg" alt="Мошонка" class="pixel-icon pixel-icon-lg"/>
+      </div>
+      <div style="flex:1;min-width:0">
+        <h3 class="card-title">Ассистент Мошонка</h3>
+        <p class="card-sub">Житель Ковчега — спроси его о правилах, истории и жизни общины</p>
+      </div>
+      <span class="arrow">›</span>
+    </div>
+
     <div class="card wheel-card" id="wheel-card">
       <div class="wheel-thumb"></div>
       <div>
@@ -120,6 +132,8 @@ export async function renderHome(root) {
       dots.forEach((d, idx) => d.classList.toggle("active", idx === i));
     });
   }
+
+  root.querySelector("#assistant-card").addEventListener("click", openAssistantChat);
 
   root.querySelector("#wheel-card").addEventListener("click", openWheel);
 
