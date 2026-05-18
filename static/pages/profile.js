@@ -45,16 +45,13 @@ export async function renderProfile(root) {
     <div class="card">
       <div class="inv-row-title">
         <h3 class="card-title">Инвентарь</h3>
-        ${data.inventory.length > 8 ? `<button class="see-all" data-action="expand-inv">Развернуть ›</button>` : ""}
+        ${data.inventory.length > 8 ? `<button class="see-all" data-action="all-inv">Смотреть все ›</button>` : ""}
       </div>
-      <div class="inv-grid" id="inv-grid">
+      <div class="inv-grid">
         ${data.inventory.length === 0
           ? `<div class="empty" style="grid-column: 1/-1">Пока пусто. Купи что-нибудь в Коверне или получи задание.</div>`
           : data.inventory.slice(0, 8).map(invCell).join("")}
       </div>
-      ${data.inventory.length > 8 ? `
-        <div class="inv-expand-hint" id="inv-hint">...и ещё ${data.inventory.length - 8} предметов</div>
-      ` : ""}
     </div>
 
     <div class="card wallet-card">
@@ -106,26 +103,8 @@ export async function renderProfile(root) {
     });
   });
 
-  const expandInvBtn = root.querySelector('[data-action="expand-inv"]');
-  if (expandInvBtn) expandInvBtn.addEventListener("click", () => {
-    const grid = root.querySelector("#inv-grid");
-    const hint = root.querySelector("#inv-hint");
-    const btn = root.querySelector('[data-action="expand-inv"]');
-    if (grid.dataset.expanded === "true") {
-      grid.innerHTML = data.inventory.slice(0, 8).map(invCell).join("");
-      grid.dataset.expanded = "false";
-      btn.textContent = "Развернуть ›";
-      hint.textContent = `...и ещё ${data.inventory.length - 8} предметов`;
-    } else {
-      grid.innerHTML = data.inventory.map(invCell).join("");
-      grid.dataset.expanded = "true";
-      btn.textContent = "Свернуть ›";
-      hint.textContent = "";
-    }
-    bindCellActions(grid, data.inventory);
-  });
-  const allMytasksBtn = root.querySelector('[data-action="all-mytasks"]');
-  if (allMytasksBtn) allMytasksBtn.addEventListener("click", () => openAllMyTasks(data.user_tasks, root));
+  root.querySelector('[data-action="all-inv"]')?.addEventListener("click", () => openAllInventory(data.inventory, root));
+  root.querySelector('[data-action="all-mytasks"]')?.addEventListener("click", () => openAllMyTasks(data.user_tasks, root));
 }
 
 function bindCellActions(scope, inventory) {

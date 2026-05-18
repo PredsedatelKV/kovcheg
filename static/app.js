@@ -6,18 +6,16 @@ import { renderAdmin } from "/static/pages/admin.js";
 import { initSettings } from "/static/pages/settings.js";
 import { get } from "/static/api.js";
 
+console.log("[KOVCHEG] App starting...");
+
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
   tg.ready();
   tg.expand();
-  tg.setHeaderColor && tg.setHeaderColor("secondary_bg_color");
+  if (tg.setHeaderColor) tg.setHeaderColor("secondary_bg_color");
 }
 
-try {
-  initSettings();
-} catch (e) {
-  console.error("Settings init failed:", e);
-}
+initSettings();
 
 const TABS = {
   home: renderHome,
@@ -31,24 +29,15 @@ const viewEl = document.getElementById("view");
 const tabButtons = document.querySelectorAll(".tabbtn");
 
 function setTab(name) {
-  console.log("setTab:", name);
-  if (!TABS[name]) {
-    console.error("Unknown tab:", name);
-    name = "home";
-  }
-  if (typeof TABS[name] !== "function") {
-    console.error("Tab not a function:", name, TABS[name]);
-    viewEl.innerHTML = `<div class="card"><h3>Ошибка</h3><p>Вкладка "${name}" не загружается. Попробуй обновить страницу (Ctrl+F5).</p><button class="btn" onclick="location.reload()">Перезагрузить</button></div>`;
-    return;
-  }
+  if (!TABS[name]) name = "home";
   const btn = document.querySelector(`.tabbtn[data-tab="${name}"]`);
   if (btn && btn.hidden) name = "home";
   tabButtons.forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
   if (viewEl.scrollTo) viewEl.scrollTo({ top: 0 });
   window.scrollTo({ top: 0 });
   TABS[name](viewEl).catch((err) => {
-    console.error("Tab render error:", name, err);
-    viewEl.innerHTML = `<div class="card"><h3>Ошибка загрузки вкладки</h3><p>${err.message}</p><button class="btn" onclick="location.reload()">Перезагрузить</button></div>`;
+    viewEl.innerHTML = `<div class="card"><h3>Ошибка</h3><p>${err.message}</p><button class="btn" onclick="location.reload()">Перезагрузить</button></div>`;
+    console.error(err);
   });
   localStorage.setItem("kovcheg.tab", name);
 }
@@ -62,7 +51,7 @@ tabButtons.forEach((btn) => {
   try {
     const me = await get("/api/profile/me");
     window.kov && (window.kov.me = me.user);
-    if (me.user && me.user.is_admin) {
+    if (me.user?.is_admin) {
       document.querySelectorAll(".admin-only").forEach((el) => el.removeAttribute("hidden"));
     }
   } catch (err) {

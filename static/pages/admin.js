@@ -716,9 +716,9 @@ function bindPhotoUploader(scope) {
     const clearBtn = widget.querySelector(".photo-clear");
     const valueInput = widget.querySelector(".photo-value");
     const preview = widget.querySelector(".photo-preview");
-    if (pickBtn) pickBtn.addEventListener("click", () => fileInput.click());
-    if (fileInput) fileInput.addEventListener("change", async (e) => {
-      const file = e.target.files && e.target.files[0];
+    pickBtn?.addEventListener("click", () => fileInput.click());
+    fileInput?.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
       if (!file) return;
       pickBtn.disabled = true;
       pickBtn.textContent = "Загрузка…";
@@ -755,17 +755,11 @@ function bindPhotoUploader(scope) {
 }
 
 function readItemForm(card, fallback = {}) {
-  const get = (k) => {
-    const el = card.querySelector(`[data-k="${k}"]`);
-    return (el ? el.value : null) ?? fallback[k] ?? "";
-  };
+  const get = (k) => card.querySelector(`[data-k="${k}"]`)?.value ?? fallback[k] ?? "";
   return {
     name: get("name"),
     icon: get("icon"),
-    image_url: (() => {
-      const el = card.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value');
-      return el ? el.value : null;
-    })(),
+    image_url: card.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value')?.value || null,
     description: get("description"),
     category: get("category") || "Ресурсы",
   };
@@ -812,8 +806,7 @@ async function renderItems(body) {
   bindPhotoUploader(body);
   body.querySelector("#i-create").addEventListener("click", async () => {
     const newCard = body.querySelector(".admin-card");  // first card = the "new item" form
-    const photoEl = newCard.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value');
-    const photoVal = photoEl ? photoEl.value : null;
+    const photoVal = newCard.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value')?.value || null;
     const nameVal = body.querySelector("#i-name").value.trim();
     const slug = slugify(nameVal);
     const payload = {

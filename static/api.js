@@ -1,7 +1,7 @@
-const tg = window.Telegram && window.Telegram.WebApp;
+const tg = window.Telegram?.WebApp;
 
 function initData() {
-  const v = tg && tg.initData;
+  const v = tg?.initData;
   if (v && v.length > 0) return v;
   // dev fallback — only works with server flag SKIP_INIT_DATA_CHECK
   return "DEV";
@@ -19,7 +19,7 @@ export async function api(path, options = {}) {
     data = await res.json();
   } catch (_) {}
   if (!res.ok) {
-    const msg = (data && (data.detail || data.error)) || `Ошибка ${res.status}`;
+    const msg = data?.detail || data?.error || `Ошибка ${res.status}`;
     throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
   }
   return data;

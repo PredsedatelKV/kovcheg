@@ -35,6 +35,11 @@
   </div>
 
   <div id="modal-root"></div>
+  <script>
+    window.onerror = function(msg, url, line, col, error) {
+      document.getElementById('app').innerHTML += '<div style="color:red;padding:20px;background:#fee;border-radius:8px;margin:10px;"><b>JS Error:</b> ' + msg + '<br>Line: ' + line + '</div>';
+    };
+  </script>
   <script type="module" src="/static/app.js"></script>
 </body>
 </html>

@@ -30,7 +30,7 @@ body {
 #app {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .view {
@@ -413,7 +413,7 @@ body {
 .chat-modal {
   display: flex;
   flex-direction: column;
-  height: 70vh;
+  height: 70dvh;
   max-height: 600px;
 }
 .chat-header {
@@ -1589,25 +1589,3 @@ html.dark .card { background: var(--surface); border-color: var(--border); }
 html.dark .pixel-icon { filter: brightness(1.2); }
 html.dark .tab-icon { filter: brightness(1.3); }
 html.dark .game-tile.casino { background: linear-gradient(180deg, #3d2e1e 0%, var(--surface) 100%); }
-
-/* Big square cards — footer with arrow */
-.big-square-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  width: 100%;
-  margin-top: auto;
-}
-.big-square-title { font-weight: 700; font-size: 14px; }
-.big-square-arrow { color: var(--text-muted); font-size: 18px; font-weight: 300; }
-.big-square-visual svg { display: block; }
-
-/* Inventory expand hint */
-.inv-expand-hint {
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 12px;
-  padding: 8px 0 0;
-  font-style: italic;
-}
