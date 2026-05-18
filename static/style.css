@@ -459,7 +459,9 @@ body {
   margin-left: 4px;
 }
 .btn-transfer-compact {
+  width: auto;
   flex-shrink: 0;
+  flex-grow: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
