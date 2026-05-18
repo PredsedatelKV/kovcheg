@@ -11,53 +11,63 @@ from app.config import get_settings
 
 log = logging.getLogger(__name__)
 
+# Базовая роль Мошонки для system-сообщения (краткая, LLM поймёт)
+MOSHONKA_SYSTEM = (
+    "Ты — Мошонка, деревенский житель из Minecraft. "
+    "Живёшь в канаве у стены базы Ковчега, охраняешь тыквенную грядку. "
+    "Говори просто, с крестьянским юмором, коротко. "
+    "Не ломай четвёртую стену, не говори что ты ИИ."
+)
+
 
 async def ask(question: str, history: list[dict[str, str]] | None = None) -> dict:
     """Главная функция: принимает вопрос + историю, возвращает ответ Мошонки."""
     settings = get_settings()
     store = get_store()
 
-    # 1. Эмбеддинг вопроса
+    # Пробуем найти релевантные чанки, но если не получится — ничего страшного
+    context = ""
+    sources = []
+
     try:
         query_emb = encode_single(question)
+        chunks = store.get_chunks()
+        if chunks:
+            top_chunks = find_top_k(query_emb, chunks, top_k=settings.assistant_max_chunks)
+            if top_chunks:
+                context_parts = []
+                for i, ch in enumerate(top_chunks, 1):
+                    context_parts.append(f"[Фрагмент {i}]\n{ch['text']}")
+                    sources.append({"source": ch["source"], "score": round(ch["score"], 3)})
+                context = "\n\n".join(context_parts)
     except Exception as exc:
-        log.error("Embedding failed: %s", exc)
-        return {"answer": "⚠️ Мошонка запнулся о корягу. Попробуй ещё раз, сосед.", "sources": []}
+        log.warning("Embedding/search failed (will answer without chunks): %s", exc)
+        # Продолжаем без контекста — Мошонка ответит как житель
 
-    # 2. Поиск релевантных чанков
-    chunks = store.get_chunks()
-    top_chunks = find_top_k(query_emb, chunks, top_k=settings.assistant_max_chunks)
-
-    # 3. Формируем контекст (даже если пусто — Мошонка ответит в роли)
-    if top_chunks:
-        context_parts = []
-        sources = []
-        for i, ch in enumerate(top_chunks, 1):
-            context_parts.append(f"[Фрагмент {i}]\n{ch['text']}")
-            sources.append({"source": ch["source"], "score": round(ch["score"], 3)})
-        context = "\n\n".join(context_parts)
+    # Формируем prompt
+    if context:
+        prompt = SYSTEM_PROMPT.format(context=context, question=question)
     else:
-        context = "(пока ничего не знаю по этому, но что-нибудь придумаю)"
-        sources = []
+        # Нет материалов — просто спрашиваем в роли
+        prompt = f"Вопрос гражданина: {question}\n\nОтветь как Мошонка, житель Ковчега:"
 
-    prompt = SYSTEM_PROMPT.format(context=context, question=question)
-
-    # 4. Формируем messages с историей
+    # Формируем messages для LLM
     messages: list[dict[str, str]] = []
 
-    # Добавляем историю (последние 10 сообщений, чтобы не переполнять контекст)
+    # System prompt с ролью (важно для OpenRouter и Gemini)
+    messages.append({"role": "system", "content": MOSHONKA_SYSTEM})
+
+    # История чата (последние 10 сообщений)
     if history:
         for msg in history[-10:]:
             role = msg.get("role", "user")
-            # Переводим наше хранение в формат LLM
             llm_role = "user" if role == "user" else "assistant"
             messages.append({"role": llm_role, "content": msg.get("text", "")})
 
-    # Добавляем текущий вопрос (если его ещё нет в истории)
-    if not history or history[-1].get("text") != question:
-        messages.append({"role": "user", "content": prompt})
+    # Текущий вопрос
+    messages.append({"role": "user", "content": prompt})
 
-    # 5. Запрос к LLM
+    # Запрос к LLM
     answer = await ask_llm(messages)
 
     return {"answer": answer, "sources": sources}
