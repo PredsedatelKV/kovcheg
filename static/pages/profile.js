@@ -65,7 +65,6 @@ export async function renderProfile(root) {
           </div>
         </div>
         <button class="btn btn-transfer-compact" data-action="transfer">
-          <img src="/static/img/ui/coin.svg" alt="" class="icon icon-sm"/>
           <span>Перевести</span>
         </button>
       </div>
