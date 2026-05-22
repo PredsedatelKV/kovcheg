@@ -2,28 +2,30 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Системные зависимости для сборки пакетов
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Копируем зависимости и устанавливаем
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e "."
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# Предзагружаем модель эмбеддингов, чтобы не качать при каждом запуске контейнера
+COPY pyproject.toml ./
+RUN mkdir -p app/api app/assistant app/utils && \
+    touch app/__init__.py app/api/__init__.py app/assistant/__init__.py app/utils/__init__.py
+RUN pip install --no-cache-dir "."
+
 RUN python -c \
     "from sentence_transformers import SentenceTransformer; \
-     SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')"
+     SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')" \
+    || echo "WARNING: embedding model download failed, will download at runtime"
 
-# Копируем код приложения
+# Remove stubs before copying real code
+RUN rm -rf app
 COPY app ./app
 COPY static ./static
 COPY main.py ./
 COPY scripts ./scripts
 COPY data ./data
 
-# Переменные окружения
 ENV PYTHONUNBUFFERED=1
 ENV DATA_DIR=/app/data
 
