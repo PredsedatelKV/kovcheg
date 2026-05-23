@@ -4,6 +4,15 @@ import { playUISound } from "/static/pages/settings.js?v=30";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+const GAME_META = {
+  tictactoe: { name: "Крестики-нолики", icon: "/static/img/ui/tic-tac-toe.svg" },
+  checkers:  { name: "Шашки",           icon: "/static/img/ui/checkers.svg" },
+  chess:     { name: "Шахматы",         icon: "/static/img/ui/chess.svg" },
+  pingpong:  { name: "Пинг-понг",       icon: "/static/img/ui/pingpong.svg" },
+  tanks:     { name: "Танчики",         icon: "/static/img/ui/tank.svg" },
+};
+let invitePollTimer = null;
+
 function kovbaksWord(n) {
   const abs = Math.abs(n) % 100;
   const last = abs % 10;
@@ -38,7 +47,7 @@ export async function renderProfile(root) {
   const data = await get("/api/profile/me");
   const user = data.user;
   const photoOrEmoji = user.photo_url
-    ? `<img src="${escapeHtml(user.photo_url)}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />`
+    ? `<img src="${escapeHtml(user.photo_url)}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:14px" />`
     : `<img src="/static/img/villager.svg" alt="Житель" class="hero-img hero-img-head"/>`;
 
   root.innerHTML = `
@@ -134,6 +143,7 @@ export async function renderProfile(root) {
 
   bindCellActions(root, data.inventory);
   root.querySelector('[data-action="transfer"]').addEventListener("click", () => openTransferDialog(user));
+  root.querySelector('[data-action="transfer-history"]').addEventListener("click", () => openTransactionHistory());
 
   root.querySelectorAll(".task-row").forEach((row) => {
     row.addEventListener("click", () => {
@@ -151,48 +161,43 @@ export async function renderProfile(root) {
   loadChat(root);
   bindChatInput(root);
   checkPendingInvites(root);
+  startInvitePoll(root);
 }
 
-async function checkPendingInvites(root) {
+function startInvitePoll(root) {
+  clearInterval(invitePollTimer);
+  invitePollTimer = setInterval(() => checkPendingInvites(root, true), 5000);
+}
+
+async function checkPendingInvites(root, silent) {
   try {
     const data = await get("/api/game/my-invites");
     const invites = data.invites || [];
     const pending = invites.filter(i => i.status === "pending" && i.to_user_id === window.kov.me?.id);
     
     if (pending.length > 0) {
+      const existing = document.querySelector(".invite-modal-open");
+      if (existing) return;
+
       const invite = pending[0];
-      const gameNames = {
-        tictactoe: "Крестики-нолики",
-        checkers: "Шашки",
-        chess: "Шахматы",
-        pingpong: "Пинг-понг",
-        tanks: "Танчики"
-      };
       
       const modal = window.kov.showModal(`
         <button class="close" onclick="closeModal()">×</button>
         <h2>Приглашение на игру</h2>
-        <p class="card-sub">${escapeHtml(invite.from_user_name)} приглашает тебя в ${gameNames[invite.game]}</p>
+        <p class="card-sub">${escapeHtml(invite.from_user_name)} приглашает тебя в ${GAME_META[invite.game]?.name || invite.game}</p>
         <div style="display:flex;gap:12px;margin-top:20px">
           <button class="btn btn-primary" id="accept-invite-btn">Принять</button>
           <button class="btn btn-outline" id="decline-invite-btn">Отклонить</button>
         </div>
       `);
+      modal.classList.add("invite-modal-open");
       
       modal.querySelector("#accept-invite-btn").addEventListener("click", async () => {
         await post("/api/game/accept", { invite_id: invite.id });
         closeModal();
         window.kov.toast("Принято! Начинаем игру...");
-        setTimeout(() => {
-          const games = {
-            tictactoe: window.kov.arcade?.gameTicTacToe,
-            checkers: window.kov.arcade?.gameCheckers,
-            chess: window.kov.arcade?.gameChess,
-            pingpong: window.kov.arcade?.gamePingPong,
-            tanks: window.kov.arcade?.gameTanks,
-          };
-          if (games[invite.game]) games[invite.game]();
-        }, 500);
+        clearInterval(invitePollTimer);
+        startGameInChat(invite.game, root);
       });
       
       modal.querySelector("#decline-invite-btn").addEventListener("click", async () => {
@@ -202,6 +207,46 @@ async function checkPendingInvites(root) {
     }
   } catch (e) {}
 }
+
+function startGameInChat(game, root) {
+  const container = root.querySelector("#chat-messages");
+  if (!container) return;
+
+  const inlineGames = ["tictactoe"];
+  
+  if (inlineGames.includes(game)) {
+    const gameContainer = document.createElement("div");
+    gameContainer.id = "game-in-chat";
+    container.innerHTML = "";
+    container.appendChild(gameContainer);
+    
+    const backBtn = document.createElement("button");
+    backBtn.className = "btn btn-sm";
+    backBtn.textContent = "← Вернуться в чат";
+    backBtn.style.marginBottom = "12px";
+    backBtn.addEventListener("click", () => {
+      gameContainer.remove();
+      loadChat(root);
+      startInvitePoll(root);
+    });
+    gameContainer.appendChild(backBtn);
+    
+    const gameTitle = document.createElement("h3");
+    gameTitle.textContent = GAME_META[game]?.name || game;
+    gameTitle.style.margin = "0 0 12px";
+    gameContainer.appendChild(gameTitle);
+    
+    if (window.kov.arcade && window.kov.arcade[game]) {
+      window.kov.arcade[game](gameContainer);
+    }
+  } else {
+    if (window.kov.arcade && window.kov.arcade[game]) {
+      window.kov.arcade[game]();
+    }
+  }
+}
+
+window.startGameInChat = startGameInChat;
 
 async function loadChat(root) {
   const container = root.querySelector("#chat-messages");
@@ -282,9 +327,11 @@ function bindChatInput(root) {
   if (gameInviteToggle) {
     gameInviteToggle.addEventListener("click", async () => {
       const games = [
-        { id: "tictactoe", name: "Крестики-нолики", icon: "✕" },
-        { id: "checkers", name: "Шашки", icon: "⚫" },
-        { id: "pingpong", name: "Пинг-понг", icon: "◉" }
+        { id: "tictactoe", name: "Крестики-нолики", icon: "/static/img/ui/tic-tac-toe.svg" },
+        { id: "checkers", name: "Шашки", icon: "/static/img/ui/checkers.svg" },
+        { id: "pingpong", name: "Пинг-понг", icon: "/static/img/ui/pingpong.svg" },
+        { id: "chess", name: "Шахматы", icon: "/static/img/ui/chess.svg" },
+        { id: "tanks", name: "Танчики", icon: "/static/img/ui/tank.svg" },
       ];
       
       const modal = window.kov.showModal(`
@@ -293,7 +340,7 @@ function bindChatInput(root) {
         <div class="game-invite-games">
           ${games.map(g => `
             <div class="game-invite-game" data-game="${g.id}">
-              <span class="game-icon">${g.icon}</span>
+              <img src="${g.icon}" alt="" class="game-icon-img" width="48" height="48"/>
               <span class="game-name">${g.name}</span>
             </div>
           `).join("")}
@@ -315,18 +362,10 @@ function bindChatInput(root) {
       const data = await get("/api/game/online");
       const players = data.online || [];
       
-      const gameNames = {
-        tictactoe: "Крестики-нолики",
-        checkers: "Шашки",
-        chess: "Шахматы",
-        pingpong: "Пинг-понг",
-        tanks: "Танчики"
-      };
-
       const modal = window.kov.showModal(`
         <button class="close" onclick="closeModal()">×</button>
         <h2>Выбери игрока</h2>
-        <p class="card-sub">Игра: ${gameNames[gameId]}</p>
+        <p class="card-sub">Игра: ${GAME_META[gameId]?.name || gameId}</p>
         <div class="player-picker-list">
           ${players.length === 0 ? '<div class="empty">Нет онлайн игроков</div>' : 
             players.map(p => `
@@ -494,6 +533,47 @@ async function openTransferDialog(user) {
   });
 }
 
+function fmtTxnDate(iso) {
+  const d = new Date(iso);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}.${mm} ${hh}:${mi}`;
+}
+
+async function openTransactionHistory() {
+  try {
+    const txns = await get("/api/profile/transactions");
+    const modal = window.kov.showModal(`
+      <button class="close" onclick="closeModal()">×</button>
+      <h2>История операций</h2>
+      <p class="card-sub" style="margin:0 0 12px">Последние ${txns.length} переводов и поступлений</p>
+      <div style="max-height:60dvh;overflow-y:auto;display:flex;flex-direction:column;gap:6px">
+        ${txns.length === 0 ? '<div class="empty">Пока нет операций</div>' : txns.map(t => {
+          const isIncoming = t.recipient_id === window.kov.me?.id;
+          const otherName = isIncoming ? t.sender_name : t.recipient_name;
+          const sign = isIncoming ? "+" : "−";
+          const cls = isIncoming ? "txn-incoming" : "txn-outgoing";
+          return `
+            <div class="txn-row ${cls}">
+              <div class="txn-info">
+                <span class="txn-other">${escapeHtml(otherName || "—")}</span>
+                ${t.note ? `<span class="txn-note">${escapeHtml(t.note)}</span>` : ""}
+              </div>
+              <div class="txn-right">
+                <span class="txn-amount">${sign}${t.amount} K</span>
+                <span class="txn-date">${fmtTxnDate(t.created_at)}</span>
+              </div>
+            </div>`;
+        }).join("")}
+      </div>
+    `);
+  } catch (e) {
+    window.kov.toast(e.message);
+  }
+}
+
 async function openGiftDialog(item, maxQty) {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
@@ -579,14 +659,7 @@ function openUserTaskDialog(ut, root) {
       await post(`/api/tasks/${ut.id}/cancel`);
       window.kov.toast("Задание прервано");
       window.closeModal();
-      const taskRow = root.querySelector(`[data-user-task-id="${ut.id}"]`);
-      if (taskRow) {
-        taskRow.remove();
-        if (!root.querySelector(".task-row")) {
-          const empty = root.querySelector(".tasks-list");
-          if (empty) empty.innerHTML = `<div class="empty">Нет активных заданий. Начни задание на вкладке «Главная».</div>`;
-        }
-      }
+      renderProfile(document.getElementById("view"));
     } catch (e) {
       window.kov.toast(e.message);
     }

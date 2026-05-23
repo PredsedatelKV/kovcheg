@@ -408,3 +408,14 @@ class GameInviteRequest(BaseModel):
 
 class GameInviteAction(BaseModel):
     invite_id: int
+
+
+class TransactionOut(BaseModel):
+    id: int
+    sender_id: int | None = None
+    sender_name: str | None = None
+    recipient_id: int | None = None
+    recipient_name: str | None = None
+    amount: int
+    note: str | None = None
+    created_at: datetime

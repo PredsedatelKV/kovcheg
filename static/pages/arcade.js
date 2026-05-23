@@ -71,144 +71,231 @@ function getBetValue(id) {
 
 // ============ МИНИ-ИГРЫ ============
 
-function gameWhereIsMoshonka() {
-  let villagerIdx = Math.floor(Math.random() * 3);
-  let canClick = false;
-  let gameEnded = false;
+function gameWhereIsMoshonka(container) {
+  const isInline = !!container;
+  const CUP_COUNT = 5;
+  let round = 1;
+  let score = 0;
+  let villagerIdx, canClick, gameEnded;
   
-  const modal = window.kov.showModal(`
-    <button class="close" onclick="closeModal()">×</button>
-    <h2>Где Мошонка?</h2>
-    <p class="card-sub">Следи за кустами! Мошонка прячется за одним из них.</p>
-    <div class="game-bushes" id="bush-container">
-      <button class="game-bush" id="bush-0"><img src="/static/img/ui/bush.svg" alt="" class="game-icon-lg"/></button>
-      <button class="game-bush" id="bush-1"><img src="/static/img/ui/bush.svg" alt="" class="game-icon-lg"/></button>
-      <button class="game-bush" id="bush-2"><img src="/static/img/ui/bush.svg" alt="" class="game-icon-lg"/></button>
+  function resetRound() {
+    villagerIdx = Math.floor(Math.random() * CUP_COUNT);
+    canClick = false;
+    gameEnded = false;
+  }
+  resetRound();
+  
+  let root, result, scoreEl, cupContainer, againBtn;
+  
+  const html = `
+    <h2 style="margin:0 0 4px">Где Мошонка?</h2>
+    <p class="card-sub" style="margin:0 0 6px">Следи за кустом — Мошонка спрятался!</p>
+    <div class="moshonka-score" style="text-align:center;font-size:14px;color:var(--text-soft);margin-bottom:8px">
+      Счёт: <span id="moshonka-score-val">0</span> | Раунд: <span id="moshonka-round-val">1</span>
+    </div>
+    <div class="game-bushes" id="moshonka-cups">
+      ${Array(CUP_COUNT).fill("").map((_, i) => `
+        <button class="game-cup" data-idx="${i}">
+          <div class="cup-front">
+            <img src="/static/img/ui/bush.svg" alt="" class="game-icon-lg"/>
+          </div>
+          <div class="cup-back" style="display:none">
+            <img src="/static/img/ui/villager.svg" alt="" class="game-icon-lg"/>
+          </div>
+        </button>
+      `).join("")}
     </div>
     <div class="game-result" id="moshonka-result"></div>
     <div class="game-play-again" id="moshonka-again" style="display:none">
-      <button class="btn" id="play-again-btn">Играть заново</button>
+      <button class="btn" id="moshonka-play-again">Играть заново</button>
     </div>
-  `);
-
-  const result = modal.querySelector("#moshonka-result");
-  const againBtn = modal.querySelector("#play-again-btn");
-  const container = modal.querySelector("#bush-container");
-  const bushes = container.querySelectorAll(".game-bush");
+  `;
   
-  function getVisualIndex(btn) {
-    return Array.from(container.querySelectorAll(".game-bush")).indexOf(btn);
+  if (isInline) {
+    root = container;
+    root.innerHTML = html;
+  } else {
+    root = window.kov.showModal(`
+      <button class="close" onclick="closeModal()">×</button>
+      ${html}
+    `);
   }
   
-  function renderBushes() {
-    const visualBushes = container.querySelectorAll(".game-bush");
-    visualBushes.forEach((btn, i) => {
-      const img = btn.querySelector("img");
-      img.src = i === villagerIdx 
-        ? "/static/img/ui/villager.svg" 
-        : "/static/img/ui/bush.svg";
+  result = root.querySelector("#moshonka-result");
+  againBtn = root.querySelector("#moshonka-play-again");
+  cupContainer = root.querySelector("#moshonka-cups");
+  scoreEl = root.querySelector("#moshonka-score-val");
+  
+  const cups = cupContainer.querySelectorAll(".game-cup");
+  
+  function getCup(idx) {
+    return cupContainer.querySelector(`.game-cup[data-idx="${idx}"]`);
+  }
+  
+  function showMoshonka(show) {
+    cups.forEach((cup, i) => {
+      const front = cup.querySelector(".cup-front");
+      const back = cup.querySelector(".cup-back");
+      if (i === villagerIdx && show) {
+        front.style.display = "none";
+        back.style.display = "";
+      } else {
+        front.style.display = "";
+        back.style.display = "none";
+      }
     });
   }
   
-  againBtn.onclick = () => {
-    closeModal();
-    setTimeout(gameWhereIsMoshonka, 100);
-  };
+  function shuffleAnimation() {
+    resetRound();
+    canClick = false;
+    gameEnded = false;
+    result.innerHTML = "";
+    const againEl = root.querySelector("#moshonka-again");
+    if (againEl) againEl.style.display = "none";
+    const shuffleCount = 3 + round;
+    
+    showMoshonka(true);
+    result.innerHTML = `<div class="game-neutral">Запоминай куст…</div>`;
+    
+    setTimeout(() => {
+      showMoshonka(false);
+      
+      setTimeout(() => {
+        let swaps = 0;
+        const totalSwaps = shuffleCount * 2;
+        
+        function doSwap() {
+          if (swaps >= totalSwaps) {
+            canClick = true;
+            result.innerHTML = `<div class="game-neutral">Где Мошонка? Жми на куст!</div>`;
+            return;
+          }
+          
+          const a = Math.floor(Math.random() * CUP_COUNT);
+          let b = Math.floor(Math.random() * CUP_COUNT);
+          while (b === a) b = Math.floor(Math.random() * CUP_COUNT);
+          
+          const cupA = getCup(a);
+          const cupB = getCup(b);
+          
+          const rectA = cupA.getBoundingClientRect();
+          const rectB = cupB.getBoundingClientRect();
+          const dx = rectB.left - rectA.left;
+          const dy = rectB.top - rectA.top;
+          
+          cupA.style.transition = "transform 0.15s ease-in-out";
+          cupB.style.transition = "transform 0.15s ease-in-out";
+          cupA.style.transform = `translate(${dx}px, ${dy}px)`;
+          cupB.style.transform = `translate(${-dx}px, ${-dy}px)`;
+          cupA.style.zIndex = "2";
+          cupB.style.zIndex = "2";
+          
+          setTimeout(() => {
+            cupA.style.transition = "none";
+            cupB.style.transition = "none";
+            cupA.style.transform = "";
+            cupB.style.transform = "";
+            cupA.style.zIndex = "";
+            cupB.style.zIndex = "";
+            
+            cupA.dataset.idx = b;
+            cupB.dataset.idx = a;
+            
+            if (villagerIdx === a) villagerIdx = b;
+            else if (villagerIdx === b) villagerIdx = a;
+            
+            playUISound("spin");
+            swaps++;
+            setTimeout(doSwap, 80);
+          }, 150);
+        }
+        
+        doSwap();
+      }, 600);
+    }, 1200);
+  }
   
-bushes.forEach((btn) => {
-    btn.onclick = () => {
+  cups.forEach((cup) => {
+    cup.addEventListener("click", () => {
       if (!canClick || gameEnded) return;
       gameEnded = true;
       canClick = false;
       
-      const visualIdx = getVisualIndex(btn);
-      renderBushes();
+      const idx = Number(cup.dataset.idx);
       
-      if (visualIdx === villagerIdx) {
-        result.innerHTML = `<div class="game-win">Угадал! Мошонка доволен.</div>`;
+      if (idx === villagerIdx) {
+        result.innerHTML = `<div class="game-win">Угадал! Мошонка тут! 🎉</div>`;
         playUISound("win");
+        score += 10 * round;
+        round++;
+        scoreEl.textContent = score;
+        const roundEl = root.querySelector("#moshonka-round-val");
+        if (roundEl) roundEl.textContent = round;
       } else {
-        result.innerHTML = `<div class="game-lose">Мимо! Мошонка прятался в другом кусте</div>`;
+        result.innerHTML = `<div class="game-lose">Мимо! Мошонка был под другим кустом</div>`;
         playUISound("lose");
+        score = Math.max(0, score - 5);
+        scoreEl.textContent = score;
       }
-      modal.querySelector("#moshonka-again").style.display = "block";
       
-      container.querySelectorAll(".game-bush").forEach(b => b.disabled = true);
-    };
+      showMoshonka(true);
+      cups.forEach(c => c.disabled = true);
+      
+      const again = root.querySelector("#moshonka-again");
+      again.style.display = "block";
+    });
   });
   
-  result.innerHTML = `<div class="game-neutral">Запоминай куст…</div>`;
-  renderBushes();
+  againBtn.addEventListener("click", () => {
+    if (isInline) {
+      root.innerHTML = html;
+      gameWhereIsMoshonka(root);
+    } else {
+      closeModal();
+      setTimeout(gameWhereIsMoshonka, 100);
+    }
+  });
   
-  setTimeout(() => {
-    villagerIdx = -1;
-    renderBushes();
-    setTimeout(async () => {
-      const moves = 5 + Math.floor(Math.random() * 4);
-      
-      for (let m = 0; m < moves; m++) {
-        const visual = Array.from(container.querySelectorAll(".game-bush"));
-        const a = Math.floor(Math.random() * 3);
-        let b = Math.floor(Math.random() * 3);
-        while (b === a) b = Math.floor(Math.random() * 3);
-        
-        if (villagerIdx === a) villagerIdx = b;
-        else if (villagerIdx === b) villagerIdx = a;
-        
-        const btnA = visual[a];
-        const btnB = visual[b];
-        
-        const diff = btnB.offsetLeft - btnA.offsetLeft;
-        
-        btnA.style.transition = "transform 0.3s ease-in-out";
-        btnB.style.transition = "transform 0.3s ease-in-out";
-        btnA.style.transform = `translateX(${diff}px)`;
-        btnB.style.transform = `translateX(${-diff}px)`;
-        
-        await new Promise(r => setTimeout(r, 300));
-        
-        btnA.style.transition = "none";
-        btnB.style.transition = "none";
-        btnA.style.transform = "";
-        btnB.style.transform = "";
-        
-        if (btnA.nextSibling === btnB) {
-          container.insertBefore(btnB, btnA);
-        } else {
-          container.insertBefore(btnA, btnB);
-        }
-        
-        renderBushes();
-        playUISound("spin");
-        await new Promise(r => setTimeout(r, 100));
-      }
-      
-      canClick = true;
-      result.innerHTML = `<div class="game-neutral">Где Мошонка?</div>`;
-    }, 300);
-  }, 1000);
+  shuffleAnimation();
 }
 
-function gameTicTacToe() {
+function gameTicTacToe(container) {
+  const isInline = !!container;
   let board = Array(9).fill(null);
   let gameActive = true;
   let playerTurn = true;
   
-  const modal = window.kov.showModal(`
-    <button class="close" onclick="closeModal()">×</button>
-    <h2>Крестики-нолики</h2>
-    <p class="card-sub">Играй против Мошонки!</p>
-    <div class="game-ttt-board" id="ttt-board">
-      ${Array(9).fill("").map((_, i) => `<button class="ttt-cell" data-idx="${i}"></button>`).join("")}
-    </div>
-    <div class="game-result" id="ttt-result"></div>
-    <div class="game-play-again" id="ttt-again" style="display:none">
-      <button class="btn" id="play-again-btn">Играть заново</button>
-    </div>
-  `);
+  let root;
+  if (isInline) {
+    root = container;
+    root.innerHTML = `
+      <h3 style="margin:0 0 6px">Крестики-нолики</h3>
+      <p class="card-sub" style="margin:0 0 10px">Играй против Мошонки!</p>
+      <div class="game-ttt-board" id="ttt-board">
+        ${Array(9).fill("").map((_, i) => `<button class="ttt-cell" data-idx="${i}"></button>`).join("")}
+      </div>
+      <div class="game-result" id="ttt-result"></div>
+      <div class="game-play-again" id="ttt-again" style="display:none">
+        <button class="btn" id="play-again-btn">Играть заново</button>
+      </div>`;
+  } else {
+    root = window.kov.showModal(`
+      <button class="close" onclick="closeModal()">×</button>
+      <h2>Крестики-нолики</h2>
+      <p class="card-sub">Играй против Мошонки!</p>
+      <div class="game-ttt-board" id="ttt-board">
+        ${Array(9).fill("").map((_, i) => `<button class="ttt-cell" data-idx="${i}"></button>`).join("")}
+      </div>
+      <div class="game-result" id="ttt-result"></div>
+      <div class="game-play-again" id="ttt-again" style="display:none">
+        <button class="btn" id="play-again-btn">Играть заново</button>
+      </div>
+    `);
+  }
 
-  const cells = modal.querySelectorAll(".ttt-cell");
-  const resultEl = modal.querySelector("#ttt-result");
+  const cells = root.querySelectorAll(".ttt-cell");
+  const resultEl = root.querySelector("#ttt-result");
 
   function checkWinner(b) {
     const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
@@ -223,19 +310,15 @@ function gameTicTacToe() {
     const empty = board.map((v, i) => v === null ? i : -1).filter(i => i >= 0);
     if (!empty.length) return;
     
-    if (Math.random() < 0.4) return empty[Math.floor(Math.random() * empty.length)];
-    
     for (const idx of empty) {
       board[idx] = "O";
       if (checkWinner(board) === "O") { board[idx] = null; return idx; }
       board[idx] = null;
     }
-    if (Math.random() < 0.5) {
-      for (const idx of empty) {
-        board[idx] = "X";
-        if (checkWinner(board) === "X") { board[idx] = null; return idx; }
-        board[idx] = null;
-      }
+    for (const idx of empty) {
+      board[idx] = "X";
+      if (checkWinner(board) === "X") { board[idx] = null; return idx; }
+      board[idx] = null;
     }
     if (board[4] === null) return 4;
     return empty[Math.floor(Math.random() * empty.length)];
@@ -257,7 +340,7 @@ function gameTicTacToe() {
   }
 
   function endGame() {
-    modal.querySelector("#ttt-again").style.display = "block";
+    root.querySelector("#ttt-again").style.display = "block";
   }
 
   cells.forEach((cell) => {
@@ -313,9 +396,14 @@ function gameTicTacToe() {
     });
   });
 
-  modal.querySelector("#play-again-btn").addEventListener("click", () => {
-    closeModal();
-    setTimeout(gameTicTacToe, 100);
+  root.querySelector("#play-again-btn").addEventListener("click", () => {
+    if (isInline) {
+      root.innerHTML = "";
+      gameTicTacToe(root);
+    } else {
+      closeModal();
+      setTimeout(() => gameTicTacToe(), 100);
+    }
   });
 }
 
@@ -566,7 +654,7 @@ function startCheckersGame(difficulty) {
   const diffSettings = {
     easy: { depth: 2, searchBranches: 6 },
     medium: { depth: 3, searchBranches: 8 },
-    hard: { depth: 4, searchBranches: 10 },
+    hard: { depth: 6, searchBranches: 14 },
   };
   const settings = diffSettings[difficulty];
   
@@ -898,8 +986,8 @@ function startCheckersGame(difficulty) {
     for (const [cr, cc] of move.captures) {
       b[cr][cc] = null;
     }
-    if (tr === 7 && piece === "white") piece = "white-king";
-    if (tr === 0 && piece === "black") piece = "black-king";
+    if (tr === 0 && piece.startsWith("white")) piece = "white-king";
+    if (tr === 7 && piece.startsWith("black")) piece = "black-king";
     b[tr][tc] = piece;
     return piece;
   }
@@ -1217,8 +1305,8 @@ return captures;
     let piece = brd[fr][fc];
     brd[fr][fc] = null;
     for (const [cr, cc] of move.captures) brd[cr][cc] = null;
-    if (tr === 7 && piece === "white") piece = "white-king";
-    if (tr === 0 && piece === "black") piece = "black-king";
+    if (tr === 0 && piece.startsWith("white")) piece = "white-king";
+    if (tr === 7 && piece.startsWith("black")) piece = "black-king";
     brd[tr][tc] = piece;
     return piece;
   }
@@ -2739,6 +2827,11 @@ export async function renderArcade(root) {
         <div class="game-tile-title">Пинг-понг</div>
         <div class="game-tile-desc">Игра до 5 очков</div>
       </div>
+      <div class="game-tile" data-game="chess">
+        <div class="game-tile-icon"><img src="/static/img/ui/chess.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-title">Шахматы</div>
+        <div class="game-tile-desc">4 уровня сложности</div>
+      </div>
     </div>
 
     <h2 class="section-title">Казино</h2>
@@ -2773,6 +2866,7 @@ export async function renderArcade(root) {
     harvest: gameHarvest,
     checkers: gameCheckers,
     pingpong: gamePingPong,
+    chess: gameChess,
     slots: gameSlots,
     rocket: gameRocket,
     dice: gameDice,

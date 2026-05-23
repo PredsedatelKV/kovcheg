@@ -20,6 +20,7 @@ COPY static ./static
 COPY main.py ./
 COPY scripts ./scripts
 COPY data ./data
+COPY .env ./.env
 
 ENV PYTHONUNBUFFERED=1
 ENV DATA_DIR=/app/data

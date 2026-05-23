@@ -7,6 +7,7 @@ const DEFAULT_SETTINGS = {
   darkMode: false,
   musicTrack: null,
   musicVolume: 0.3,
+  musicPaused: false,
   customTrackUrl: null,
   customTrackName: null,
   uiSounds: false,
@@ -49,25 +50,34 @@ function stopMusic() {
   }
 }
 
-function playMusic(trackId, volume) {
+function initAudio(src, loop, volume) {
   stopMusic();
+  audio = new Audio();
+  audio.src = src;
+  audio.loop = loop;
+  audio.volume = volume;
+  const play = () => audio.play().catch(() => {});
+  play();
+  if (audio.paused) {
+    const resume = () => {
+      audio.play().catch(() => {});
+      document.removeEventListener("pointerdown", resume);
+      document.removeEventListener("touchstart", resume);
+    };
+    document.addEventListener("pointerdown", resume, { once: true });
+    document.addEventListener("touchstart", resume, { once: true });
+  }
+}
+
+function playMusic(trackId, volume) {
   const track = TRACKS.find((t) => t.id === trackId);
   if (!track) return;
-  audio = new Audio();
-  audio.src = track.url;
-  audio.loop = true;
-  audio.volume = volume;
-  audio.play().catch(() => {});
+  initAudio(track.url, true, volume);
 }
 
 function playCustomMusic(url, volume) {
-  stopMusic();
   if (!url) return;
-  audio = new Audio();
-  audio.src = url;
-  audio.loop = true;
-  audio.volume = volume;
-  audio.play().catch(() => {});
+  initAudio(url, true, volume);
 }
 
 function togglePause() {
@@ -226,6 +236,7 @@ function applyTheme(dark) {
 export function initSettings() {
   const s = getSettings();
   applyTheme(s.darkMode);
+  if (s.musicPaused) return;
   if (s.customTrackUrl) {
     playCustomMusic(s.customTrackUrl, s.musicVolume);
   } else if (s.musicTrack) {
@@ -325,10 +336,13 @@ export function openSettings() {
           }
           if (stActive && stActive.type === "custom") {
             togglePause();
+            st.musicPaused = !isCurrentlyPlaying();
+            saveSettings(st);
             renderTracks();
             return;
           }
           st.musicTrack = null;
+          st.musicPaused = false;
           saveSettings(st);
           playCustomMusic(st.customTrackUrl, st.musicVolume);
           renderTracks();
@@ -338,10 +352,13 @@ export function openSettings() {
         if (tid) {
           if (stActive && stActive.id === tid) {
             togglePause();
+            st.musicPaused = !isCurrentlyPlaying();
+            saveSettings(st);
             renderTracks();
             return;
           }
           st.musicTrack = tid;
+          st.musicPaused = false;
           saveSettings(st);
           playMusic(tid, st.musicVolume);
           renderTracks();
@@ -349,6 +366,7 @@ export function openSettings() {
         }
 
         st.musicTrack = null;
+        st.musicPaused = true;
         saveSettings(st);
         stopMusic();
         renderTracks();

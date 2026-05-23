@@ -62,7 +62,6 @@ async function setTab(name) {
   next.classList.add("tab-enter");
 
   if (viewEl.scrollTo) viewEl.scrollTo({ top: 0 });
-  window.scrollTo({ top: 0 });
   localStorage.setItem("kovcheg.tab", name);
 }
 

@@ -257,3 +257,42 @@ def activate_item(
         f"✨ <b>{user.first_name}</b> активировал(а) <b>{inv.item.name}</b>"
     )
     return me(user=user, db=db)
+
+
+@router.get("/transactions", response_model=list[schemas.TransactionOut])
+def list_transactions(
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> list[schemas.TransactionOut]:
+    txns = (
+        db.query(models.Transaction)
+        .filter(
+            (models.Transaction.sender_id == user.id) | (models.Transaction.recipient_id == user.id)
+        )
+        .order_by(models.Transaction.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    user_ids = set()
+    for t in txns:
+        if t.sender_id:
+            user_ids.add(t.sender_id)
+        if t.recipient_id:
+            user_ids.add(t.recipient_id)
+    user_map = {}
+    if user_ids:
+        for u in db.query(models.User).filter(models.User.id.in_(user_ids)).all():
+            user_map[u.id] = u.first_name or "—"
+    return [
+        schemas.TransactionOut(
+            id=t.id,
+            sender_id=t.sender_id,
+            sender_name=user_map.get(t.sender_id) if t.sender_id else None,
+            recipient_id=t.recipient_id,
+            recipient_name=user_map.get(t.recipient_id) if t.recipient_id else None,
+            amount=t.amount,
+            note=t.note,
+            created_at=t.created_at,
+        )
+        for t in txns
+    ]

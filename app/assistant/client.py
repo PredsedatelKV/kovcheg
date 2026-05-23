@@ -15,7 +15,8 @@ async def ask_llm(messages: list[dict[str, str]], max_tokens: int | None = None,
     settings = get_settings()
 
     if not settings.llm_api_key:
-        return "⚠️ Агент не настроен: не указан API-ключ. Скажи админу."
+        log.error("LLM_API_KEY is empty — check .env or env vars in Docker")
+        return "⚠️ Агент не настроен: не указан API-ключ. Проверьте .env или переменные окружения."
 
     if settings.llm_provider == "gemini":
         return await _ask_gemini(messages, max_tokens, temperature)

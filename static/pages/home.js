@@ -164,6 +164,13 @@ export async function renderHome(root) {
         : ""
     }
 
+    <div class="card quiz-card" id="quiz-card">
+      <div class="quiz-card-head">
+        <h3 class="card-title">📝 Тестирования</h3>
+      </div>
+      <div id="quiz-list"><div class="empty">Загрузка…</div></div>
+    </div>
+
     <div class="card tasks-card">
       <div class="tasks-head">
         <h3 class="card-title">Задания</h3>
@@ -280,8 +287,10 @@ export async function renderHome(root) {
   root.querySelectorAll('[data-action="start"]').forEach((btn) => {
     btn.addEventListener("click", async (ev) => {
       ev.stopPropagation();
+      ev.preventDefault();
       const id = btn.dataset.taskId;
-      openTaskDetails(allTasksList.find((t) => String(t.id) === String(id)));
+      const t = allTasksList.find((t) => String(t.id) === String(id));
+      if (t) await startTask(t);
     });
   });
   root.querySelectorAll(".task-row").forEach((row) => {
@@ -337,6 +346,16 @@ async function openAllNews() {
   }
 }
 
+async function startTask(t) {
+  try {
+    await post(`/api/tasks/${t.id}/start`);
+    window.kov.toast("Задание начато — выполняй и жди подтверждения админа");
+    window.location.reload();
+  } catch (e) {
+    window.kov.toast(e.message);
+  }
+}
+
 function openAllTasks(tasks, userTasks) {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
@@ -349,8 +368,10 @@ function openAllTasks(tasks, userTasks) {
   modal.querySelectorAll('[data-action="start"]').forEach((btn) => {
     btn.addEventListener("click", async (ev) => {
       ev.stopPropagation();
+      ev.preventDefault();
       const id = btn.dataset.taskId;
-      openTaskDetails(tasks.find((t) => String(t.id) === String(id)));
+      const t = tasks.find((t) => String(t.id) === String(id));
+      if (t) await startTask(t);
     });
   });
   modal.querySelectorAll(".task-row").forEach((row) => {
@@ -403,6 +424,13 @@ async function openWheel() {
     const seg = 360 / N;
     const cx = 190, cy = 190, innerR = 162, contentR = 110;
 
+    const palette = [
+      "#FF6B6B", "#FF8E53", "#FFD93D", "#6BCB77",
+      "#4D96FF", "#9B59B6", "#FF6B9D", "#00D2D3",
+      "#F368E0", "#54A0FF", "#5F27CD", "#01A3A4",
+      "#EE5A24", "#F9CA24", "#6AB04C", "#4834D4",
+    ];
+
     const arcPath = (start, end, r) => {
       const s = ((start - 90) * Math.PI) / 180;
       const e = ((end - 90) * Math.PI) / 180;
@@ -413,9 +441,10 @@ async function openWheel() {
     const slices = sectors.map((s, i) => {
       const start = i * seg, end = (i + 1) * seg, mid = start + seg / 2;
       const rad = ((mid - 90) * Math.PI) / 180;
-      const c1 = i % 2 === 0 ? "#FFD700" : "#F0C040";
-      const c2 = i % 2 === 0 ? "#DAA520" : "#C8961E";
-      const c3 = i % 2 === 0 ? "#E6B800" : "#D4A020";
+      const baseColor = palette[i % palette.length];
+      const c1 = baseColor;
+      const c2 = shadeColor(baseColor, -20);
+      const c3 = shadeColor(baseColor, 15);
 
       const cx2 = cx + contentR * Math.cos(rad);
       const cy2 = cy + contentR * Math.sin(rad);
@@ -424,7 +453,7 @@ async function openWheel() {
       if (s.kind === "coins") {
         const val = s.value;
         content = `
-          <text x="${cx2}" y="${cy2 - 10}" text-anchor="middle" font-size="20" font-weight="800" fill="#fff" transform="rotate(${mid},${cx2},${cy2})" style="text-shadow:0 2px 4px rgba(0,0,0,.45)">${val}</text>
+          <text x="${cx2}" y="${cy2 - 10}" text-anchor="middle" font-size="20" font-weight="800" fill="#fff" transform="rotate(${mid},${cx2},${cy2})" style="text-shadow:0 2px 4px rgba(0,0,0,.5)">${val}</text>
           <image href="/static/img/ui/coin.svg" x="${cx2 - 12}" y="${cy2 + 2}" width="24" height="24" transform="rotate(${mid},${cx2},${cy2})"/>`;
       } else {
         content = `<image href="${s.icon}" x="${cx2 - 20}" y="${cy2 - 20}" width="40" height="40" transform="rotate(${mid},${cx2},${cy2})"/>`;
@@ -432,42 +461,58 @@ async function openWheel() {
 
       return `
         <defs>
-          <linearGradient id="sg${i}" x1="0.5" y1="0" x2="0.5" y2="1"><stop offset="0%" stop-color="${c1}"/><stop offset="50%" stop-color="${c3}"/><stop offset="100%" stop-color="${c2}"/></linearGradient>
+          <linearGradient id="sg${i}" x1="0.5" y1="0" x2="0.5" y2="1"><stop offset="0%" stop-color="${c3}"/><stop offset="50%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient>
+          <linearGradient id="sg${i}hl" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="rgba(255,255,255,0.25)"/><stop offset="50%" stop-color="rgba(255,255,255,0)"/><stop offset="100%" stop-color="rgba(0,0,0,0.15)"/></linearGradient>
         </defs>
-        <path d="${arcPath(start, end, innerR)}" fill="url(#sg${i})" stroke="#B8860B" stroke-width="2"/>
+        <path d="${arcPath(start, end, innerR)}" fill="url(#sg${i})" stroke="#fff" stroke-width="1.5" stroke-opacity="0.3"/>
+        <path d="${arcPath(start, end, innerR)}" fill="url(#sg${i}hl)"/>
         ${content}
       `;
     }).join("");
 
-    const tickMarks = Array.from({ length: N * 4 }, (_, i) => {
-      const a = ((i * seg / 4 - 90) * Math.PI) / 180;
-      const r1 = 172, r2 = 182;
-      return `<line x1="${cx + r1 * Math.cos(a)}" y1="${cy + r1 * Math.sin(a)}" x2="${cx + r2 * Math.cos(a)}" y2="${cy + r2 * Math.sin(a)}" stroke="${i % 4 === 0 ? "#FFD700" : "rgba(255,215,0,.5)"}" stroke-width="${i % 4 === 0 ? 3 : 1.5}" stroke-linecap="round"/>`;
+    const tickMarks = Array.from({ length: N * 5 }, (_, i) => {
+      const a = ((i * seg / 5 - 90) * Math.PI) / 180;
+      const r1 = 172, r2 = 184;
+      const isMajor = i % 5 === 0;
+      return `<line x1="${cx + r1 * Math.cos(a)}" y1="${cy + r1 * Math.sin(a)}" x2="${cx + r2 * Math.cos(a)}" y2="${cy + r2 * Math.sin(a)}" stroke="${isMajor ? "#FFD700" : "rgba(255,255,255,0.6)"}" stroke-width="${isMajor ? 3 : 1.5}" stroke-linecap="round"/>`;
+    }).join("");
+
+    const rimDots = Array.from({ length: N * 3 }, (_, i) => {
+      const a = ((i * seg / 3 - 90) * Math.PI) / 180;
+      const r = 193;
+      return `<circle cx="${cx + r * Math.cos(a)}" cy="${cy + r * Math.sin(a)}" r="3" fill="#FFD700" opacity="0.8"/>`;
     }).join("");
 
     const modal = window.kov.showModal(`
       <button class="close" onclick="closeModal()">×</button>
-      <h2 style="text-align:center;margin-top:0;margin-bottom:4px">Ежедневное колесо фортуны</h2>
-      <p style="text-align:center;color:var(--text-soft);margin:0 0 10px;font-size:13px">Крутите колесо и выигрывайте K и призы!</p>
+      <h2 style="text-align:center;margin-top:0;margin-bottom:4px">🎡 Колесо фортуны</h2>
+      <p style="text-align:center;color:var(--text-soft);margin:0 0 10px;font-size:13px">Крути и выигрывай K и призы!</p>
       <div class="wheel-stage">
         <div class="wheel-wrap">
           <div class="wheel-pointer"></div>
           <svg class="wheel-svg" id="wheel-svg" viewBox="0 0 380 380">
             <defs>
-              <radialGradient id="rimGrad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#FFEAA7"/><stop offset="60%" stop-color="#FFD700"/><stop offset="100%" stop-color="#B8860B"/></radialGradient>
-              <filter id="dropGlow"><feDropShadow dx="0" dy="3" stdDeviation="6" flood-opacity=".4"/></filter>
+              <radialGradient id="rimGrad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#FFF8DC"/><stop offset="30%" stop-color="#FFD700"/><stop offset="70%" stop-color="#DAA520"/><stop offset="100%" stop-color="#8B6914"/></radialGradient>
+              <radialGradient id="hubGrad" cx="40%" cy="35%" r="60%"><stop offset="0%" stop-color="#FFF8DC"/><stop offset="50%" stop-color="#FFD700"/><stop offset="100%" stop-color="#B8860B"/></radialGradient>
+              <radialGradient id="hubInner" cx="40%" cy="35%" r="60%"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#FFE4B5"/></radialGradient>
+              <filter id="dropGlow"><feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity=".35"/></filter>
+              <filter id="innerShadow"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity=".2"/></filter>
             </defs>
-            <circle cx="${cx}" cy="${cy}" r="194" fill="#B8860B" opacity=".2" filter="url(#dropGlow)"/>
-            <circle cx="${cx}" cy="${cy}" r="188" fill="url(#rimGrad)" stroke="#8B6914" stroke-width="2"/>
-            <circle cx="${cx}" cy="${cy}" r="176" fill="none" stroke="rgba(139,105,20,.25)" stroke-width="3"/>
+            <circle cx="${cx}" cy="${cy}" r="197" fill="rgba(0,0,0,0.15)" filter="url(#dropGlow)"/>
+            <circle cx="${cx}" cy="${cy}" r="194" fill="url(#rimGrad)" stroke="#8B6914" stroke-width="2"/>
+            <circle cx="${cx}" cy="${cy}" r="186" fill="none" stroke="rgba(139,105,20,.3)" stroke-width="2"/>
+            <circle cx="${cx}" cy="${cy}" r="170" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="1"/>
+            ${rimDots}
             ${tickMarks}
             <g filter="url(#dropGlow)">${slices}</g>
-            <circle cx="${cx}" cy="${cy}" r="18" fill="#FFD700" stroke="#B8860B" stroke-width="2"/>
-            <circle cx="${cx}" cy="${cy}" r="11" fill="#FFF8DC"/>
+            <circle cx="${cx}" cy="${cy}" r="28" fill="url(#hubGrad)" stroke="#8B6914" stroke-width="2" filter="url(#innerShadow)"/>
+            <circle cx="${cx}" cy="${cy}" r="22" fill="url(#hubInner)" stroke="#DAA520" stroke-width="1"/>
+            <circle cx="${cx}" cy="${cy}" r="16" fill="#FFD700" stroke="#B8860B" stroke-width="1.5"/>
+            <text x="${cx}" y="${cy + 5}" text-anchor="middle" font-size="16" font-weight="900" fill="#8B6914" style="text-shadow:0 1px 2px rgba(255,255,255,0.5)">K</text>
           </svg>
         </div>
         <button class="btn" id="spin-btn" ${status.can_spin ? "" : "disabled"}>
-          ${status.can_spin ? "Крутить" : "Доступно завтра"}
+          ${status.can_spin ? "🎰 Крутить!" : "🔒 Доступно завтра"}
         </button>
         <div class="wheel-prize" id="prize">
           <div class="ic" id="prize-ic">${iconHtml("/static/img/ui/coin.svg", "lg", "")}</div>
@@ -476,9 +521,19 @@ async function openWheel() {
       </div>
     `);
 
+    function shadeColor(color, percent) {
+      const num = parseInt(color.replace("#", ""), 16);
+      const amt = Math.round(2.55 * percent);
+      const R = Math.min(255, Math.max(0, (num >> 16) + amt));
+      const G = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amt));
+      const B = Math.min(255, Math.max(0, (num & 0x0000FF) + amt));
+      return `#${(1 << 24 | R << 16 | G << 8 | B).toString(16).slice(1)}`;
+    }
+
     const svg = modal.querySelector("#wheel-svg");
     const spinBtn = modal.querySelector("#spin-btn");
     let currentRot = 0;
+    let spinSoundInterval = null;
 
     spinBtn.addEventListener("click", async () => {
       spinBtn.disabled = true;
@@ -486,17 +541,26 @@ async function openWheel() {
         const result = await post("/api/wheel/spin");
         const idx = result.sector_index;
         const targetAngle = -(idx * seg + seg / 2);
-        const fullSpins = 5;
+        const fullSpins = 5 + Math.floor(Math.random() * 2);
         const finalRot = currentRot + fullSpins * 360 + (targetAngle - (currentRot % 360));
+        
+        playUISound("spin");
+        spinSoundInterval = setInterval(() => playUISound("spin"), 300);
+        
         svg.style.transform = `rotate(${finalRot}deg)`;
         currentRot = finalRot;
+        
         setTimeout(() => {
+          clearInterval(spinSoundInterval);
+          playUISound("win");
           const prize = modal.querySelector("#prize");
           modal.querySelector("#prize-ic").innerHTML = iconHtml(result.result.icon, "lg", "");
           modal.querySelector("#prize-lbl").textContent = result.result.prize_label;
           prize.classList.add("show");
+          animateElement(prize, "popIn", 400);
         }, 4600);
       } catch (e) {
+        clearInterval(spinSoundInterval);
         window.kov.toast(e.message);
         spinBtn.disabled = false;
       }
