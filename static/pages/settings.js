@@ -48,25 +48,29 @@ function stopMusic() {
     audio.src = "";
     audio = null;
   }
+  // Clean up old resume listeners to prevent multiple tracks
+  document.removeEventListener("pointerdown", resumePlay);
+  document.removeEventListener("touchstart", resumePlay);
+}
+
+function resumePlay() {
+  if (audio && audio.paused) {
+    audio.play().catch(() => {});
+  }
 }
 
 function initAudio(src, loop, volume) {
   stopMusic();
-  audio = new Audio();
-  audio.src = src;
-  audio.loop = loop;
-  audio.volume = volume;
-  const play = () => audio.play().catch(() => {});
-  play();
-  if (audio.paused) {
-    const resume = () => {
-      audio.play().catch(() => {});
-      document.removeEventListener("pointerdown", resume);
-      document.removeEventListener("touchstart", resume);
-    };
-    document.addEventListener("pointerdown", resume, { once: true });
-    document.addEventListener("touchstart", resume, { once: true });
-  }
+  const a = new Audio();
+  a.src = src;
+  a.loop = loop;
+  a.volume = volume;
+  audio = a;
+  a.play().catch(() => {
+    // Autoplay blocked — wait for user gesture
+    document.addEventListener("pointerdown", resumePlay, { once: true });
+    document.addEventListener("touchstart", resumePlay, { once: true });
+  });
 }
 
 function playMusic(trackId, volume) {

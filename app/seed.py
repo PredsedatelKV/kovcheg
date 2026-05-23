@@ -104,12 +104,6 @@ PLAYERS: list[dict] = [
         "role": "Председатель",
     },
     {
-        "telegram_id": 10002,
-        "username": "magomet",
-        "first_name": "Магомет",
-        "role": "Гражданин",
-    },
-    {
         "telegram_id": 10003,
         "username": "ibragim",
         "first_name": "Ибрагим",
@@ -119,7 +113,23 @@ PLAYERS: list[dict] = [
 
 
 def seed_players(db: Session) -> None:
-    """Seed the three fixed citizens (Омар / Магомет / Ибрагим) and remove legacy 'Dev' user."""
+    """Seed the fixed citizens and rename any 'M' user to 'Магомет'."""
+    # Delete legacy Магомет (telegram_id 10002) if still around
+    old_magomet = db.query(models.User).filter(models.User.telegram_id == 10002).one_or_none()
+    if old_magomet is not None:
+        db.query(models.ChatMessage).filter(models.ChatMessage.user_id == old_magomet.id).delete()
+        db.query(models.MarketListing).filter(models.MarketListing.seller_id == old_magomet.id).delete()
+        db.query(models.Transaction).filter(
+            (models.Transaction.sender_id == old_magomet.id) | (models.Transaction.recipient_id == old_magomet.id)
+        ).delete()
+        db.query(models.WheelSpin).filter(models.WheelSpin.user_id == old_magomet.id).delete()
+        db.delete(old_magomet)
+        db.flush()
+    # Rename any user whose first_name is "M" to "Магомет"
+    m_user = db.query(models.User).filter(models.User.first_name == "M").first()
+    if m_user is not None:
+        m_user.first_name = "Магомет"
+    # Clean up legacy 'Dev' user
     legacy_dev = db.query(models.User).filter(models.User.telegram_id == 1).one_or_none()
     if legacy_dev is not None:
         db.query(models.MarketListing).filter(models.MarketListing.seller_id == legacy_dev.id).delete()
@@ -420,11 +430,8 @@ def seed(db: Session) -> None:
     # Chat messages
     if db.query(models.ChatMessage).count() == 0:
         ibragim = db.query(models.User).filter(models.User.first_name == "Ибрагим").first()
-        magomet = db.query(models.User).filter(models.User.first_name == "Магомет").first()
         if ibragim:
             db.add(models.ChatMessage(user_id=ibragim.id, content="Привет всем!", message_type="text"))
-        if magomet:
-            db.add(models.ChatMessage(user_id=magomet.id, content="Как дела?", message_type="text"))
         db.commit()
 
     seed_wheel_prizes(db)

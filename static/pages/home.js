@@ -26,8 +26,6 @@ function bannerCarousel(banners) {
           return `<div class="slide" data-banner-idx="${(i - 1 + n) % n}"${isClone ? ' data-clone="true"' : ''}><div class="banner" style="background-image:url('${escapeHtml(b.image_url)}')"></div></div>`;
         }).join("")}
       </div>
-      <button class="carousel-arrow carousel-arrow-left" id="bn-prev">‹</button>
-      <button class="carousel-arrow carousel-arrow-right" id="bn-next">›</button>
       <div class="dots" id="bn-dots">
         ${banners.map((_, i) => `<span class="dot ${i === 0 ? "active" : ""}"></span>`).join("")}
       </div>
@@ -199,13 +197,8 @@ export async function renderHome(root) {
   if (carousel) {
     const track = carousel.querySelector("#bn-track");
     const dots = carousel.querySelectorAll("#bn-dots .dot");
-    const prevBtn = carousel.querySelector("#bn-prev");
-    const nextBtn = carousel.querySelector("#bn-next");
     const total = dots.length;
     if (total > 1) {
-      const slide = track.querySelector(".slide");
-      const gap = 10;
-      const step = slide.offsetWidth + gap;
       let currentIdx = 0;
 
       const updateDots = () => {
@@ -238,13 +231,11 @@ export async function renderHome(root) {
           const real = track.querySelector('.slide[data-clone="false"][data-banner-idx="' + idx + '"]');
           if (!real) return;
           track.style.scrollBehavior = "auto";
-          track.scrollLeft = real.offsetLeft + real.offsetWidth / 2 - track.clientWidth / 2;
+          const snap = real.offsetLeft + real.offsetWidth / 2 - track.clientWidth / 2;
+          track.scrollLeft = snap;
           track.style.scrollBehavior = "smooth";
         }, 60);
       });
-
-      prevBtn.addEventListener("click", () => { playUISound("click"); track.scrollBy({ left: -step, behavior: "smooth" }); });
-      nextBtn.addEventListener("click", () => { playUISound("click"); track.scrollBy({ left: step, behavior: "smooth" }); });
 
       const firstReal = track.querySelector('.slide[data-clone="false"]');
       if (firstReal) {
@@ -422,7 +413,7 @@ async function openWheel() {
     const sectors = status.sectors;
     const N = sectors.length;
     const seg = 360 / N;
-    const cx = 190, cy = 190, innerR = 162, contentR = 110;
+    const cx = 190, cy = 190, innerR = 170, contentR = 110;
 
     const palette = [
       "#FF6B6B", "#FF8E53", "#FFD93D", "#6BCB77",
@@ -470,17 +461,17 @@ async function openWheel() {
       `;
     }).join("");
 
-    const tickMarks = Array.from({ length: N * 5 }, (_, i) => {
-      const a = ((i * seg / 5 - 90) * Math.PI) / 180;
-      const r1 = 172, r2 = 184;
+    const tickMarks = Array.from({ length: N * 4 }, (_, i) => {
+      const a = ((i * seg / 4 - 90) * Math.PI) / 180;
+      const r1 = 176, r2 = 184;
       const isMajor = i % 5 === 0;
       return `<line x1="${cx + r1 * Math.cos(a)}" y1="${cy + r1 * Math.sin(a)}" x2="${cx + r2 * Math.cos(a)}" y2="${cy + r2 * Math.sin(a)}" stroke="${isMajor ? "#FFD700" : "rgba(255,255,255,0.6)"}" stroke-width="${isMajor ? 3 : 1.5}" stroke-linecap="round"/>`;
     }).join("");
 
-    const rimDots = Array.from({ length: N * 3 }, (_, i) => {
-      const a = ((i * seg / 3 - 90) * Math.PI) / 180;
-      const r = 193;
-      return `<circle cx="${cx + r * Math.cos(a)}" cy="${cy + r * Math.sin(a)}" r="3" fill="#FFD700" opacity="0.8"/>`;
+    const rimDots = Array.from({ length: N * 2 }, (_, i) => {
+      const a = ((i * seg / 2 - 90) * Math.PI) / 180;
+      const r = 190;
+      return `<circle cx="${cx + r * Math.cos(a)}" cy="${cy + r * Math.sin(a)}" r="2.5" fill="#FFD700" opacity="0.8"/>`;
     }).join("");
 
     const modal = window.kov.showModal(`
@@ -499,16 +490,15 @@ async function openWheel() {
               <filter id="innerShadow"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity=".2"/></filter>
             </defs>
             <circle cx="${cx}" cy="${cy}" r="197" fill="rgba(0,0,0,0.15)" filter="url(#dropGlow)"/>
-            <circle cx="${cx}" cy="${cy}" r="194" fill="url(#rimGrad)" stroke="#8B6914" stroke-width="2"/>
-            <circle cx="${cx}" cy="${cy}" r="186" fill="none" stroke="rgba(139,105,20,.3)" stroke-width="2"/>
-            <circle cx="${cx}" cy="${cy}" r="170" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="1"/>
+            <circle cx="${cx}" cy="${cy}" r="194" fill="url(#rimGrad)" stroke="#8B6914" stroke-width="1.5"/>
+            <circle cx="${cx}" cy="${cy}" r="188" fill="none" stroke="rgba(139,105,20,.3)" stroke-width="1.5"/>
+            <circle cx="${cx}" cy="${cy}" r="174" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="1"/>
             ${rimDots}
             ${tickMarks}
             <g filter="url(#dropGlow)">${slices}</g>
-            <circle cx="${cx}" cy="${cy}" r="28" fill="url(#hubGrad)" stroke="#8B6914" stroke-width="2" filter="url(#innerShadow)"/>
-            <circle cx="${cx}" cy="${cy}" r="22" fill="url(#hubInner)" stroke="#DAA520" stroke-width="1"/>
-            <circle cx="${cx}" cy="${cy}" r="16" fill="#FFD700" stroke="#B8860B" stroke-width="1.5"/>
-            <text x="${cx}" y="${cy + 5}" text-anchor="middle" font-size="16" font-weight="900" fill="#8B6914" style="text-shadow:0 1px 2px rgba(255,255,255,0.5)">K</text>
+            <circle cx="${cx}" cy="${cy}" r="32" fill="url(#hubGrad)" stroke="#8B6914" stroke-width="1.5" filter="url(#innerShadow)"/>
+            <circle cx="${cx}" cy="${cy}" r="26" fill="url(#hubInner)" stroke="#DAA520" stroke-width="1"/>
+            <circle cx="${cx}" cy="${cy}" r="20" fill="#FFD700" stroke="#B8860B" stroke-width="1.5"/>
           </svg>
         </div>
         <button class="btn" id="spin-btn" ${status.can_spin ? "" : "disabled"}>

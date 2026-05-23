@@ -73,7 +73,7 @@ function getBetValue(id) {
 
 function gameWhereIsMoshonka(container) {
   const isInline = !!container;
-  const CUP_COUNT = 5;
+  const CUP_COUNT = 3;
   let round = 1;
   let score = 0;
   let villagerIdx, canClick, gameEnded;
@@ -88,10 +88,8 @@ function gameWhereIsMoshonka(container) {
   let root, result, scoreEl, cupContainer, againBtn;
   
   const html = `
-    <h2 style="margin:0 0 4px">Где Мошонка?</h2>
-    <p class="card-sub" style="margin:0 0 6px">Следи за кустом — Мошонка спрятался!</p>
-    <div class="moshonka-score" style="text-align:center;font-size:14px;color:var(--text-soft);margin-bottom:8px">
-      Счёт: <span id="moshonka-score-val">0</span> | Раунд: <span id="moshonka-round-val">1</span>
+    <div style="text-align:center;margin-bottom:6px">
+      <span style="font-size:13px;color:var(--text-soft)">Счёт: <span id="moshonka-score-val">0</span></span>
     </div>
     <div class="game-bushes" id="moshonka-cups">
       ${Array(CUP_COUNT).fill("").map((_, i) => `
@@ -105,35 +103,11 @@ function gameWhereIsMoshonka(container) {
         </button>
       `).join("")}
     </div>
-    <div class="game-result" id="moshonka-result"></div>
-    <div class="game-play-again" id="moshonka-again" style="display:none">
-      <button class="btn" id="moshonka-play-again">Играть заново</button>
-    </div>
+    <div class="game-result" id="moshonka-result" style="font-size:13px"></div>
   `;
-  
-  if (isInline) {
-    root = container;
-    root.innerHTML = html;
-  } else {
-    root = window.kov.showModal(`
-      <button class="close" onclick="closeModal()">×</button>
-      ${html}
-    `);
-  }
-  
-  result = root.querySelector("#moshonka-result");
-  againBtn = root.querySelector("#moshonka-play-again");
-  cupContainer = root.querySelector("#moshonka-cups");
-  scoreEl = root.querySelector("#moshonka-score-val");
-  
-  const cups = cupContainer.querySelectorAll(".game-cup");
-  
-  function getCup(idx) {
-    return cupContainer.querySelector(`.game-cup[data-idx="${idx}"]`);
-  }
-  
+
   function showMoshonka(show) {
-    cups.forEach((cup, i) => {
+    cupContainer.querySelectorAll(".game-cup").forEach((cup, i) => {
       const front = cup.querySelector(".cup-front");
       const back = cup.querySelector(".cup-back");
       if (i === villagerIdx && show) {
@@ -146,75 +120,34 @@ function gameWhereIsMoshonka(container) {
     });
   }
   
-  function shuffleAnimation() {
+  function startRound() {
     resetRound();
-    canClick = false;
-    gameEnded = false;
-    result.innerHTML = "";
-    const againEl = root.querySelector("#moshonka-again");
-    if (againEl) againEl.style.display = "none";
-    const shuffleCount = 3 + round;
-    
+    if (result) result.innerHTML = "";
     showMoshonka(true);
-    result.innerHTML = `<div class="game-neutral">Запоминай куст…</div>`;
-    
     setTimeout(() => {
       showMoshonka(false);
-      
-      setTimeout(() => {
-        let swaps = 0;
-        const totalSwaps = shuffleCount * 2;
-        
-        function doSwap() {
-          if (swaps >= totalSwaps) {
-            canClick = true;
-            result.innerHTML = `<div class="game-neutral">Где Мошонка? Жми на куст!</div>`;
-            return;
-          }
-          
-          const a = Math.floor(Math.random() * CUP_COUNT);
-          let b = Math.floor(Math.random() * CUP_COUNT);
-          while (b === a) b = Math.floor(Math.random() * CUP_COUNT);
-          
-          const cupA = getCup(a);
-          const cupB = getCup(b);
-          
-          const rectA = cupA.getBoundingClientRect();
-          const rectB = cupB.getBoundingClientRect();
-          const dx = rectB.left - rectA.left;
-          const dy = rectB.top - rectA.top;
-          
-          cupA.style.transition = "transform 0.15s ease-in-out";
-          cupB.style.transition = "transform 0.15s ease-in-out";
-          cupA.style.transform = `translate(${dx}px, ${dy}px)`;
-          cupB.style.transform = `translate(${-dx}px, ${-dy}px)`;
-          cupA.style.zIndex = "2";
-          cupB.style.zIndex = "2";
-          
-          setTimeout(() => {
-            cupA.style.transition = "none";
-            cupB.style.transition = "none";
-            cupA.style.transform = "";
-            cupB.style.transform = "";
-            cupA.style.zIndex = "";
-            cupB.style.zIndex = "";
-            
-            cupA.dataset.idx = b;
-            cupB.dataset.idx = a;
-            
-            if (villagerIdx === a) villagerIdx = b;
-            else if (villagerIdx === b) villagerIdx = a;
-            
-            playUISound("spin");
-            swaps++;
-            setTimeout(doSwap, 80);
-          }, 150);
-        }
-        
-        doSwap();
-      }, 600);
-    }, 1200);
+      canClick = true;
+      if (result) result.innerHTML = `<div class="game-neutral">Где Мошонка?</div>`;
+    }, 800);
   }
+  
+  if (isInline) {
+    root = container;
+    root.innerHTML = html;
+  } else {
+    root = window.kov.showModal(`
+      <button class="close" onclick="closeModal()">×</button>
+      <h2 style="margin:0 0 4px">Где Мошонка?</h2>
+      <p class="card-sub" style="margin:0 0 6px">Угадай, под каким кустом!</p>
+      ${html}
+    `);
+  }
+  
+  result = root.querySelector("#moshonka-result");
+  cupContainer = root.querySelector("#moshonka-cups");
+  scoreEl = root.querySelector("#moshonka-score-val");
+  
+  const cups = cupContainer.querySelectorAll(".game-cup");
   
   cups.forEach((cup) => {
     cup.addEventListener("click", () => {
@@ -225,15 +158,13 @@ function gameWhereIsMoshonka(container) {
       const idx = Number(cup.dataset.idx);
       
       if (idx === villagerIdx) {
-        result.innerHTML = `<div class="game-win">Угадал! Мошонка тут! 🎉</div>`;
+        result.innerHTML = `<div class="game-win">Угадал! +${10 * round}</div>`;
         playUISound("win");
         score += 10 * round;
         round++;
         scoreEl.textContent = score;
-        const roundEl = root.querySelector("#moshonka-round-val");
-        if (roundEl) roundEl.textContent = round;
       } else {
-        result.innerHTML = `<div class="game-lose">Мимо! Мошонка был под другим кустом</div>`;
+        result.innerHTML = `<div class="game-lose">Мимо</div>`;
         playUISound("lose");
         score = Math.max(0, score - 5);
         scoreEl.textContent = score;
@@ -242,22 +173,11 @@ function gameWhereIsMoshonka(container) {
       showMoshonka(true);
       cups.forEach(c => c.disabled = true);
       
-      const again = root.querySelector("#moshonka-again");
-      again.style.display = "block";
+      setTimeout(startRound, 1500);
     });
   });
   
-  againBtn.addEventListener("click", () => {
-    if (isInline) {
-      root.innerHTML = html;
-      gameWhereIsMoshonka(root);
-    } else {
-      closeModal();
-      setTimeout(gameWhereIsMoshonka, 100);
-    }
-  });
-  
-  shuffleAnimation();
+  startRound();
 }
 
 function gameTicTacToe(container) {

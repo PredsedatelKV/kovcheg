@@ -303,29 +303,6 @@ body {
   transition: all 0.2s ease;
 }
 .dot.active { background: var(--primary); width: 18px; border-radius: 6px; }
-.carousel-arrow {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: rgba(0,0,0,0.45);
-  color: #fff;
-  border: 0;
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  opacity: 0.5;
-  transition: opacity 0.2s ease;
-}
-.carousel:hover .carousel-arrow, .carousel-arrow:focus-visible { opacity: 1; }
-.carousel-arrow-left { left: 6px; }
-.carousel-arrow-right { right: 6px; }
-.carousel-arrow:active { opacity: 0.7; }
 
 /* Assistant card — WIDE */
 .assistant-card-wide {
