@@ -13,11 +13,6 @@ RUN mkdir -p app/api app/assistant app/utils && \
     touch app/__init__.py app/api/__init__.py app/assistant/__init__.py app/utils/__init__.py
 RUN pip install --no-cache-dir "."
 
-RUN python -c \
-    "from sentence_transformers import SentenceTransformer; \
-     SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')" \
-    || echo "WARNING: embedding model download failed, will download at runtime"
-
 # Remove stubs before copying real code
 RUN rm -rf app
 COPY app ./app
