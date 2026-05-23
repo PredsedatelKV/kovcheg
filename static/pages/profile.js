@@ -7,7 +7,6 @@ const escapeHtml = (s = "") =>
 const GAME_META = {
   tictactoe: { name: "Крестики-нолики", icon: "/static/img/ui/tic-tac-toe.svg" },
   checkers:  { name: "Шашки",           icon: "/static/img/ui/checkers.svg" },
-  chess:     { name: "Шахматы",         icon: "/static/img/ui/chess.svg" },
   pingpong:  { name: "Пинг-понг",       icon: "/static/img/ui/pingpong.svg" },
   tanks:     { name: "Танчики",         icon: "/static/img/ui/tank.svg" },
 };
@@ -330,7 +329,6 @@ function bindChatInput(root) {
         { id: "tictactoe", name: "Крестики-нолики", icon: "/static/img/ui/tic-tac-toe.svg" },
         { id: "checkers", name: "Шашки", icon: "/static/img/ui/checkers.svg" },
         { id: "pingpong", name: "Пинг-понг", icon: "/static/img/ui/pingpong.svg" },
-        { id: "chess", name: "Шахматы", icon: "/static/img/ui/chess.svg" },
         { id: "tanks", name: "Танчики", icon: "/static/img/ui/tank.svg" },
       ];
       

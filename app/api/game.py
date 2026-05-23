@@ -106,7 +106,6 @@ def get_my_invites(
     game_names = {
         "tictactoe": "Крестики-нолики",
         "checkers": "Шашки",
-        "chess": "Шахматы",
         "pingpong": "Пинг-понг",
         "tanks": "Танчики"
     }

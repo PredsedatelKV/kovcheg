@@ -1,14 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 84" shape-rendering="crispEdges" aria-hidden="true">
-  <!-- isometric Minecraft-style white block -->
-  <polygon points="40,4 76,22 40,40 4,22" fill="#ffffff" stroke="#1f2330" stroke-width="2" stroke-linejoin="miter"/>
-  <polygon points="4,22 40,40 40,78 4,60" fill="#d8dce4" stroke="#1f2330" stroke-width="2" stroke-linejoin="miter"/>
-  <polygon points="76,22 40,40 40,78 76,60" fill="#b6bac3" stroke="#1f2330" stroke-width="2" stroke-linejoin="miter"/>
-  <!-- pixel highlights on top face -->
-  <polygon points="10,22 22,28 22,32 10,26" fill="#f3f4f7"/>
-  <polygon points="58,28 70,22 70,26 58,32" fill="#f3f4f7"/>
-  <!-- subtle edge speckles -->
-  <rect x="14" y="32" width="4" height="2" fill="#c6cbd4"/>
-  <rect x="62" y="32" width="4" height="2" fill="#9ea4ae"/>
-  <rect x="34" y="52" width="4" height="2" fill="#c6cbd4"/>
-  <rect x="42" y="52" width="4" height="2" fill="#9ea4ae"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 84" fill="none" aria-hidden="true">
+  <!-- isometric cube with soft rounded corners -->
+  <defs>
+    <linearGradient id="topFace" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e8ecf4"/>
+    </linearGradient>
+    <linearGradient id="leftFace" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#d0d6e0"/>
+      <stop offset="100%" stop-color="#b0b8c6"/>
+    </linearGradient>
+    <linearGradient id="rightFace" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#b8bfcc"/>
+      <stop offset="100%" stop-color="#9aa2b0"/>
+    </linearGradient>
+    <filter id="cubeShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+  <g filter="url(#cubeShadow)">
+    <!-- top face (lighter) -->
+    <path d="M40 6 C40 6 70 20 70 20 L40 34 C40 34 10 20 10 20 Z" fill="url(#topFace)" stroke="#9aa2b0" stroke-width="1.5" stroke-linejoin="round"/>
+    <!-- left face -->
+    <path d="M10 20 L10 60 C10 60 40 74 40 74 L40 34 Z" fill="url(#leftFace)" stroke="#9aa2b0" stroke-width="1.5" stroke-linejoin="round"/>
+    <!-- right face -->
+    <path d="M70 20 L70 60 C70 60 40 74 40 74 L40 34 Z" fill="url(#rightFace)" stroke="#9aa2b0" stroke-width="1.5" stroke-linejoin="round"/>
+  </g>
+  <!-- inner edge highlights -->
+  <path d="M40 34 L40 74" stroke="#7a8496" stroke-width="0.8" opacity="0.4"/>
+  <path d="M10 60 L40 74" stroke="#7a8496" stroke-width="0.8" opacity="0.25"/>
+  <path d="M70 60 L40 74" stroke="#7a8496" stroke-width="0.8" opacity="0.25"/>
+  <!-- tiny specular highlight on top face -->
+  <path d="M26 17 C30 15 34 15 38 17" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/>
+  <path d="M50 17 C54 15 58 15 62 17" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/>
 </svg>

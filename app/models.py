@@ -266,7 +266,7 @@ class GameInvite(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     from_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     to_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    game: Mapped[str] = mapped_column(String(32), nullable=False)  # tictactoe, checkers, chess, pingpong, tanks
+    game: Mapped[str] = mapped_column(String(32), nullable=False)  # tictactoe, checkers, pingpong, tanks
     status: Mapped[str] = mapped_column(String(16), default="pending")  # pending, accepted, declined
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 

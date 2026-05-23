@@ -402,7 +402,7 @@ class ChatSendRequest(BaseModel):
 
 
 class GameInviteRequest(BaseModel):
-    game: str  # tictactoe, checkers, chess, pingpong, tanks
+    game: str  # tictactoe, checkers, pingpong, tanks
     to_user_id: int
 
 
