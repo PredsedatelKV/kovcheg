@@ -196,7 +196,9 @@ export async function renderHome(root) {
     const nextBtn = carousel.querySelector("#bn-next");
     const total = dots.length;
     if (total > 1) {
-      const step = track.querySelector(".slide").offsetWidth + 10;
+      const slide = track.querySelector(".slide");
+      const gap = 10;
+      const step = slide.offsetWidth + gap;
       let currentIdx = 0;
 
       const updateDots = () => {
@@ -237,7 +239,10 @@ export async function renderHome(root) {
       prevBtn.addEventListener("click", () => { playUISound("click"); track.scrollBy({ left: -step, behavior: "smooth" }); });
       nextBtn.addEventListener("click", () => { playUISound("click"); track.scrollBy({ left: step, behavior: "smooth" }); });
 
-      track.scrollTo({ left: step, behavior: "instant" });
+      const firstReal = track.querySelector('.slide[data-clone="false"]');
+      if (firstReal) {
+        track.scrollLeft = firstReal.offsetLeft;
+      }
       updateDots();
     }
   }

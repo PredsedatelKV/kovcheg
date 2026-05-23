@@ -260,7 +260,7 @@ body {
   scrollbar-width: none;
   scroll-snap-type: x mandatory;
   scroll-behavior: smooth;
-  padding: 4px calc(50% - 140px);
+  padding: 4px;
 }
 .carousel-track::-webkit-scrollbar { display: none; }
 .carousel-track .slide {
