@@ -90,29 +90,36 @@ async def _ask_gemini(messages: list[dict[str, str]], max_tokens: int | None, te
         payload["systemInstruction"] = {"parts": [{"text": system_text}]}
 
     async with httpx.AsyncClient(timeout=60.0) as client:
-        try:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            candidates = data.get("candidates", [])
-            if candidates:
-                parts = candidates[0].get("content", {}).get("parts", [])
-                if parts:
-                    return parts[0].get("text", "").strip()
-            log.warning("Unexpected Gemini response: %s", data)
-            return "⚠️ Агент получил пустой ответ."
-        except httpx.HTTPStatusError as exc:
-            log.error("Gemini HTTP %s: %s", exc.response.status_code, exc.response.text)
-            if exc.response.status_code == 400:
-                err = exc.response.json().get("error", {}).get("message", "")
-                if "API key not valid" in err:
-                    return "⚠️ Неверный Gemini API-ключ."
-            if exc.response.status_code == 429:
-                return "⏳ Лимит запросов исчерпан. Подожди минутку, сосед."
-            return f"⚠️ Ошибка Gemini (HTTP {exc.response.status_code})."
-        except httpx.RequestError as exc:
-            log.error("Gemini request error: %s", exc)
-            return "⚠️ Не удалось связаться с Gemini."
-        except Exception as exc:
-            log.error("Gemini error: %s", exc)
-            return "⚠️ Ошибка при работе агента."
+        for attempt in range(3):
+            try:
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 429 and attempt < 2:
+                    wait = (attempt + 1) * 3
+                    log.warning("Gemini rate limit, retry in %ds (attempt %d)", wait, attempt + 1)
+                    import asyncio
+                    await asyncio.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+                candidates = data.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if parts:
+                        return parts[0].get("text", "").strip()
+                log.warning("Unexpected Gemini response: %s", data)
+                return "⚠️ Агент получил пустой ответ."
+            except httpx.HTTPStatusError as exc:
+                log.error("Gemini HTTP %s: %s", exc.response.status_code, exc.response.text)
+                if exc.response.status_code == 400:
+                    err = exc.response.json().get("error", {}).get("message", "")
+                    if "API key not valid" in err:
+                        return "⚠️ Неверный Gemini API-ключ."
+                if exc.response.status_code == 429:
+                    return "⏳ Лимит запросов исчерпан. Подожди минутку, сосед."
+                return f"⚠️ Ошибка Gemini (HTTP {exc.response.status_code})."
+            except httpx.RequestError as exc:
+                log.error("Gemini request error: %s", exc)
+                return "⚠️ Не удалось связаться с Gemini."
+            except Exception as exc:
+                log.error("Gemini error: %s", exc)
+                return "⚠️ Ошибка при работе агента."

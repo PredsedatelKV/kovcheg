@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="nutellaJar" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#F5F5F5"/>
+      <stop offset="100%" style="stop-color:#E0E0E0"/>
+    </linearGradient>
+    <linearGradient id="nutellaFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#5D4037"/>
+      <stop offset="100%" style="stop-color:#3E2723"/>
+    </linearGradient>
+  </defs>
+  <rect x="14" y="20" width="36" height="36" rx="6" fill="url(#nutellaJar)"/>
+  <rect x="14" y="20" width="36" height="36" rx="6" fill="url(#nutellaJar)" stroke="#BDBDBD" stroke-width="1"/>
+  <rect x="18" y="24" width="28" height="28" rx="4" fill="url(#nutellaFill)"/>
+  <rect x="18" y="16" width="28" height="8" rx="3" fill="#C62828"/>
+  <text x="32" y="42" font-family="Arial Black, sans-serif" font-size="8" font-weight="900" fill="#FFFFFF" text-anchor="middle">nutella</text>
+  <rect x="14" y="12" width="36" height="6" rx="3" fill="#FFD600"/>
+  <rect x="22" y="10" width="20" height="4" rx="2" fill="#FFD600"/>
+</svg>

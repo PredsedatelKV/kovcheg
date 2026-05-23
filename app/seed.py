@@ -38,14 +38,16 @@ def _get_or_create_item(
 # Icons for existing rows are migrated to file paths on every startup so a
 # user can drop new SVG/PNG files into static/img/* without touching the DB.
 ITEM_ICON_BY_CODE: dict[str, str] = {
-    "apples": "/static/img/items/apples.svg",
-    "logs": "/static/img/items/logs.svg",
-    "stone": "/static/img/items/stone.svg",
-    "wheat": "/static/img/items/wheat.svg",
-    "iron_ore": "/static/img/items/iron_ore.svg",
+    "snickers": "/static/img/items/snickers.svg",
+    "skittles": "/static/img/items/skittles.svg",
+    "bounty": "/static/img/items/bounty.svg",
+    "mars": "/static/img/items/mars.svg",
+    "nutella": "/static/img/items/nutella.svg",
+    "kitkat": "/static/img/items/kitkat.svg",
+    "twix": "/static/img/items/twix.svg",
+    "juice": "/static/img/items/juice.svg",
+    "popcorn": "/static/img/items/popcorn.svg",
     "booster_1h": "/static/img/items/booster_1h.svg",
-    "plot_5x5": "/static/img/items/plot_5x5.svg",
-    "builders_chest": "/static/img/items/builders_chest.svg",
     "exp_scroll": "/static/img/items/exp_scroll.svg",
 }
 
@@ -169,42 +171,79 @@ def seed_wheel_prizes(db: Session) -> None:
 
 def seed(db: Session) -> None:
     seed_players(db)
-    # Items
-    apples = _get_or_create_item(
+    # Items — сладости
+    snickers = _get_or_create_item(
         db,
-        "apples",
-        name="Ящик яблок",
-        icon="/static/img/items/apples.svg",
-        description="Свежие яблоки из садов Ковчега.",
+        "snickers",
+        name="Сникерс",
+        icon="/static/img/items/snickers.svg",
+        description="Шоколадный батончик с нугой и арахисом.",
+        category="Сладости",
     )
-    logs = _get_or_create_item(
+    skittles = _get_or_create_item(
         db,
-        "logs",
-        name="Связка брёвен",
-        icon="/static/img/items/logs.svg",
-        description="Древесина для строительства.",
+        "skittles",
+        name="Скитлз",
+        icon="/static/img/items/skittles.svg",
+        description="Фруктовые драже разных цветов.",
+        category="Сладости",
     )
-    stone = _get_or_create_item(
+    bounty = _get_or_create_item(
         db,
-        "stone",
-        name="Камень",
-        icon="/static/img/items/stone.svg",
-        description="Базовый строительный материал.",
+        "bounty",
+        name="Баунти",
+        icon="/static/img/items/bounty.svg",
+        description="Шоколад с кокосовой начинкой.",
+        category="Сладости",
     )
-    wheat = _get_or_create_item(
+    mars = _get_or_create_item(
         db,
-        "wheat",
-        name="Пшеница",
-        icon="/static/img/items/wheat.svg",
-        description="Зерно для запасов.",
+        "mars",
+        name="Марс",
+        icon="/static/img/items/mars.svg",
+        description="Шоколадный батончик с карамелью.",
+        category="Сладости",
     )
-    iron = _get_or_create_item(
+    nutella = _get_or_create_item(
         db,
-        "iron_ore",
-        name="Железная руда",
-        icon="/static/img/items/iron_ore.svg",
-        description="Сырьё для кузницы.",
+        "nutella",
+        name="Нутелла",
+        icon="/static/img/items/nutella.svg",
+        description="Ореховая шоколадная паста.",
+        category="Сладости",
         rarity="Редкий",
+    )
+    kitkat = _get_or_create_item(
+        db,
+        "kitkat",
+        name="КитКат",
+        icon="/static/img/items/kitkat.svg",
+        description="Вафельный батончик в шоколаде.",
+        category="Сладости",
+    )
+    twix = _get_or_create_item(
+        db,
+        "twix",
+        name="Твикс",
+        icon="/static/img/items/twix.svg",
+        description="Шоколадный батончик с карамелью и печеньем.",
+        category="Сладости",
+    )
+    juice = _get_or_create_item(
+        db,
+        "juice",
+        name="Сок",
+        icon="/static/img/items/juice.svg",
+        description="Натуральный фруктовый сок.",
+        category="Напитки",
+    )
+    popcorn = _get_or_create_item(
+        db,
+        "popcorn",
+        name="Попкорн",
+        icon="/static/img/items/popcorn.svg",
+        description="Воздушная кукуруза с солью.",
+        category="Сладости",
     )
     booster = _get_or_create_item(
         db,
@@ -214,23 +253,6 @@ def seed(db: Session) -> None:
         description="Ускоряет выполнение задания на 1 час.",
         category="Ускорители",
         can_activate=True,
-    )
-    house = _get_or_create_item(
-        db,
-        "plot_5x5",
-        name="Участок 5×5",
-        icon="/static/img/items/plot_5x5.svg",
-        description="Свободный участок для застройки.",
-        category="Декор",
-        rarity="Редкий",
-    )
-    chest = _get_or_create_item(
-        db,
-        "builders_chest",
-        name="Сундук строителя",
-        icon="/static/img/items/builders_chest.svg",
-        description="Стартовый набор инструментов.",
-        category="Декор",
     )
     scroll = _get_or_create_item(
         db,
@@ -245,14 +267,16 @@ def seed(db: Session) -> None:
 
     # Shop products
     shop_lines = [
-        (apples, 100),
-        (logs, 80),
-        (stone, 50),
-        (wheat, 70),
-        (iron, 120),
+        (snickers, 30),
+        (skittles, 25),
+        (bounty, 35),
+        (mars, 30),
+        (nutella, 80),
+        (kitkat, 25),
+        (twix, 30),
+        (juice, 20),
+        (popcorn, 15),
         (booster, 150),
-        (house, 800),
-        (chest, 200),
         (scroll, 220),
     ]
     for item, price in shop_lines:
@@ -392,4 +416,15 @@ def seed(db: Session) -> None:
                 ),
             )
         )
+
+    # Chat messages
+    if db.query(models.ChatMessage).count() == 0:
+        ibragim = db.query(models.User).filter(models.User.first_name == "Ибрагим").first()
+        magomet = db.query(models.User).filter(models.User.first_name == "Магомет").first()
+        if ibragim:
+            db.add(models.ChatMessage(user_id=ibragim.id, content="Привет всем!", message_type="text"))
+        if magomet:
+            db.add(models.ChatMessage(user_id=magomet.id, content="Как дела?", message_type="text"))
+        db.commit()
+
     seed_wheel_prizes(db)

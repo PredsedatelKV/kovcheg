@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
@@ -76,6 +77,19 @@ def _task_out(t: models.Task) -> schemas.TaskOut:
         reward=t.reward,
         target_progress=t.target_progress,
         is_daily_plan=t.is_daily_plan,
+    )
+
+
+def _user_task_out(ut: models.UserTask) -> schemas.AdminUserTaskOut:
+    return schemas.AdminUserTaskOut(
+        id=ut.id,
+        user_id=ut.user_id,
+        user_name=ut.user.first_name if ut.user else "",
+        task=_task_out(ut.task),
+        status=ut.status,
+        progress=ut.progress,
+        started_at=ut.started_at,
+        finished_at=ut.finished_at,
     )
 
 
@@ -185,6 +199,39 @@ def adjust_inventory(user_id: int, body: schemas.AdminInventoryUpdate, db: Sessi
         schemas.InventoryItemOut(id=r.id, item=_item_out(r.item), quantity=r.quantity)
         for r in rows
     ]
+
+
+@router.get("/users/{user_id}/inventory", response_model=list[schemas.InventoryItemOut])
+def view_user_inventory(user_id: int, db: Session = Depends(get_db)) -> list[schemas.InventoryItemOut]:
+    u = db.query(models.User).filter(models.User.id == user_id).one_or_none()
+    if u is None:
+        raise HTTPException(status_code=404, detail="Игрок не найден")
+    rows = (
+        db.query(models.InventoryItem)
+        .filter(models.InventoryItem.user_id == u.id, models.InventoryItem.quantity > 0)
+        .all()
+    )
+    return [
+        schemas.InventoryItemOut(id=r.id, item=_item_out(r.item), quantity=r.quantity)
+        for r in rows
+    ]
+
+
+@router.delete("/users/{user_id}/inventory/{inv_id}")
+def remove_from_inventory(user_id: int, inv_id: int, db: Session = Depends(get_db)) -> dict:
+    u = db.query(models.User).filter(models.User.id == user_id).one_or_none()
+    if u is None:
+        raise HTTPException(status_code=404, detail="Игрок не найден")
+    inv = (
+        db.query(models.InventoryItem)
+        .filter(models.InventoryItem.id == inv_id, models.InventoryItem.user_id == u.id)
+        .one_or_none()
+    )
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Запись инвентаря не найдена")
+    db.delete(inv)
+    db.commit()
+    return {"ok": True}
 
 
 # ------- items (catalog) -------
@@ -366,6 +413,42 @@ def delete_task(task_id: int, db: Session = Depends(get_db)) -> dict:
     return {"ok": True}
 
 
+@router.get("/tasks/user", response_model=list[schemas.AdminUserTaskOut])
+def list_user_tasks(db: Session = Depends(get_db)) -> list[schemas.AdminUserTaskOut]:
+    rows = (
+        db.query(models.UserTask)
+        .order_by(models.UserTask.started_at.desc())
+        .all()
+    )
+    return [_user_task_out(ut) for ut in rows]
+
+
+@router.post("/tasks/user/{user_task_id}/approve", response_model=schemas.AdminUserTaskOut)
+def approve_user_task(
+    user_task_id: int, db: Session = Depends(get_db)
+) -> schemas.AdminUserTaskOut:
+    ut = db.query(models.UserTask).filter(models.UserTask.id == user_task_id).one_or_none()
+    if ut is None:
+        raise HTTPException(status_code=404, detail="Задание не найдено")
+    if ut.status != "in_progress":
+        raise HTTPException(status_code=400, detail="Задание не в процессе")
+    ut.status = "done"
+    ut.progress = ut.task.target_progress
+    ut.finished_at = datetime.utcnow()
+    ut.user.wallet.balance += ut.task.reward
+    db.add(
+        models.Transaction(
+            sender_id=None,
+            recipient_id=ut.user_id,
+            amount=ut.task.reward,
+            note=f"task:{ut.task.id}:admin_approved",
+        )
+    )
+    db.commit()
+    db.refresh(ut)
+    return _user_task_out(ut)
+
+
 # ------- shop -------
 
 @router.get("/shop", response_model=list[schemas.ShopProductOut])
@@ -515,3 +598,129 @@ def update_legal(slug: str, body: schemas.AdminLegalBody, db: Session = Depends(
     db.commit()
     db.refresh(t)
     return schemas.LegalTextOut(slug=t.slug, title=t.title, body=t.body)
+
+
+# ------- quizzes -------
+
+def _quiz_out(q: models.Quiz) -> schemas.QuizOut:
+    return schemas.QuizOut(
+        id=q.id,
+        title=q.title,
+        description=q.description,
+        is_active=q.is_active,
+        prize_kind=q.prize_kind,
+        prize_value=q.prize_value,
+        prize_item_code=q.prize_item_code,
+        prize_label=q.prize_label,
+        threshold_good=q.threshold_good,
+        threshold_excellent=q.threshold_excellent,
+        questions=[
+            schemas.QuizQuestionOut(
+                id=qq.id,
+                quiz_id=qq.quiz_id,
+                text=qq.text,
+                option_a=qq.option_a,
+                option_b=qq.option_b,
+                option_c=qq.option_c,
+                option_d=qq.option_d,
+                correct_option=qq.correct_option,
+                sort_order=qq.sort_order,
+            )
+            for qq in sorted(q.questions, key=lambda x: x.sort_order)
+        ],
+    )
+
+
+@router.get("/quizzes", response_model=list[schemas.QuizOut])
+def list_quizzes(db: Session = Depends(get_db)) -> list[schemas.QuizOut]:
+    rows = db.query(models.Quiz).order_by(models.Quiz.id).all()
+    return [_quiz_out(q) for q in rows]
+
+
+@router.post("/quizzes", response_model=schemas.QuizOut)
+def create_quiz(body: schemas.QuizBody, db: Session = Depends(get_db)) -> schemas.QuizOut:
+    q = models.Quiz(**body.model_dump())
+    db.add(q)
+    db.commit()
+    db.refresh(q)
+    return _quiz_out(q)
+
+
+@router.patch("/quizzes/{quiz_id}", response_model=schemas.QuizOut)
+def update_quiz(quiz_id: int, body: schemas.QuizBody, db: Session = Depends(get_db)) -> schemas.QuizOut:
+    q = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).one_or_none()
+    if q is None:
+        raise HTTPException(status_code=404, detail="Тест не найден")
+    for k, v in body.model_dump().items():
+        setattr(q, k, v)
+    db.commit()
+    db.refresh(q)
+    return _quiz_out(q)
+
+
+@router.delete("/quizzes/{quiz_id}")
+def delete_quiz(quiz_id: int, db: Session = Depends(get_db)) -> dict:
+    q = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).one_or_none()
+    if q is None:
+        raise HTTPException(status_code=404, detail="Тест не найден")
+    db.delete(q)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/quizzes/{quiz_id}/questions", response_model=schemas.QuizQuestionOut)
+def add_question(quiz_id: int, body: schemas.QuizQuestionBody, db: Session = Depends(get_db)) -> schemas.QuizQuestionOut:
+    q = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).one_or_none()
+    if q is None:
+        raise HTTPException(status_code=404, detail="Тест не найден")
+    qq = models.QuizQuestion(quiz_id=quiz_id, **body.model_dump())
+    db.add(qq)
+    db.commit()
+    db.refresh(qq)
+    return schemas.QuizQuestionOut(
+        id=qq.id, quiz_id=qq.quiz_id, text=qq.text,
+        option_a=qq.option_a, option_b=qq.option_b, option_c=qq.option_c, option_d=qq.option_d,
+        correct_option=qq.correct_option, sort_order=qq.sort_order,
+    )
+
+
+@router.patch("/quizzes/{quiz_id}/questions/{q_id}", response_model=schemas.QuizQuestionOut)
+def update_question(quiz_id: int, q_id: int, body: schemas.QuizQuestionBody, db: Session = Depends(get_db)) -> schemas.QuizQuestionOut:
+    qq = db.query(models.QuizQuestion).filter(models.QuizQuestion.id == q_id, models.QuizQuestion.quiz_id == quiz_id).one_or_none()
+    if qq is None:
+        raise HTTPException(status_code=404, detail="Вопрос не найден")
+    for k, v in body.model_dump().items():
+        setattr(qq, k, v)
+    db.commit()
+    db.refresh(qq)
+    return schemas.QuizQuestionOut(
+        id=qq.id, quiz_id=qq.quiz_id, text=qq.text,
+        option_a=qq.option_a, option_b=qq.option_b, option_c=qq.option_c, option_d=qq.option_d,
+        correct_option=qq.correct_option, sort_order=qq.sort_order,
+    )
+
+
+@router.delete("/quizzes/{quiz_id}/questions/{q_id}")
+def delete_question(quiz_id: int, q_id: int, db: Session = Depends(get_db)) -> dict:
+    qq = db.query(models.QuizQuestion).filter(models.QuizQuestion.id == q_id, models.QuizQuestion.quiz_id == quiz_id).one_or_none()
+    if qq is None:
+        raise HTTPException(status_code=404, detail="Вопрос не найден")
+    db.delete(qq)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/quizzes/{quiz_id}/attempts", response_model=list[schemas.QuizAttemptOut])
+def list_quiz_attempts(quiz_id: int, db: Session = Depends(get_db)) -> list[schemas.QuizAttemptOut]:
+    q = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).one_or_none()
+    if q is None:
+        raise HTTPException(status_code=404, detail="Тест не найден")
+    rows = db.query(models.QuizAttempt).filter(models.QuizAttempt.quiz_id == quiz_id).order_by(models.QuizAttempt.created_at.desc()).all()
+    return [
+        schemas.QuizAttemptOut(
+            id=a.id, quiz_id=a.quiz_id, user_id=a.user_id,
+            score=a.score, total=a.total, grade=a.grade,
+            prize_awarded=a.prize_awarded, created_at=a.created_at,
+        )
+        for a in rows
+    ]

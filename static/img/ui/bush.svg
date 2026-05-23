@@ -1,15 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#2E7D32"/>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#bushGrad2)"/>
   <defs>
-    <linearGradient id="bushGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#4CAF50"/>
+    <linearGradient id="bushGrad2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#66BB6A"/>
       <stop offset="100%" style="stop-color:#2E7D32"/>
     </linearGradient>
   </defs>
-  <ellipse cx="32" cy="40" rx="24" ry="18" fill="url(#bushGrad)"/>
-  <ellipse cx="20" cy="35" rx="14" ry="12" fill="#388E3C"/>
-  <ellipse cx="44" cy="35" rx="14" ry="12" fill="#388E3C"/>
-  <ellipse cx="32" cy="28" rx="16" ry="14" fill="#4CAF50"/>
-  <circle cx="28" cy="30" r="2" fill="#81C784"/>
-  <circle cx="36" cy="26" r="2" fill="#81C784"/>
-  <circle cx="24" cy="36" r="1.5" fill="#A5D6A7"/>
+  <ellipse cx="32" cy="38" rx="20" ry="14" fill="#43A047"/>
+  <ellipse cx="22" cy="34" rx="12" ry="10" fill="#4CAF50"/>
+  <ellipse cx="42" cy="34" rx="12" ry="10" fill="#4CAF50"/>
+  <ellipse cx="32" cy="30" rx="14" ry="12" fill="#66BB6A"/>
+  <circle cx="28" cy="32" r="2" fill="#A5D6A7"/>
+  <circle cx="36" cy="28" r="2" fill="#A5D6A7"/>
+  <circle cx="24" cy="38" r="1.5" fill="#C8E6C9"/>
 </svg>

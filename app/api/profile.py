@@ -249,10 +249,9 @@ def activate_item(
     if inv is None or inv.quantity < 1:
         raise HTTPException(status_code=400, detail="Нет предмета")
     inv.quantity -= 1
-    user.wallet.balance += 10
-    db.add(models.Transaction(sender_id=None, recipient_id=user.id, amount=10, note=f"activate:{inv.item.code}"))
     db.commit()
     db.refresh(user)
+    db.refresh(user.wallet)
     from app.notify import notify_admins_bg
     notify_admins_bg(
         f"✨ <b>{user.first_name}</b> активировал(а) <b>{inv.item.name}</b>"

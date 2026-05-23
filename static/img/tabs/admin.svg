@@ -1,11 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <defs>
-    <linearGradient id="adminShield" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#FFD700"/>
-      <stop offset="100%" style="stop-color:#FFA000"/>
-    </linearGradient>
-  </defs>
-  <path d="M16 3 L5 8 L5 16 C5 23 10 28 16 30 C22 28 27 23 27 16 L27 8 Z" fill="url(#adminShield)"/>
-  <path d="M16 5 L7 9 L7 16 C7 22 11 26 16 28 C21 26 25 22 25 16 L25 9 Z" fill="#FFC107"/>
-  <path d="M12 16 L15 19 L21 13" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <path d="M16 3L5 7v8c0 7 5 12 11 14 6-2 11-7 11-14V7L16 3z"/>
+  <path d="M16 6L8 9v6c0 5 3.5 9 8 10.5 4.5-1.5 8-5.5 8-10.5V9L16 6z"/>
+  <path d="M13 14l2 2 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

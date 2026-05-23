@@ -196,3 +196,79 @@ class WheelPrize(Base):
     weight: Mapped[int] = mapped_column(Integer, default=10)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Quiz(Base):
+    __tablename__ = "quizzes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    prize_kind: Mapped[str] = mapped_column(String(32), default="coins")  # coins | item
+    prize_value: Mapped[int] = mapped_column(Integer, default=0)
+    prize_item_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    prize_label: Mapped[str] = mapped_column(String(128), default="")
+    threshold_good: Mapped[int] = mapped_column(Integer, default=5)  # min correct for "good"
+    threshold_excellent: Mapped[int] = mapped_column(Integer, default=8)  # min correct for "excellent"
+
+    questions: Mapped[list["QuizQuestion"]] = relationship("QuizQuestion", back_populates="quiz", cascade="all, delete-orphan")
+    attempts: Mapped[list["QuizAttempt"]] = relationship("QuizAttempt", back_populates="quiz", cascade="all, delete-orphan")
+
+
+class QuizQuestion(Base):
+    __tablename__ = "quiz_questions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    quiz_id: Mapped[int] = mapped_column(ForeignKey("quizzes.id"), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    option_a: Mapped[str] = mapped_column(String(256), nullable=False)
+    option_b: Mapped[str] = mapped_column(String(256), nullable=False)
+    option_c: Mapped[str] = mapped_column(String(256), nullable=False)
+    option_d: Mapped[str] = mapped_column(String(256), nullable=False)
+    correct_option: Mapped[str] = mapped_column(String(1), nullable=False)  # a, b, c, d
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    quiz: Mapped["Quiz"] = relationship("Quiz", back_populates="questions")
+
+
+class QuizAttempt(Base):
+    __tablename__ = "quiz_attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    quiz_id: Mapped[int] = mapped_column(ForeignKey("quizzes.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    score: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    grade: Mapped[str] = mapped_column(String(16), default="bad")  # bad | good | excellent
+    prize_awarded: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    quiz: Mapped["Quiz"] = relationship("Quiz", back_populates="attempts")
+    user: Mapped["User"] = relationship("User")
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    message_type: Mapped[str] = mapped_column(String(16), default="text")  # text | sticker
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    user: Mapped["User"] = relationship("User")
+
+
+class GameInvite(Base):
+    __tablename__ = "game_invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    from_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    to_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    game: Mapped[str] = mapped_column(String(32), nullable=False)  # tictactoe, checkers, chess, pingpong, tanks
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending, accepted, declined
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    from_user: Mapped["User"] = relationship("User", foreign_keys=[from_user_id])
+    to_user: Mapped["User"] = relationship("User", foreign_keys=[to_user_id])

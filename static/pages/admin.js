@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=30";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -20,15 +20,16 @@ function slugify(s = "") {
 }
 
 const SECTIONS = [
-  { id: "users", label: "Игроки", icon: "/static/img/tabs/profile.svg" },
+  { id: "users", label: "Игроки", icon: "/static/img/tabs/users.svg" },
   { id: "news", label: "Новости", icon: "/static/img/ui/mail.svg" },
   { id: "banners", label: "Карусель", icon: "/static/img/ui/castle.svg" },
   { id: "wheel", label: "Колесо", icon: "/static/img/ui/wheel.svg" },
-  { id: "shop", label: "Магазин", icon: "/static/img/tabs/koverna.svg" },
+  { id: "shop", label: "Магазин", icon: "/static/img/tabs/shop.svg" },
   { id: "market", label: "Рынок", icon: "/static/img/shop.svg" },
   { id: "tasks", label: "Задания", icon: "/static/img/tasks/scroll.svg" },
+  { id: "quizzes", label: "Тесты", icon: "/static/img/ui/quiz.svg" },
   { id: "items", label: "Предметы", icon: "/static/img/ui/box.svg" },
-  { id: "legal", label: "Тексты", icon: "/static/img/ui/book.svg" },
+  { id: "legal", label: "Тексты", icon: "/static/img/ui/legal.svg" },
 ];
 
 let META = { items: [], users: [] };
@@ -156,6 +157,11 @@ async function renderUsers(body) {
         <input class="input input-sm" data-k="invdelta" type="number" placeholder="±шт" style="max-width:100px"/>
         <button class="btn btn-sm" data-action="inv" data-id="${u.id}">В инвентарь</button>
       </div>
+      <hr class="admin-sep"/>
+      <div class="row gap">
+        <button class="btn btn-sm" data-action="view-inv" data-id="${u.id}">Инвентарь</button>
+      </div>
+      <div class="user-inv-list" data-user-id="${u.id}" style="display:none"></div>
     </div>
   `,
     )
@@ -206,6 +212,52 @@ async function renderUsers(body) {
       }
     }),
   );
+  body.querySelectorAll('[data-action="view-inv"]').forEach((b) =>
+    b.addEventListener("click", async () => {
+      const userId = b.dataset.id;
+      const listEl = body.querySelector(`.user-inv-list[data-user-id="${userId}"]`);
+      if (listEl.style.display === "block") {
+        listEl.style.display = "none";
+        return;
+      }
+      listEl.style.display = "block";
+      listEl.innerHTML = `<div class="admin-sub">Загрузка…</div>`;
+      try {
+        const inv = await get(`/api/admin/users/${userId}/inventory`);
+        if (inv.length === 0) {
+          listEl.innerHTML = `<div class="admin-sub">Инвентарь пуст</div>`;
+          return;
+        }
+        listEl.innerHTML = inv.map((r) => `
+          <div class="admin-inv-row" data-inv-id="${r.id}">
+            <img src="${escapeHtml(r.item.image_url || r.item.icon)}" alt="" class="icon icon-sm"/>
+            <span>${escapeHtml(r.item.name)} × ${r.quantity}</span>
+            <button class="btn btn-sm btn-danger" data-action="remove-inv" data-user-id="${userId}" data-inv-id="${r.id}">Удалить</button>
+          </div>
+        `).join("");
+        listEl.querySelectorAll('[data-action="remove-inv"]').forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const uid = btn.dataset.userId;
+            const iid = btn.dataset.invId;
+            confirmAction("Удалить из инвентаря?", async () => {
+              try {
+                await del(`/api/admin/users/${uid}/inventory/${iid}`);
+                window.kov.toast("Удалено");
+                btn.closest(".admin-inv-row").remove();
+                if (listEl.querySelectorAll(".admin-inv-row").length === 0) {
+                  listEl.innerHTML = `<div class="admin-sub">Инвентарь пуст</div>`;
+                }
+              } catch (err) {
+                window.kov.toast(err.message);
+              }
+            });
+          });
+        });
+      } catch (err) {
+        listEl.innerHTML = `<div class="admin-sub">Ошибка: ${escapeHtml(err.message)}</div>`;
+      }
+    }),
+  );
 }
 
 // ---------- NEWS ----------
@@ -216,7 +268,7 @@ async function renderNews(body) {
       "Новая новость",
       formGrid(
         field("Заголовок", `<input class="input" id="n-title"/>`),
-        field("URL картинки", `<input class="input" id="n-image"/>`),
+        photoField("Фото", "JPG/PNG/WebP до 5 МБ", null, "image_url"),
         field("Текст", `<textarea class="input" id="n-body" rows="4"></textarea>`),
       ) + `<button class="btn btn-sm" id="n-create">Добавить</button>`,
     )}
@@ -227,7 +279,7 @@ async function renderNews(body) {
         ${n.image_url ? `<img src="${escapeHtml(n.image_url)}" class="admin-thumb" alt=""/>` : ""}
         ${formGrid(
           field("Заголовок", `<input class="input" data-k="title" value="${escapeHtml(n.title)}"/>`),
-          field("URL картинки", `<input class="input" data-k="image_url" value="${escapeHtml(n.image_url || "")}"/>`),
+          photoField("Фото", "JPG/PNG/WebP до 5 МБ", n.image_url, "image_url"),
           field("Текст", `<textarea class="input" data-k="body" rows="3">${escapeHtml(n.body || "")}</textarea>`),
         )}
         <div class="row gap">
@@ -238,10 +290,13 @@ async function renderNews(body) {
       )
       .join("")}
   `;
+  bindPhotoUploader(body);
   body.querySelector("#n-create").addEventListener("click", async () => {
+    const photoEl = body.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value');
+    const photoVal = photoEl ? photoEl.value : null;
     const payload = {
       title: body.querySelector("#n-title").value.trim(),
-      image_url: body.querySelector("#n-image").value.trim(),
+      image_url: photoVal,
       body: body.querySelector("#n-body").value,
       is_active: true,
     };
@@ -257,9 +312,11 @@ async function renderNews(body) {
   body.querySelectorAll('.admin-card[data-id]').forEach((card) => {
     const id = card.dataset.id;
     card.querySelector('[data-action="save"]').addEventListener("click", async () => {
+      const photoEl = card.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value');
+      const photoVal = photoEl ? photoEl.value : null;
       const payload = {
         title: card.querySelector('[data-k="title"]').value,
-        image_url: card.querySelector('[data-k="image_url"]').value,
+        image_url: photoVal,
         body: card.querySelector('[data-k="body"]').value,
         is_active: true,
       };
@@ -290,7 +347,7 @@ async function renderBanners(body) {
     ${cardBlock(
       "Новый баннер",
       formGrid(
-        field("URL картинки 16:9", `<input class="input" id="b-image"/>`),
+        photoField("Фото 16:9", "JPG/PNG/WebP до 5 МБ", null, "image_url"),
         field("Заголовок", `<input class="input" id="b-title"/>`),
         field("Порядок", `<input class="input" id="b-order" type="number" value="0"/>`),
       ) + `<button class="btn btn-sm" id="b-create">Добавить</button>`,
@@ -301,7 +358,7 @@ async function renderBanners(body) {
       <div class="admin-card" data-id="${b.id}">
         <img src="${escapeHtml(b.image_url)}" class="admin-thumb" alt=""/>
         ${formGrid(
-          field("URL", `<input class="input" data-k="image_url" value="${escapeHtml(b.image_url)}"/>`),
+          photoField("Фото 16:9", "JPG/PNG/WebP до 5 МБ", b.image_url, "image_url"),
           field("Заголовок", `<input class="input" data-k="title" value="${escapeHtml(b.title)}"/>`),
         )}
         <div class="row gap">
@@ -312,14 +369,17 @@ async function renderBanners(body) {
       )
       .join("")}
   `;
+  bindPhotoUploader(body);
   body.querySelector("#b-create").addEventListener("click", async () => {
+    const photoEl = body.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value');
+    const photoVal = photoEl ? photoEl.value : null;
     const payload = {
-      image_url: body.querySelector("#b-image").value.trim(),
+      image_url: photoVal,
       title: body.querySelector("#b-title").value.trim(),
       sort_order: Number(body.querySelector("#b-order").value) || 0,
       is_active: true,
     };
-    if (!payload.image_url) return window.kov.toast("URL обязателен");
+    if (!payload.image_url) return window.kov.toast("Загрузи фото");
     try {
       await post("/api/admin/banners", payload);
       window.kov.toast("Создано");
@@ -331,8 +391,10 @@ async function renderBanners(body) {
   body.querySelectorAll('.admin-card[data-id]').forEach((card) => {
     const id = card.dataset.id;
     card.querySelector('[data-action="save"]').addEventListener("click", async () => {
+      const photoEl = card.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value');
+      const photoVal = photoEl ? photoEl.value : null;
       const payload = {
-        image_url: card.querySelector('[data-k="image_url"]').value,
+        image_url: photoVal,
         title: card.querySelector('[data-k="title"]').value,
         sort_order: 0,
         is_active: true,
@@ -605,13 +667,13 @@ async function renderMarket(body) {
 // ---------- TASKS ----------
 async function renderTasks(body) {
   const rows = await get("/api/admin/tasks");
+  const userTasks = await get("/api/admin/tasks/user");
   body.innerHTML = `
     ${cardBlock(
       "Новое задание / план",
       formGrid(
         field("Название", `<input class="input" id="t-name"/>`),
         field("Описание", `<textarea class="input" id="t-desc" rows="3"></textarea>`),
-        field("Иконка", `<input class="input" id="t-icon" value="/static/img/tasks/scroll.svg"/>`),
         field("Награда (Ковбаксов)", `<input class="input" id="t-reward" type="number" value="10"/>`),
         field("Цель", `<input class="input" id="t-target" type="number" value="1"/>`),
         field("Тип", `<select class="input" id="t-plan"><option value="0">Задание</option><option value="1">Ежедневный план</option></select>`),
@@ -621,11 +683,10 @@ async function renderTasks(body) {
       .map(
         (t) => `
       <div class="admin-card" data-id="${t.id}">
-        <h3 class="admin-card-title"><img src="${escapeHtml(t.icon)}" class="icon icon-sm" alt=""/> ${escapeHtml(t.name)} ${t.is_daily_plan ? '<span class="admin-badge">план</span>' : ""}</h3>
+        <h3 class="admin-card-title">${escapeHtml(t.name)} ${t.is_daily_plan ? '<span class="admin-badge">план</span>' : ""}</h3>
         ${formGrid(
           field("Название", `<input class="input" data-k="name" value="${escapeHtml(t.name)}"/>`),
           field("Описание", `<textarea class="input" data-k="description" rows="3">${escapeHtml(t.description || "")}</textarea>`),
-          field("Иконка", `<input class="input" data-k="icon" value="${escapeHtml(t.icon)}"/>`),
           field("Награда", `<input class="input" data-k="reward" type="number" value="${t.reward}"/>`),
           field("Цель", `<input class="input" data-k="target_progress" type="number" value="${t.target_progress}"/>`),
         )}
@@ -636,12 +697,33 @@ async function renderTasks(body) {
       </div>`,
       )
       .join("")}
+    <h3 class="admin-section-label">Задания игроков</h3>
+    ${userTasks.length === 0
+      ? `<div class="admin-sub" style="padding:8px 0">Нет активных заданий</div>`
+      : userTasks
+          .map(
+            (ut) => `
+        <div class="admin-card admin-card-user-task" data-ut-id="${ut.id}">
+          <div class="admin-card-header">
+            <div>
+              <h3 class="admin-card-title">${escapeHtml(ut.task.name)}</h3>
+              <div class="admin-sub">Игрок: <strong>${escapeHtml(ut.user_name)}</strong> · Статус: <span class="task-status task-status-${ut.status}">${statusLabel(ut.status)}</span></div>
+              <div class="admin-sub">Начато: ${formatDate(ut.started_at)}${ut.finished_at ? ` · Завершено: ${formatDate(ut.finished_at)}` : ""}</div>
+            </div>
+          </div>
+          ${ut.status === "in_progress"
+            ? `<div class="row gap">
+                <button class="btn btn-sm btn-success" data-action="approve-ut">Подтвердить выполнение</button>
+              </div>`
+            : ""}
+        </div>`,
+          )
+          .join("")}
   `;
   body.querySelector("#t-create").addEventListener("click", async () => {
     const payload = {
       name: body.querySelector("#t-name").value.trim(),
       description: body.querySelector("#t-desc").value,
-      icon: body.querySelector("#t-icon").value.trim(),
       reward: Number(body.querySelector("#t-reward").value) || 0,
       target_progress: Number(body.querySelector("#t-target").value) || 1,
       is_active: true,
@@ -664,7 +746,6 @@ async function renderTasks(body) {
       const payload = {
         name: card.querySelector('[data-k="name"]').value,
         description: card.querySelector('[data-k="description"]').value,
-        icon: card.querySelector('[data-k="icon"]').value,
         reward: Number(card.querySelector('[data-k="reward"]').value),
         target_progress: Number(card.querySelector('[data-k="target_progress"]').value),
         is_active: true,
@@ -685,6 +766,32 @@ async function renderTasks(body) {
       }),
     );
   });
+  body.querySelectorAll('[data-action="approve-ut"]').forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const card = btn.closest(".admin-card-user-task");
+      const utId = card.dataset.utId;
+      try {
+        await post(`/api/admin/tasks/user/${utId}/approve`);
+        window.kov.toast("Задание подтверждено");
+        renderTasks(body);
+      } catch (err) {
+        window.kov.toast(err.message);
+      }
+    });
+  });
+}
+
+function statusLabel(status) {
+  if (status === "in_progress") return "В процессе";
+  if (status === "done") return "Выполнено";
+  if (status === "cancelled") return "Отменено";
+  return status;
+}
+
+function formatDate(dt) {
+  if (!dt) return "";
+  const d = new Date(dt);
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 // ---------- ITEMS ----------
@@ -804,6 +911,7 @@ async function renderItems(body) {
         )}
         <div class="row gap">
           <button class="btn btn-sm" data-action="save">Сохранить</button>
+          <button class="btn btn-sm btn-danger" data-action="delete">Удалить</button>
         </div>
       </div>`,
       )
@@ -859,6 +967,17 @@ async function renderItems(body) {
         window.kov.toast(err.message);
       }
     });
+    card.querySelector('[data-action="delete"]').addEventListener("click", () =>
+      confirmAction("Удалить предмет?", async () => {
+        try {
+          await del(`/api/admin/items/${id}`);
+          window.kov.toast("Предмет удалён");
+          renderItems(body);
+        } catch (err) {
+          window.kov.toast(err.message);
+        }
+      }),
+    );
   });
 }
 
@@ -898,6 +1017,222 @@ async function renderLegal(body) {
   });
 }
 
+// ---------- QUIZZES ----------
+async function renderQuizzes(body) {
+  const rows = await get("/api/admin/quizzes");
+  body.innerHTML = `
+    ${cardBlock(
+      "Новый тест",
+      formGrid(
+        field("Название", `<input class="input" id="q-title"/>`),
+        field("Описание", `<textarea class="input" id="q-desc" rows="2"></textarea>`),
+        field("Тип приза", `<select class="input" id="q-prize-kind"><option value="coins">Ковбаксы</option><option value="item">Предмет</option></select>`),
+        field("Значение приза", `<input class="input" id="q-prize-value" type="number" value="0"/>`),
+        field("Код предмета (если предмет)", `<input class="input" id="q-prize-item"/>`),
+        field("Название приза (для отображения)", `<input class="input" id="q-prize-label"/>`),
+        field("Порог 'Хорошо' (правильных ответов)", `<input class="input" id="q-threshold-good" type="number" value="5"/>`),
+        field("Порог 'Отлично' (правильных ответов)", `<input class="input" id="q-threshold-excellent" type="number" value="8"/>`),
+      ) + `<button class="btn btn-sm" id="q-create">Создать тест</button>`,
+    )}
+    ${rows
+      .map(
+        (q) => `
+      <div class="admin-card" data-id="${q.id}">
+        <h3 class="admin-card-title">${escapeHtml(q.title)} ${q.is_active ? '<span class="admin-badge">активен</span>' : ""}</h3>
+        <div class="admin-sub">Приз: ${escapeHtml(q.prize_label)} · Хорошо: ${q.threshold_good}+ · Отлично: ${q.threshold_excellent}+ · Вопросов: ${q.questions.length}</div>
+        <div class="row gap">
+          <button class="btn btn-sm" data-action="edit-quiz">Редактировать</button>
+          <button class="btn btn-sm" data-action="view-attempts">Попытки</button>
+          <button class="btn btn-sm btn-danger" data-action="delete-quiz">Удалить</button>
+        </div>
+        <div class="quiz-questions-list" data-quiz-id="${q.id}" style="display:none">
+          <hr class="admin-sep"/>
+          <h4>Вопросы</h4>
+          ${q.questions.map(
+            (qq) => `
+            <div class="admin-card admin-card-question" data-qid="${qq.id}">
+              <div class="admin-sub"><strong>${escapeHtml(qq.text)}</strong></div>
+              <div class="admin-sub">A: ${escapeHtml(qq.option_a)} | B: ${escapeHtml(qq.option_b)} | C: ${escapeHtml(qq.option_c)} | D: ${escapeHtml(qq.option_d)}</div>
+              <div class="admin-sub">Правильный: <strong>${qq.correct_option.toUpperCase()}</strong></div>
+              <div class="row gap">
+                <button class="btn btn-sm" data-action="edit-question" data-qid="${qq.id}">Изменить</button>
+                <button class="btn btn-sm btn-danger" data-action="delete-question" data-qid="${qq.id}">Удалить</button>
+              </div>
+            </div>
+          `).join("")}
+          ${q.questions.length < 10 ? `<button class="btn btn-sm" data-action="add-question" data-quiz-id="${q.id}">+ Добавить вопрос</button>` : ""}
+        </div>
+      </div>`,
+      )
+      .join("")}
+  `;
+
+  body.querySelector("#q-create").addEventListener("click", async () => {
+    const payload = {
+      title: body.querySelector("#q-title").value.trim(),
+      description: body.querySelector("#q-desc").value,
+      prize_kind: body.querySelector("#q-prize-kind").value,
+      prize_value: Number(body.querySelector("#q-prize-value").value) || 0,
+      prize_item_code: body.querySelector("#q-prize-item").value.trim() || null,
+      prize_label: body.querySelector("#q-prize-label").value.trim(),
+      threshold_good: Number(body.querySelector("#q-threshold-good").value) || 5,
+      threshold_excellent: Number(body.querySelector("#q-threshold-excellent").value) || 8,
+      is_active: true,
+    };
+    if (!payload.title) return window.kov.toast("Название обязательно");
+    try {
+      await post("/api/admin/quizzes", payload);
+      window.kov.toast("Тест создан");
+      renderQuizzes(body);
+    } catch (err) {
+      window.kov.toast(err.message);
+    }
+  });
+
+  body.querySelectorAll('[data-action="edit-quiz"]').forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const card = btn.closest(".admin-card");
+      const id = card.dataset.id;
+      const quiz = rows.find((r) => r.id === Number(id));
+      if (!quiz) return;
+      const qList = card.querySelector(".quiz-questions-list");
+      qList.style.display = qList.style.display === "none" ? "block" : "none";
+    });
+  });
+
+  body.querySelectorAll('[data-action="add-question"]').forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const quizId = btn.dataset.quizId;
+      openQuestionEditor(body, Number(quizId), null);
+    });
+  });
+
+  body.querySelectorAll('[data-action="edit-question"]').forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const qid = Number(btn.dataset.qid);
+      const card = btn.closest(".admin-card");
+      const quizId = Number(card.dataset.id);
+      const quiz = rows.find((r) => r.id === quizId);
+      const qq = quiz?.questions.find((q) => q.id === qid);
+      if (!qq) return;
+      openQuestionEditor(body, quizId, qq);
+    });
+  });
+
+  body.querySelectorAll('[data-action="delete-question"]').forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const qid = btn.dataset.qid;
+      const card = btn.closest(".admin-card");
+      const quizId = card.dataset.id;
+      confirmAction("Удалить вопрос?", async () => {
+        try {
+          await del(`/api/admin/quizzes/${quizId}/questions/${qid}`);
+          window.kov.toast("Вопрос удалён");
+          renderQuizzes(body);
+        } catch (err) {
+          window.kov.toast(err.message);
+        }
+      });
+    });
+  });
+
+  body.querySelectorAll('[data-action="delete-quiz"]').forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const card = btn.closest(".admin-card");
+      const id = card.dataset.id;
+      confirmAction("Удалить тест?", async () => {
+        try {
+          await del(`/api/admin/quizzes/${id}`);
+          window.kov.toast("Тест удалён");
+          renderQuizzes(body);
+        } catch (err) {
+          window.kov.toast(err.message);
+        }
+      });
+    });
+  });
+
+  body.querySelectorAll('[data-action="view-attempts"]').forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const card = btn.closest(".admin-card");
+      const id = card.dataset.id;
+      const quiz = rows.find((r) => r.id === Number(id));
+      const attempts = await get(`/api/admin/quizzes/${id}/attempts`);
+      const meta = await get("/api/admin/meta");
+      const userMap = {};
+      meta.users.forEach((u) => { userMap[u.id] = u.first_name; });
+      const gradeLabels = { bad: "Плохо", good: "Хорошо", excellent: "Отлично" };
+      const html = attempts.map((a) => `
+        <div class="admin-card">
+          <div class="admin-sub"><strong>${escapeHtml(userMap[a.user_id] || "ID:" + a.user_id)}</strong> · ${gradeLabels[a.grade] || a.grade} · ${a.score}/${a.total} · ${formatDate(a.created_at)} ${a.prize_awarded ? "· ✅ Приз выдан" : "· ❌ Без приза"}</div>
+        </div>
+      `).join("");
+      card.insertAdjacentHTML("afterend", `<div class="admin-card"><h3 class="admin-card-title">Попытки: ${escapeHtml(quiz?.title || "")}</h3>${html || "<div class='admin-sub'>Нет попыток</div>"}</div>`);
+    });
+  });
+}
+
+function openQuestionEditor(body, quizId, existing) {
+  const isEdit = !!existing;
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal">
+      <button class="close" onclick="this.closest('.modal-overlay').remove()">×</button>
+      <h3>${isEdit ? "Изменить" : "Добавить"} вопрос</h3>
+      ${formGrid(
+        field("Текст вопроса", `<input class="input" id="eq-text" value="${escapeHtml(existing?.text || "")}"/>`),
+        field("Вариант A", `<input class="input" id="eq-a" value="${escapeHtml(existing?.option_a || "")}"/>`),
+        field("Вариант B", `<input class="input" id="eq-b" value="${escapeHtml(existing?.option_b || "")}"/>`),
+        field("Вариант C", `<input class="input" id="eq-c" value="${escapeHtml(existing?.option_c || "")}"/>`),
+        field("Вариант D", `<input class="input" id="eq-d" value="${escapeHtml(existing?.option_d || "")}"/>`),
+        field("Правильный", `<select class="input" id="eq-correct">
+          <option value="a" ${existing?.correct_option === "a" ? "selected" : ""}>A</option>
+          <option value="b" ${existing?.correct_option === "b" ? "selected" : ""}>B</option>
+          <option value="c" ${existing?.correct_option === "c" ? "selected" : ""}>C</option>
+          <option value="d" ${existing?.correct_option === "d" ? "selected" : ""}>D</option>
+        </select>`),
+      )}
+      <div class="row gap">
+        <button class="btn btn-sm" id="eq-save">Сохранить</button>
+        <button class="btn btn-sm btn-secondary" id="eq-cancel">Отмена</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector("#eq-cancel").addEventListener("click", () => overlay.remove());
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+
+  overlay.querySelector("#eq-save").addEventListener("click", async () => {
+    const payload = {
+      text: overlay.querySelector("#eq-text").value.trim(),
+      option_a: overlay.querySelector("#eq-a").value.trim(),
+      option_b: overlay.querySelector("#eq-b").value.trim(),
+      option_c: overlay.querySelector("#eq-c").value.trim(),
+      option_d: overlay.querySelector("#eq-d").value.trim(),
+      correct_option: overlay.querySelector("#eq-correct").value,
+      sort_order: 0,
+    };
+    if (!payload.text || !payload.option_a || !payload.option_b || !payload.option_c || !payload.option_d) {
+      return window.kov.toast("Заполни все поля");
+    }
+    try {
+      if (isEdit) {
+        await patch(`/api/admin/quizzes/${quizId}/questions/${existing.id}`, payload);
+        window.kov.toast("Вопрос обновлён");
+      } else {
+        await post(`/api/admin/quizzes/${quizId}/questions`, payload);
+        window.kov.toast("Вопрос добавлен");
+      }
+      overlay.remove();
+      renderQuizzes(body);
+    } catch (err) {
+      window.kov.toast(err.message);
+    }
+  });
+}
+
 const SECTION_RENDERERS = {
   users: renderUsers,
   news: renderNews,
@@ -906,6 +1241,7 @@ const SECTION_RENDERERS = {
   shop: renderShop,
   market: renderMarket,
   tasks: renderTasks,
+  quizzes: renderQuizzes,
   items: renderItems,
   legal: renderLegal,
 };

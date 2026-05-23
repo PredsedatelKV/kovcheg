@@ -1,5 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=30";
 
+import { playUISound } from "/static/pages/settings.js?v=30";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -13,7 +14,7 @@ export async function renderKoverna(root) {
       <div>
         <h1>Коверна</h1>
         <div class="subtitle">${state.mode === "shop" ? "Магазин официальных товаров" : "Рынок игроков"}</div>
-        <div class="subtitle" style="margin-top:4px">${state.mode === "shop" ? "Покупайте товары в магазине — они сразу попадут в ваш инвентарь." : "Покупайте товары у других жителей."}</div>
+        <div class="subtitle" style="margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${state.mode === "shop" ? "Товары с доставкой в инвентарь." : "Покупайте товары у других жителей."}</div>
       </div>
       <div class="hero-art"><img src="/static/img/shop.svg" alt="Лавка" class="hero-img"/></div>
     </section>
@@ -53,9 +54,8 @@ async function renderShop(root) {
             <div class="product${p.stock === 0 ? " product-out" : ""}">
               ${productImg(p.item, "xl")}
               <div class="name">${escapeHtml(p.item.name)}</div>
-              <div class="price">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${p.price}</div>
-              <div class="card-sub">${p.stock === -1 ? "В наличии: ∞" : p.stock === 0 ? "Закончился" : `Осталось: ${p.stock}`}</div>
-              <button class="btn btn-sm" data-buy="${p.id}" ${p.stock === 0 ? "disabled" : ""}>${p.stock === 0 ? "Нет в наличии" : "Купить"}</button>
+              <div class="price">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${p.price} ${p.stock === -1 ? "" : `×${p.stock}`}</div>
+              <button class="btn btn-sm" data-buy="${p.id}" ${p.stock === 0 ? "disabled" : ""}>${p.stock === 0 ? "Нет" : "Купить"}</button>
             </div>`,
           )
           .join("")}</div>`;
@@ -64,6 +64,7 @@ async function renderShop(root) {
     b.addEventListener("click", async () => {
       try {
         await post("/api/shop/buy", { product_id: Number(b.dataset.buy) });
+        playUISound("win");
         window.kov.toast("Куплено! Предмет в инвентаре");
         await renderShop(root);
       } catch (e) {

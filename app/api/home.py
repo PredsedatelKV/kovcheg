@@ -73,11 +73,11 @@ def list_news(user: models.User = Depends(current_user), db: Session = Depends(g
 def get_home(user: models.User = Depends(current_user), db: Session = Depends(get_db)) -> schemas.HomePayload:
     settings = get_settings()
     banners = db.query(models.Banner).filter(models.Banner.is_active.is_(True)).order_by(models.Banner.sort_order).all()
-    news = (
+    news_rows = (
         db.query(models.News)
         .filter(models.News.is_active.is_(True))
         .order_by(models.News.published_at.desc())
-        .first()
+        .all()
     )
     daily_plan = db.query(models.Task).filter(models.Task.is_daily_plan.is_(True), models.Task.is_active.is_(True)).first()
     tasks = (
@@ -96,17 +96,16 @@ def get_home(user: models.User = Depends(current_user), db: Session = Depends(ge
         user=_user_to_out(user),
         server_time_msk=msk_now_label(),
         banners=[schemas.BannerOut(id=b.id, image_url=b.image_url, title=b.title) for b in banners],
-        news=(
+        news=[
             schemas.NewsOut(
-                id=news.id,
-                image_url=news.image_url,
-                title=news.title,
-                body=news.body,
-                published_at=news.published_at,
+                id=n.id,
+                image_url=n.image_url,
+                title=n.title,
+                body=n.body,
+                published_at=n.published_at,
             )
-            if news
-            else None
-        ),
+            for n in news_rows
+        ],
         daily_plan=_task_to_out(daily_plan) if daily_plan else None,
         tasks=[_task_to_out(t) for t in tasks],
         user_tasks=[_user_task_to_out(ut) for ut in user_tasks],

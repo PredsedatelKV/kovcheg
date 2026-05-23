@@ -1,4 +1,4 @@
-import { get, post } from "/static/api.js";
+import { get, post } from "/static/api.js?v=31";
 
 const STORAGE_KEY = "kovcheg.assistant.chat";
 
@@ -19,14 +19,18 @@ function saveHistory(messages) {
 }
 
 export function openAssistantChat() {
-  const messages = loadHistory();
+  try {
+    const messages = loadHistory();
 
   const renderMessages = (container) => {
     if (!messages.length) {
       container.innerHTML = `
         <div class="chat-empty">
-          <img src="/static/img/villager.svg" alt="Мошонка" class="chat-empty-avatar"/>
-          <p>Привет, путник! Я Мошонка — житель Ковчега.<br>Знаю все тропы и правила нашей общины.<br>Спроси что-нибудь — помогу!</p>
+          <div class="assistant-bust" style="margin:0 auto">
+            <div class="assistant-bust-bg"></div>
+            <div class="assistant-bust-img"></div>
+          </div>
+          <p>Привет! Я Мошонка — житель Ковчега.<br>Спрашивай что хочешь — поболтаем!</p>
         </div>
       `;
       return;
@@ -44,11 +48,10 @@ export function openAssistantChat() {
   };
 
   const modal = window.kov.showModal(`
-    <div class="chat-modal">
+    <div class="chat-modal assistant-modal">
       <div class="chat-header">
-        <div class="chat-avatar"><img src="/static/img/villager.svg" alt="Мошонка"/></div>
         <div>
-          <div class="chat-name">Ассистент Мошонка</div>
+          <div class="chat-name">Мошонка</div>
           <div class="chat-status">Верный спутник граждан Ковчега</div>
         </div>
         <div class="chat-actions">
@@ -124,4 +127,8 @@ export function openAssistantChat() {
   });
 
   input.focus();
+  } catch (e) {
+    console.error("openAssistantChat error:", e);
+    window.kov.toast("Не удалось открыть чат");
+  }
 }

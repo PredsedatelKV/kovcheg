@@ -1,21 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="rocketBody" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#E0E0E0"/>
-      <stop offset="100%" style="stop-color:#9E9E9E"/>
+    <linearGradient id="rBody" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#F5F5F5"/>
+      <stop offset="100%" style="stop-color:#B0BEC5"/>
     </linearGradient>
-    <linearGradient id="rocketFire" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#FF5722"/>
+    <linearGradient id="rNose" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#EF5350"/>
+      <stop offset="100%" style="stop-color:#C62828"/>
+    </linearGradient>
+    <linearGradient id="rFire1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF6F00"/>
       <stop offset="100%" style="stop-color:#FFC107"/>
     </linearGradient>
+    <linearGradient id="rFire2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFC107"/>
+      <stop offset="100%" style="stop-color:#FFF9C4"/>
+    </linearGradient>
   </defs>
-  <ellipse cx="32" cy="24" rx="10" ry="18" fill="url(#rocketBody)"/>
-  <ellipse cx="32" cy="16" rx="6" ry="8" fill="#F5F5F5"/>
-  <circle cx="32" cy="20" r="4" fill="#42A5F5"/>
-  <circle cx="32" cy="20" r="2" fill="#90CAF9"/>
-  <path d="M22 36 L14 50 L22 44 Z" fill="#F44336"/>
-  <path d="M42 36 L50 50 L42 44 Z" fill="#F44336"/>
-  <path d="M26 42 L32 58 L38 42 Z" fill="url(#rocketFire)"/>
-  <path d="M28 44 L32 54 L36 44 Z" fill="#FFC107"/>
-  <path d="M30 46 L32 50 L34 46 Z" fill="#FFF9C4"/>
+  <ellipse cx="32" cy="26" rx="10" ry="20" fill="url(#rBody)"/>
+  <ellipse cx="32" cy="16" rx="6" ry="10" fill="#ECEFF1"/>
+  <ellipse cx="32" cy="12" rx="4" ry="5" fill="url(#rNose)"/>
+  <circle cx="32" cy="22" r="4" fill="#42A5F5"/>
+  <circle cx="32" cy="22" r="2" fill="#90CAF9"/>
+  <path d="M22 38 L12 52 L22 44 Z" fill="#EF5350"/>
+  <path d="M42 38 L52 52 L42 44 Z" fill="#EF5350"/>
+  <path d="M26 46 L32 62 L38 46 Z" fill="url(#rFire1)"/>
+  <path d="M28 48 L32 58 L36 48 Z" fill="url(#rFire2)"/>
+  <path d="M30 50 L32 55 L34 50 Z" fill="#FFF9C4"/>
 </svg>

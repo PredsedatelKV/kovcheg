@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     public_url: str = ""  # https://<app>.fly.dev — заполняется после деплоя
     admin_ids: str = ""  # CSV TG ID-шников
     admin_usernames: str = "omarbutuev"  # CSV TG usernames (без @)
-    channel_url: str = "https://t.me/telegram"  # placeholder, заменим
+    channel_url: str = "https://t.me/+2fe2Nsj0J9FiYzky"
     database_url: str = ""
     skip_init_data_check: bool = False  # для локальной отладки
 
@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 800
     llm_temperature: float = 0.7
     assistant_max_chunks: int = 5  # сколько фрагментов подавать в контекст
-    assistant_rate_limit_minutes: int = 1  # ограничение частоты вопросов
+    assistant_rate_limit_minutes: int = 0  # ограничение частоты вопросов (0 = без лимита)
 
     @property
     def admin_id_list(self) -> list[int]:

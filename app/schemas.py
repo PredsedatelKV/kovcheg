@@ -64,6 +64,17 @@ class UserTaskOut(BaseModel):
     finished_at: datetime | None = None
 
 
+class AdminUserTaskOut(BaseModel):
+    id: int
+    user_id: int
+    user_name: str
+    task: TaskOut
+    status: str
+    progress: int
+    started_at: datetime
+    finished_at: datetime | None = None
+
+
 class BannerOut(BaseModel):
     id: int
     image_url: str
@@ -82,7 +93,7 @@ class HomePayload(BaseModel):
     user: UserOut
     server_time_msk: str
     banners: list[BannerOut]
-    news: NewsOut | None = None
+    news: list[NewsOut] = []
     daily_plan: TaskOut | None = None
     tasks: list[TaskOut]
     user_tasks: list[UserTaskOut]
@@ -280,3 +291,120 @@ class WheelPrizeOut(BaseModel):
 class AdminMeta(BaseModel):
     items: list[ItemOut]
     users: list[AdminUserOut]
+
+
+# ----- Quiz DTOs -----
+
+class QuizQuestionOut(BaseModel):
+    id: int
+    quiz_id: int
+    text: str
+    option_a: str
+    option_b: str
+    option_c: str
+    option_d: str
+    correct_option: str
+    sort_order: int
+
+
+class QuizQuestionBody(BaseModel):
+    text: str
+    option_a: str
+    option_b: str
+    option_c: str
+    option_d: str
+    correct_option: str
+    sort_order: int = 0
+
+
+class QuizOut(BaseModel):
+    id: int
+    title: str
+    description: str
+    is_active: bool
+    prize_kind: str
+    prize_value: int
+    prize_item_code: str | None = None
+    prize_label: str
+    threshold_good: int
+    threshold_excellent: int
+    questions: list[QuizQuestionOut] = []
+
+
+class QuizBody(BaseModel):
+    title: str
+    description: str = ""
+    is_active: bool = True
+    prize_kind: str = "coins"
+    prize_value: int = 0
+    prize_item_code: str | None = None
+    prize_label: str = ""
+    threshold_good: int = 5
+    threshold_excellent: int = 8
+
+
+class QuizAttemptOut(BaseModel):
+    id: int
+    quiz_id: int
+    user_id: int
+    score: int
+    total: int
+    grade: str
+    prize_awarded: bool
+    created_at: datetime
+
+
+class QuizForUser(BaseModel):
+    id: int
+    title: str
+    description: str
+    prize_label: str
+    question_count: int
+    already_passed: bool
+
+
+class QuizQuestionForUser(BaseModel):
+    id: int
+    text: str
+    option_a: str
+    option_b: str
+    option_c: str
+    option_d: str
+
+
+class QuizSubmitRequest(BaseModel):
+    quiz_id: int
+    answers: dict[int, str]  # question_id -> option letter (a/b/c/d)
+
+
+class QuizResultOut(BaseModel):
+    score: int
+    total: int
+    grade: str
+    grade_label: str
+    prize_label: str
+    prize_awarded: bool
+
+
+class ChatMessageOut(BaseModel):
+    id: int
+    user_id: int
+    user_name: str
+    content: str
+    message_type: str
+    created_at: datetime
+    created_at_msk: str | None = None
+
+
+class ChatSendRequest(BaseModel):
+    content: str
+    message_type: str = "text"  # text | sticker
+
+
+class GameInviteRequest(BaseModel):
+    game: str  # tictactoe, checkers, chess, pingpong, tanks
+    to_user_id: int
+
+
+class GameInviteAction(BaseModel):
+    invite_id: int

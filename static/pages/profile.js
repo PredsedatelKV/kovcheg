@@ -1,7 +1,17 @@
-import { get, post, iconHtml, productImg } from "/static/api.js";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=30";
 
+import { playUISound } from "/static/pages/settings.js?v=30";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function kovbaksWord(n) {
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if (abs > 10 && abs < 20) return "Ковбаксов";
+  if (last === 1) return "Ковбакс";
+  if (last >= 2 && last <= 4) return "Ковбакса";
+  return "Ковбаксов";
+}
 
 function invCell(row) {
   return `
@@ -15,7 +25,6 @@ function invCell(row) {
 function userTaskRow(ut) {
   return `
     <div class="task-row" data-user-task-id="${ut.id}">
-      <div class="ico">${iconHtml(ut.task.icon, "md", ut.task.name)}</div>
       <div class="meta">
         <h4>${escapeHtml(ut.task.name)}</h4>
         <p>Награда: ${ut.task.reward} K</p>
@@ -30,7 +39,7 @@ export async function renderProfile(root) {
   const user = data.user;
   const photoOrEmoji = user.photo_url
     ? `<img src="${escapeHtml(user.photo_url)}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />`
-    : `<img src="/static/img/head.svg" alt="Гражданин" class="hero-img hero-img-head"/>`;
+    : `<img src="/static/img/villager.svg" alt="Житель" class="hero-img hero-img-head"/>`;
 
   root.innerHTML = `
     <section class="page-header">
@@ -45,7 +54,7 @@ export async function renderProfile(root) {
     <div class="card">
       <div class="inv-row-title">
         <h3 class="card-title">Инвентарь</h3>
-        ${data.inventory.length > 8 ? `<span class="see-all-text" data-action="all-inv">Смотреть все ›</span>` : ""}
+        ${data.inventory.length > 8 ? `<button class="see-all" data-action="all-inv">Смотреть все</button>` : ""}
       </div>
       <div class="inv-grid">
         ${data.inventory.length === 0
@@ -55,34 +64,65 @@ export async function renderProfile(root) {
     </div>
 
     <div class="card wallet-card">
-      <h3 class="card-title">Кошелёк</h3>
+      <div class="inv-row-title">
+        <h3 class="card-title">Кошелёк</h3>
+      </div>
       <div class="wallet-row">
         <div class="wallet-balance-big">
           <img src="/static/img/ui/coin.svg" alt="" class="wallet-coin"/>
           <div class="wallet-balance-num">
-            <div class="wallet-balance-label">Баланс</div>
-            <div class="wallet-balance-value"><strong>${user.balance}</strong> <span class="wallet-balance-unit">K</span></div>
+            <div class="wallet-balance-value"><strong>${user.balance}</strong> <span class="wallet-balance-unit">${kovbaksWord(user.balance)}</span></div>
           </div>
         </div>
+        <button class="btn btn-transfer-compact" data-action="transfer-history">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </button>
         <button class="btn btn-transfer-compact" data-action="transfer">
-          <span>Перевести</span>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="19" x2="12" y2="5"/>
+            <polyline points="5 12 12 5 19 12"/>
+          </svg>
         </button>
       </div>
     </div>
 
-    <h2 class="section-title">План</h2>
-    ${
-      data.daily_plan
-        ? `<div class="card plan-card">
-            <div class="plan-icon">${iconHtml(data.daily_plan.icon, "lg", "План")}</div>
-            <div style="flex:1">
-              <h3 class="card-title">${escapeHtml(data.daily_plan.name)}</h3>
-              <p class="card-sub">Выполняйте задания каждый день и становитесь сильнее.</p>
-              <span class="mandatory-tag">Обязательный</span>
-            </div>
-          </div>`
-        : ""
-    }
+    <div class="card chat-card">
+      <div class="inv-row-title">
+        <h3 class="card-title">Чат</h3>
+      </div>
+      <div class="chat-messages" id="chat-messages">
+        <div class="empty">Загрузка…</div>
+      </div>
+      <div class="chat-input-row">
+        <button class="chat-game-btn" id="game-invite-toggle">
+          <img src="/static/img/ui/gamepad.svg" alt="" width="24" height="24"/>
+        </button>
+        <button class="chat-sticker-btn" id="sticker-toggle">
+          <img src="/static/img/ui/sticker_btn.svg" alt="" width="24" height="24"/>
+        </button>
+        <div class="chat-stickers" id="chat-stickers">
+          <img src="/static/img/stickers/moshonka_hi.svg" alt="" class="chat-sticker" data-sticker="moshonka_hi"/>
+          <img src="/static/img/stickers/moshonka_laugh.svg" alt="" class="chat-sticker" data-sticker="moshonka_laugh"/>
+          <img src="/static/img/stickers/moshonka_angry.svg" alt="" class="chat-sticker" data-sticker="moshonka_angry"/>
+          <img src="/static/img/stickers/moshonka_middle.svg" alt="" class="chat-sticker" data-sticker="moshonka_middle"/>
+          <img src="/static/img/stickers/kovcheg.svg" alt="" class="chat-sticker" data-sticker="kovcheg"/>
+          <img src="/static/img/stickers/mine.svg" alt="" class="chat-sticker" data-sticker="mine"/>
+          <img src="/static/img/stickers/coin.svg" alt="" class="chat-sticker" data-sticker="coin"/>
+          <img src="/static/img/stickers/heart.svg" alt="" class="chat-sticker" data-sticker="heart"/>
+          <img src="/static/img/stickers/fire.svg" alt="" class="chat-sticker" data-sticker="fire"/>
+        </div>
+        <input type="text" class="chat-input" id="chat-input" placeholder="Написать сообщение…" maxlength="500"/>
+        <button class="btn btn-sm chat-send-btn" id="chat-send-btn">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12"/>
+            <polyline points="12 5 19 12 12 19"/>
+          </svg>
+        </button>
+      </div>
+    </div>
 
     <h2 class="section-title">Задания ${data.user_tasks.length > 3 ? `<button class="see-all" data-action="all-mytasks">Смотреть все</button>` : ""}</h2>
     ${
@@ -107,6 +147,215 @@ export async function renderProfile(root) {
   if (allInvBtn) allInvBtn.addEventListener("click", () => openAllInventory(data.inventory, root));
   const allMyTasksBtn = root.querySelector('[data-action="all-mytasks"]');
   if (allMyTasksBtn) allMyTasksBtn.addEventListener("click", () => openAllMyTasks(data.user_tasks, root));
+
+  loadChat(root);
+  bindChatInput(root);
+  checkPendingInvites(root);
+}
+
+async function checkPendingInvites(root) {
+  try {
+    const data = await get("/api/game/my-invites");
+    const invites = data.invites || [];
+    const pending = invites.filter(i => i.status === "pending" && i.to_user_id === window.kov.me?.id);
+    
+    if (pending.length > 0) {
+      const invite = pending[0];
+      const gameNames = {
+        tictactoe: "Крестики-нолики",
+        checkers: "Шашки",
+        chess: "Шахматы",
+        pingpong: "Пинг-понг",
+        tanks: "Танчики"
+      };
+      
+      const modal = window.kov.showModal(`
+        <button class="close" onclick="closeModal()">×</button>
+        <h2>Приглашение на игру</h2>
+        <p class="card-sub">${escapeHtml(invite.from_user_name)} приглашает тебя в ${gameNames[invite.game]}</p>
+        <div style="display:flex;gap:12px;margin-top:20px">
+          <button class="btn btn-primary" id="accept-invite-btn">Принять</button>
+          <button class="btn btn-outline" id="decline-invite-btn">Отклонить</button>
+        </div>
+      `);
+      
+      modal.querySelector("#accept-invite-btn").addEventListener("click", async () => {
+        await post("/api/game/accept", { invite_id: invite.id });
+        closeModal();
+        window.kov.toast("Принято! Начинаем игру...");
+        setTimeout(() => {
+          const games = {
+            tictactoe: window.kov.arcade?.gameTicTacToe,
+            checkers: window.kov.arcade?.gameCheckers,
+            chess: window.kov.arcade?.gameChess,
+            pingpong: window.kov.arcade?.gamePingPong,
+            tanks: window.kov.arcade?.gameTanks,
+          };
+          if (games[invite.game]) games[invite.game]();
+        }, 500);
+      });
+      
+      modal.querySelector("#decline-invite-btn").addEventListener("click", async () => {
+        await post("/api/game/decline", { invite_id: invite.id });
+        closeModal();
+      });
+    }
+  } catch (e) {}
+}
+
+async function loadChat(root) {
+  const container = root.querySelector("#chat-messages");
+  if (!container) return;
+  try {
+    const messages = await get("/api/chat/messages?limit=50");
+    const me = window.kov.me;
+    function nameColor(name) {
+      if (name === "Магомет") return "#4CAF50";
+      if (name === "Ибрагим") return "#9C27B0";
+      return "#6CB6FB";
+    }
+    function toMSK(iso) {
+      const d = new Date(iso);
+      return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
+    }
+    if (messages.length === 0) {
+      container.innerHTML = `<div class="empty">Чат пуст. Напиши первым!</div>`;
+      return;
+    }
+    container.innerHTML = messages.map((m) => {
+      const time = toMSK(m.created_at);
+      const isMine = me && m.user_id === me.id;
+      if (m.message_type === "sticker") {
+        return `<div class="chat-msg ${isMine ? 'chat-msg-mine' : 'chat-msg-other'}"><div class="chat-msg-header"><span class="chat-msg-name" style="color:${isMine ? 'var(--primary)' : nameColor(m.user_name)}">${escapeHtml(m.user_name)}</span><span class="chat-msg-time">${time}</span></div><img src="/static/img/stickers/${escapeHtml(m.content)}.svg" alt="" class="chat-msg-sticker"/></div>`;
+      }
+      return `<div class="chat-msg ${isMine ? 'chat-msg-mine' : 'chat-msg-other'}"><div class="chat-msg-header"><span class="chat-msg-name" style="color:${isMine ? 'var(--primary)' : nameColor(m.user_name)}">${escapeHtml(m.user_name)}</span><span class="chat-msg-time">${time}</span></div><div class="chat-msg-text">${escapeHtml(m.content)}</div></div>`;
+    }).join("");
+    container.scrollTop = container.scrollHeight;
+  } catch (err) {
+    container.innerHTML = `<div class="empty">Ошибка загрузки</div>`;
+  }
+}
+
+function bindChatInput(root) {
+  const input = root.querySelector("#chat-input");
+  const sendBtn = root.querySelector("#chat-send-btn");
+  const stickerToggle = root.querySelector("#sticker-toggle");
+  const stickersPanel = root.querySelector("#chat-stickers");
+  const gameInviteToggle = root.querySelector("#game-invite-toggle");
+  if (!input || !sendBtn) return;
+
+  async function send() {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    try {
+      await post("/api/chat/send", { content: text, message_type: "text" });
+      loadChat(root);
+    } catch (err) {
+      window.kov.toast(err.message);
+    }
+  }
+
+  sendBtn.addEventListener("click", send);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") send();
+  });
+
+  if (stickerToggle && stickersPanel) {
+    stickerToggle.addEventListener("click", () => {
+      stickersPanel.classList.toggle("open");
+    });
+  }
+
+  root.querySelectorAll(".chat-sticker").forEach((st) => {
+    st.addEventListener("click", async () => {
+      try {
+        await post("/api/chat/send", { content: st.dataset.sticker, message_type: "sticker" });
+        if (stickersPanel) stickersPanel.classList.remove("open");
+        loadChat(root);
+      } catch (err) {
+        window.kov.toast(err.message);
+      }
+    });
+  });
+
+  if (gameInviteToggle) {
+    gameInviteToggle.addEventListener("click", async () => {
+      const games = [
+        { id: "tictactoe", name: "Крестики-нолики", icon: "✕" },
+        { id: "checkers", name: "Шашки", icon: "⚫" },
+        { id: "pingpong", name: "Пинг-понг", icon: "◉" }
+      ];
+      
+      const modal = window.kov.showModal(`
+        <button class="close" onclick="closeModal()">×</button>
+        <h2>Пригласить к игре</h2>
+        <div class="game-invite-games">
+          ${games.map(g => `
+            <div class="game-invite-game" data-game="${g.id}">
+              <span class="game-icon">${g.icon}</span>
+              <span class="game-name">${g.name}</span>
+            </div>
+          `).join("")}
+        </div>
+      `);
+
+      modal.querySelectorAll(".game-invite-game").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const gameId = btn.dataset.game;
+          closeModal();
+          await showPlayerPicker(gameId, root);
+        });
+      });
+    });
+  }
+
+  async function showPlayerPicker(gameId, root) {
+    try {
+      const data = await get("/api/game/online");
+      const players = data.online || [];
+      
+      const gameNames = {
+        tictactoe: "Крестики-нолики",
+        checkers: "Шашки",
+        chess: "Шахматы",
+        pingpong: "Пинг-понг",
+        tanks: "Танчики"
+      };
+
+      const modal = window.kov.showModal(`
+        <button class="close" onclick="closeModal()">×</button>
+        <h2>Выбери игрока</h2>
+        <p class="card-sub">Игра: ${gameNames[gameId]}</p>
+        <div class="player-picker-list">
+          ${players.length === 0 ? '<div class="empty">Нет онлайн игроков</div>' : 
+            players.map(p => `
+              <div class="player-picker-item" data-id="${p.id}">
+                <span class="player-avatar">${p.first_name?.[0] || "?"}</span>
+                <span class="player-name">${escapeHtml(p.first_name || "Игрок")}</span>
+                <span class="player-status online">●</span>
+              </div>
+            `).join("")}
+        </div>
+      `);
+
+      modal.querySelectorAll(".player-picker-item").forEach(item => {
+        item.addEventListener("click", async () => {
+          const playerId = Number(item.dataset.id);
+          closeModal();
+          try {
+            await post("/api/game/invite", { game: gameId, to_user_id: playerId });
+            window.kov.toast("Приглашение отправлено!");
+            loadChat(root);
+          } catch (err) {
+            window.kov.toast(err.message);
+          }
+        });
+      });
+    } catch (err) {
+      window.kov.toast("Не удалось загрузить игроков");
+    }
+  }
 }
 
 function bindCellActions(scope, inventory) {
@@ -158,7 +407,7 @@ function openItemActionsDialog(row) {
   modal.querySelector("#ia-activate").addEventListener("click", async () => {
     try {
       await post("/api/profile/inventory/activate", { item_id: item.id, recipient: "", quantity: 1 });
-      window.kov.toast(`✨ «${item.name}» активирован! +10 K`);
+      window.kov.toast(`✨ «${item.name}» активирован`);
       window.closeModal();
       const r = document.getElementById("view");
       renderProfile(r);
@@ -204,7 +453,7 @@ async function openTransferDialog(user) {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <h2>Перевод K</h2>
-    <p style="color:var(--text-soft); font-size:13px">Баланс: <strong>${user.balance}</strong> K</p>
+    <p style="color:var(--text-soft); font-size:13px">Баланс: <strong>${user.balance}</strong> ${kovbaksWord(user.balance)}</p>
     <label class="field-label">Кому</label>
     <select class="input" id="recipient">
       <option value="">Загрузка…</option>
@@ -291,40 +540,21 @@ async function openSellDialog(item, maxQty) {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <h2>Продать «${escapeHtml(item.name)}»</h2>
-    <label class="field-label">Кому</label>
-    <select class="input" id="r"><option value="">Загрузка…</option></select>
     <label class="field-label">Количество (макс. ${maxQty})</label>
     <input class="input" id="q" type="number" min="1" max="${maxQty}" value="1" />
-    <label class="field-label">Цена (K)</label>
+    <label class="field-label">Цена за 1 шт (K)</label>
     <input class="input" id="p" type="number" min="1" value="10" />
-    <p class="card-sub" style="font-size:12px; margin:8px 0 0">Предмет уйдёт в инвентарь покупателя, как только он подтвердит покупку в Коверне.</p>
-    <button class="btn" id="ok" style="margin-top:14px">Выставить</button>
+    <p class="card-sub" style="font-size:12px; margin:8px 0 0">Предмет появится на рынке. Любой игрок сможет купить.</p>
+    <button class="btn" id="ok" style="margin-top:14px">Выставить на рынок</button>
   `);
-  const select = modal.querySelector("#r");
-  let players = [];
-  try {
-    players = await get("/api/profile/players");
-  } catch (err) {
-    select.innerHTML = `<option value="">Не удалось загрузить</option>`;
-    window.kov.toast(err.message);
-    return;
-  }
-  if (!players.length) {
-    select.innerHTML = `<option value="">Нет других игроков</option>`;
-    return;
-  }
-  select.innerHTML = players
-    .map((p) => `<option value="uid:${p.id}">${escapeHtml(p.first_name)}</option>`)
-    .join("");
 
   modal.querySelector("#ok").addEventListener("click", async () => {
-    const recipient = select.value;
     const quantity = Number(modal.querySelector("#q").value);
     const price = Number(modal.querySelector("#p").value);
-    if (!recipient || !quantity || !price) return window.kov.toast("Заполни поля");
+    if (!quantity || !price) return window.kov.toast("Заполни поля");
     try {
-      await post("/api/profile/inventory/sell", { recipient, item_id: item.id, quantity, price });
-      window.kov.toast(`🏷️ Выставлено: «${item.name}» ×${quantity} за ${price} K`);
+      await post("/api/market/list", { item_id: item.id, quantity, price });
+      window.kov.toast(`🏷️ Выставлено: «${item.name}» ×${quantity} за ${price} K/шт`);
       window.closeModal();
       renderProfile(document.getElementById("view"));
     } catch (err) {
@@ -336,35 +566,101 @@ async function openSellDialog(item, maxQty) {
 function openUserTaskDialog(ut, root) {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
-    <div class="task-card-icon">${iconHtml(ut.task.icon, "xl", ut.task.name)}</div>
     <h2 style="text-align:center;margin-top:0">${escapeHtml(ut.task.name)}</h2>
     <div style="text-align:center; margin: 2px 0 10px"><span style="background:var(--primary-soft); color:var(--primary-700); padding: 3px 10px; border-radius:8px; font-size:12px; font-weight:600">В процессе</span></div>
     <p style="color:var(--text-soft); font-size:14px; margin: 0 0 14px">${escapeHtml(ut.task.description)}</p>
     <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${ut.task.reward} K</div>
-    <button class="btn" id="complete-ut">Выполнено</button>
     <button class="btn btn-secondary" style="margin-top:8px" onclick="closeModal()">Закрыть</button>
     <button class="btn btn-danger" id="cancel-ut" style="margin-top:8px">Прервать задание</button>
   `);
-
-  modal.querySelector("#complete-ut").addEventListener("click", async () => {
-    try {
-      await post(`/api/tasks/${ut.id}/complete`);
-      window.kov.toast(`Задание выполнено! +${ut.task.reward} K`);
-      window.closeModal();
-      renderProfile(root);
-    } catch (e) {
-      window.kov.toast(e.message);
-    }
-  });
 
   modal.querySelector("#cancel-ut").addEventListener("click", async () => {
     try {
       await post(`/api/tasks/${ut.id}/cancel`);
       window.kov.toast("Задание прервано");
       window.closeModal();
-      renderProfile(root);
+      const taskRow = root.querySelector(`[data-user-task-id="${ut.id}"]`);
+      if (taskRow) {
+        taskRow.remove();
+        if (!root.querySelector(".task-row")) {
+          const empty = root.querySelector(".tasks-list");
+          if (empty) empty.innerHTML = `<div class="empty">Нет активных заданий. Начни задание на вкладке «Главная».</div>`;
+        }
+      }
     } catch (e) {
       window.kov.toast(e.message);
+    }
+  });
+}
+
+async function openQuiz(quizId, root) {
+  let questions;
+  try {
+    questions = await get(`/api/quiz/${quizId}/start`);
+  } catch (err) {
+    window.kov.toast(err.message);
+    return;
+  }
+  if (!questions.length) {
+    window.kov.toast("В тесте нет вопросов");
+    return;
+  }
+
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2 style="text-align:center;margin-top:0">Тест</h2>
+    <div id="quiz-questions"></div>
+    <button class="btn" id="quiz-submit" style="margin-top:16px">Ответить</button>
+  `);
+
+  const container = modal.querySelector("#quiz-questions");
+  container.innerHTML = questions.map((q, i) => `
+    <div class="quiz-q-block" data-qid="${q.id}">
+      <p class="quiz-q-text">${i + 1}. ${escapeHtml(q.text)}</p>
+      <div class="quiz-options">
+        <label class="quiz-opt"><input type="radio" name="q-${q.id}" value="a"/> <span>A</span> ${escapeHtml(q.option_a)}</label>
+        <label class="quiz-opt"><input type="radio" name="q-${q.id}" value="b"/> <span>B</span> ${escapeHtml(q.option_b)}</label>
+        <label class="quiz-opt"><input type="radio" name="q-${q.id}" value="c"/> <span>C</span> ${escapeHtml(q.option_c)}</label>
+        <label class="quiz-opt"><input type="radio" name="q-${q.id}" value="d"/> <span>D</span> ${escapeHtml(q.option_d)}</label>
+      </div>
+    </div>
+  `).join("");
+
+  modal.querySelector("#quiz-submit").addEventListener("click", async () => {
+    const answers = {};
+    let allAnswered = true;
+    questions.forEach((q) => {
+      const selected = modal.querySelector(`input[name="q-${q.id}"]:checked`);
+      if (!selected) {
+        allAnswered = false;
+      } else {
+        answers[q.id] = selected.value;
+      }
+    });
+    if (!allAnswered) return window.kov.toast("Ответь на все вопросы");
+
+    try {
+      const result = await post("/api/quiz/submit", { quiz_id: quizId, answers });
+      if (result.grade === "excellent") playUISound("win");
+      else if (result.grade === "good") playUISound("cashout");
+      else playUISound("lose");
+      const gradeColors = { bad: "#e74c3c", good: "#f39c12", excellent: "#27ae60" };
+      const c = gradeColors[result.grade] || "#888";
+      modal.innerHTML = `
+        <button class="close" onclick="closeModal()">×</button>
+        <div style="text-align:center; padding: 20px 0">
+          <div style="font-size:48px; margin-bottom:12px">${result.grade === "excellent" ? "🏆" : result.grade === "good" ? "👍" : "😔"}</div>
+          <h2 style="color:${c}; margin:0 0 8px">${result.grade_label}</h2>
+          <p style="font-size:20px; margin:0 0 16px">${result.score} из ${result.total} правильных</p>
+          ${result.prize_awarded
+            ? `<div class="quiz-prize-awarded">🎁 Приз получен: ${escapeHtml(result.prize_label)}</div>`
+            : `<div class="quiz-prize-failed">Попробуй ещё раз в следующий раз</div>`}
+          <button class="btn" style="margin-top:16px" onclick="closeModal()">Закрыть</button>
+        </div>
+      `;
+      renderProfile(root);
+    } catch (err) {
+      window.kov.toast(err.message);
     }
   });
 }

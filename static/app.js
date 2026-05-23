@@ -1,10 +1,10 @@
-import { renderHome } from "/static/pages/home.js";
-import { renderProfile } from "/static/pages/profile.js";
-import { renderKoverna } from "/static/pages/koverna.js";
-import { renderArcade } from "/static/pages/arcade.js";
-import { renderAdmin } from "/static/pages/admin.js";
-import { initSettings } from "/static/pages/settings.js";
-import { get } from "/static/api.js";
+import { renderHome } from "/static/pages/home.js?v=25";
+import { renderProfile } from "/static/pages/profile.js?v=25";
+import { renderKoverna } from "/static/pages/koverna.js?v=23";
+import { renderArcade } from "/static/pages/arcade.js?v=23";
+import { renderAdmin } from "/static/pages/admin.js?v=23";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=23";
+import { get } from "/static/api.js?v=23";
 
 console.log("[KOVCHEG] App starting...");
 
@@ -43,7 +43,10 @@ function setTab(name) {
 }
 
 tabButtons.forEach((btn) => {
-  btn.addEventListener("click", () => setTab(btn.dataset.tab));
+  btn.addEventListener("click", () => {
+    playUISound("click");
+    setTab(btn.dataset.tab);
+  });
 });
 
 // Pre-fetch /me to figure out admin status; show or hide the Admin tab accordingly.
@@ -65,6 +68,7 @@ tabButtons.forEach((btn) => {
 window.kov = {
   setTab,
   toast(msg) {
+    playUISound("toast");
     const el = document.createElement("div");
     el.className = "toast";
     el.textContent = msg;
