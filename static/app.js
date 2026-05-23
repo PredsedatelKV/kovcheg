@@ -1,10 +1,10 @@
-import { renderHome } from "/static/pages/home.js?v=25";
-import { renderProfile } from "/static/pages/profile.js?v=25";
-import { renderKoverna } from "/static/pages/koverna.js?v=23";
-import { renderArcade } from "/static/pages/arcade.js?v=23";
-import { renderAdmin } from "/static/pages/admin.js?v=23";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=23";
-import { get } from "/static/api.js?v=23";
+import { renderHome } from "/static/pages/home.js?v=26";
+import { renderProfile } from "/static/pages/profile.js?v=26";
+import { renderKoverna } from "/static/pages/koverna.js?v=26";
+import { renderArcade } from "/static/pages/arcade.js?v=26";
+import { renderAdmin } from "/static/pages/admin.js?v=26";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=26";
+import { get } from "/static/api.js?v=26";
 
 console.log("[KOVCHEG] App starting...");
 
@@ -17,7 +17,7 @@ if (tg) {
 
 initSettings();
 
-const TABS = {
+const RENDERERS = {
   home: renderHome,
   profile: renderProfile,
   koverna: renderKoverna,
@@ -27,18 +27,42 @@ const TABS = {
 
 const viewEl = document.getElementById("view");
 const tabButtons = document.querySelectorAll(".tabbtn");
+const containers = {};
 
-function setTab(name) {
-  if (!TABS[name]) name = "home";
+let currentTab = null;
+
+async function setTab(name) {
+  if (!RENDERERS[name]) name = "home";
   const btn = document.querySelector(`.tabbtn[data-tab="${name}"]`);
   if (btn && btn.hidden) name = "home";
+
+  if (name === currentTab) return;
+  const prevTab = currentTab;
+  currentTab = name;
+
   tabButtons.forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+
+  if (!containers[name]) {
+    const div = document.createElement("div");
+    div.className = "tab-content";
+    div.style.display = "none";
+    viewEl.appendChild(div);
+    containers[name] = div;
+    await RENDERERS[name](div);
+  }
+
+  if (prevTab && containers[prevTab]) {
+    containers[prevTab].style.display = "none";
+  }
+
+  const next = containers[name];
+  next.style.display = "";
+  next.classList.remove("tab-enter");
+  void next.offsetWidth;
+  next.classList.add("tab-enter");
+
   if (viewEl.scrollTo) viewEl.scrollTo({ top: 0 });
   window.scrollTo({ top: 0 });
-  TABS[name](viewEl).catch((err) => {
-    viewEl.innerHTML = `<div class="card"><h3>Ошибка</h3><p>${err.message}</p><button class="btn" onclick="location.reload()">Перезагрузить</button></div>`;
-    console.error(err);
-  });
   localStorage.setItem("kovcheg.tab", name);
 }
 
@@ -49,7 +73,6 @@ tabButtons.forEach((btn) => {
   });
 });
 
-// Pre-fetch /me to figure out admin status; show or hide the Admin tab accordingly.
 (async () => {
   try {
     const me = await get("/api/profile/me");
@@ -61,7 +84,17 @@ tabButtons.forEach((btn) => {
     console.warn("Failed to fetch /me for admin gate", err);
   }
   const initial = localStorage.getItem("kovcheg.tab") || "home";
-  setTab(initial);
+  await setTab(initial);
+  for (const name of Object.keys(RENDERERS)) {
+    if (!containers[name]) {
+      const div = document.createElement("div");
+      div.className = "tab-content";
+      div.style.display = "none";
+      viewEl.appendChild(div);
+      containers[name] = div;
+      RENDERERS[name](div).catch(() => {});
+    }
+  }
 })();
 
 // Global helpers
