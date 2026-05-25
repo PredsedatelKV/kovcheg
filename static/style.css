@@ -2867,8 +2867,29 @@ html.dark .bp-path::before { background-image: linear-gradient(180deg, #6b8aa8 5
   display: flex; align-items:center; justify-content:center;
   animation: bp-isle-in .4s ease-out both;
 }
-.bp-isle-cloudy { filter: blur(1px) brightness(1.2); opacity: 0.7; pointer-events: none; }
-html.dark .bp-isle-cloudy { opacity: 0.5; filter: blur(1px); }
+.bp-isle-cloudy { pointer-events: none; }
+.bp-isle-cloudy .bp-isle-body {
+  background: linear-gradient(180deg, #f8fbff 0%, #e8f0ff 40%, #dce6f8 100%);
+  border-color: rgba(255,255,255,0.95);
+  box-shadow: 0 6px 0 rgba(180,200,230,0.25), 0 8px 24px rgba(200,220,255,0.35), inset 0 2px 0 rgba(255,255,255,0.8);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+}
+.bp-isle-cloudy .bp-isle-lvl {
+  background: rgba(255,255,255,0.7);
+  color: #6a8099;
+  border-color: rgba(180,200,230,0.5);
+}
+html.dark .bp-isle-cloudy .bp-isle-body {
+  background: linear-gradient(180deg, #3a4f70 0%, #2a3f60 40%, #1f3450 100%);
+  border-color: rgba(120,160,220,0.3);
+  box-shadow: 0 6px 0 rgba(0,0,0,0.2), 0 8px 24px rgba(60,100,180,0.15);
+}
+html.dark .bp-isle-cloudy .bp-isle-lvl {
+  background: rgba(40,60,90,0.7);
+  color: #8aacd0;
+  border-color: rgba(80,120,180,0.4);
+}
+.bp-isle-cloudy .bp-isle-check { color: #6a8099; }
 
 .bp-isle-left  { align-self: flex-start; padding-left: 9px; }
 .bp-isle-right { align-self: flex-end;   padding-right: 9px; }
