@@ -2697,47 +2697,86 @@ html.dark .chat-game-btn img {
 /* ===== BATTLEPASS — летние островки ===== */
 .bp-page {
   position: relative;
-  background: linear-gradient(180deg, #7ed3ff 0%, #b3e5ff 35%, #d4f1ff 60%, #5ec3e8 100%);
+  background: linear-gradient(180deg, #3fa8e0 0%, #7ed3ff 25%, #b3e5ff 45%, #d4f1ff 60%, #5ec3e8 85%, #3fa0d0 100%);
   border-radius: 16px;
   overflow: hidden;
   min-height: calc(100dvh - 152px);
   padding-bottom: 40px;
+  backdrop-filter: blur(1px);
 }
 html.dark .bp-page {
-  background: linear-gradient(180deg, #0f2849 0%, #163d6b 35%, #1a4d7a 65%, #0d2944 100%);
+  background: linear-gradient(180deg, #0a1e3d 0%, #0f2849 25%, #163d6b 45%, #1a4d7a 65%, #0d2944 85%, #081a30 100%);
 }
 .bp-loading { text-align:center;padding:60px 20px;color:#0d3a55;font-size:15px;font-weight:600;position:relative;z-index:3; }
 html.dark .bp-loading { color:#cfe8ff; }
 
 /* Sky / Sun / Clouds / Sea */
 .bp-sky {
-  position: absolute; inset: 0 0 auto 0; height: 220px;
-  background: linear-gradient(180deg, rgba(255,255,255,0) 60%, rgba(255,255,255,0.25) 100%);
+  position: absolute; inset: 0 0 auto 0; height: 280px;
+  background: linear-gradient(180deg, #56c8ff 0%, #7ed3ff 40%, rgba(255,255,255,0.15) 100%);
   z-index: 0; pointer-events: none;
 }
+html.dark .bp-sky {
+  background: linear-gradient(180deg, #0c3a6a 0%, #1a5a8a 40%, rgba(255,255,255,0.05) 100%);
+}
 .bp-sun {
-  position: absolute; top: 22px; right: 24px; width: 56px; height: 56px;
-  background: radial-gradient(circle, #fff7a8 0%, #ffd84a 55%, rgba(255,216,74,0) 75%);
+  position: absolute; top: 18px; right: 28px; width: 64px; height: 64px;
+  background: radial-gradient(circle, #fffbe6 0%, #ffd84a 40%, #ffa726 60%, rgba(255,167,38,0) 75%);
   border-radius: 50%; z-index: 1; pointer-events: none;
   animation: bp-sun-pulse 4s ease-in-out infinite;
+  filter: blur(1px);
 }
 html.dark .bp-sun {
-  background: radial-gradient(circle, #f0f6ff 0%, #b8d4ff 50%, rgba(184,212,255,0) 75%);
+  background: radial-gradient(circle, #e8f0ff 0%, #8ab8ff 40%, rgba(138,184,255,0) 75%);
 }
 @keyframes bp-sun-pulse { 0%,100% { transform:scale(1); filter:brightness(1); } 50% { transform:scale(1.06); filter:brightness(1.1); } }
 
 .bp-cloud {
   position: absolute; z-index: 1; pointer-events: none;
-  background: rgba(255,255,255,0.85); border-radius: 50px;
-  box-shadow: 14px -6px 0 -2px rgba(255,255,255,0.7), -14px 2px 0 -4px rgba(255,255,255,0.7);
+  filter: blur(3px);
 }
-html.dark .bp-cloud {
-  background: rgba(200,220,255,0.18);
-  box-shadow: 14px -6px 0 -2px rgba(200,220,255,0.12), -14px 2px 0 -4px rgba(200,220,255,0.12);
+.bp-cloud::before, .bp-cloud::after {
+  content:''; position:absolute; border-radius:50%; background:inherit;
 }
-.bp-cloud-1 { top: 50px; left: 12%; width: 54px; height: 16px; animation: bp-cloud-drift 22s linear infinite; }
-.bp-cloud-2 { top: 100px; left: 60%; width: 70px; height: 20px; animation: bp-cloud-drift 30s linear infinite reverse; opacity:0.85; }
-.bp-cloud-3 { top: 160px; left: 30%; width: 44px; height: 14px; animation: bp-cloud-drift 26s linear infinite; opacity:0.75; }
+.bp-cloud-1 {
+  top: 45px; left: 10%; width: 80px; height: 24px;
+  background: rgba(255,255,255,0.9);
+  border-radius: 50px;
+  box-shadow: 20px -8px 0 -4px rgba(255,255,255,0.7), -18px 4px 0 -6px rgba(255,255,255,0.65);
+  animation: bp-cloud-drift 24s linear infinite;
+}
+.bp-cloud-1::before { width:36px; height:20px; top:-10px; left:12px; background:rgba(255,255,255,0.85); }
+.bp-cloud-1::after { width:28px; height:16px; top:-6px; right:18px; background:rgba(255,255,255,0.8); }
+.bp-cloud-2 {
+  top: 90px; left: 55%; width: 100px; height: 28px;
+  background: rgba(255,255,255,0.8);
+  border-radius: 50px;
+  box-shadow: 26px -10px 0 -4px rgba(255,255,255,0.6), -22px 4px 0 -6px rgba(255,255,255,0.55);
+  animation: bp-cloud-drift 32s linear infinite reverse;
+  opacity:0.85;
+}
+.bp-cloud-2::before { width:44px; height:24px; top:-12px; left:16px; background:rgba(255,255,255,0.75); }
+.bp-cloud-2::after { width:34px; height:18px; top:-8px; right:22px; background:rgba(255,255,255,0.7); }
+.bp-cloud-3 {
+  top: 150px; left: 28%; width: 66px; height: 20px;
+  background: rgba(255,255,255,0.75);
+  border-radius: 50px;
+  box-shadow: 16px -6px 0 -2px rgba(255,255,255,0.55), -14px 2px 0 -4px rgba(255,255,255,0.5);
+  animation: bp-cloud-drift 28s linear infinite;
+  opacity:0.7;
+}
+.bp-cloud-3::before { width:30px; height:16px; top:-8px; left:10px; background:rgba(255,255,255,0.7); }
+.bp-cloud-3::after { width:22px; height:14px; top:-5px; right:14px; background:rgba(255,255,255,0.65); }
+
+html.dark .bp-cloud-1 { background: rgba(180,210,255,0.25); box-shadow: 20px -8px 0 -4px rgba(180,210,255,0.15), -18px 4px 0 -6px rgba(180,210,255,0.12); }
+html.dark .bp-cloud-1::before { background:rgba(180,210,255,0.22); }
+html.dark .bp-cloud-1::after { background:rgba(180,210,255,0.2); }
+html.dark .bp-cloud-2 { background: rgba(160,200,255,0.2); box-shadow: 26px -10px 0 -4px rgba(160,200,255,0.12), -22px 4px 0 -6px rgba(160,200,255,0.1); }
+html.dark .bp-cloud-2::before { background:rgba(160,200,255,0.18); }
+html.dark .bp-cloud-2::after { background:rgba(160,200,255,0.15); }
+html.dark .bp-cloud-3 { background: rgba(140,190,255,0.15); box-shadow: 16px -6px 0 -2px rgba(140,190,255,0.1), -14px 2px 0 -4px rgba(140,190,255,0.08); }
+html.dark .bp-cloud-3::before { background:rgba(140,190,255,0.12); }
+html.dark .bp-cloud-3::after { background:rgba(140,190,255,0.1); }
 @keyframes bp-cloud-drift {
   0% { transform: translateX(-30px); }
   100% { transform: translateX(40px); }
@@ -2762,10 +2801,27 @@ html.dark .bp-cloud {
 /* Header */
 .bp-head { position:relative; z-index:3; padding:18px 16px 14px; text-align:center; }
 .bp-head-title {
-  font-size: 20px; font-weight: 900; margin:0 0 12px;
+  font-size: 20px; font-weight: 900; margin:0 0 8px;
   color: #fff;
   text-shadow: 0 2px 0 #1a6ea1, 0 3px 6px rgba(0,0,0,0.2);
   letter-spacing: 0.3px;
+}
+.bp-season-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+  color: rgba(255,255,255,0.65); margin-bottom: 2px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.25);
+}
+.bp-head-icon-slot {
+  width: 60px; height: 60px; margin: 8px auto 12px;
+  border: 2px dashed rgba(255,255,255,0.35);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.06);
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+}
+.bp-head-icon-slot:hover {
+  border-color: rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.1);
 }
 .bp-head-xp { max-width: 320px; margin: 0 auto; }
 .bp-head-bar {
@@ -2862,7 +2918,8 @@ html.dark .bp-isle-lvl { background: linear-gradient(135deg, #2a4a6b 0%, #1a3a5c
   text-shadow: 0 1px 1px rgba(0,0,0,0.4);
 }
 
-.bp-isle-lock { font-size: 16px; opacity: 0.85; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3)); }
+.bp-isle-lock { width:18px;height:18px;opacity:0.5;background:rgba(255,255,255,0.25);border-radius:4px 4px 6px 6px;position:relative; }
+.bp-isle-lock::before { content:'';position:absolute;top:-6px;left:3px;width:12px;height:7px;border:2px solid rgba(255,255,255,0.35);border-bottom:none;border-radius:6px 6px 0 0; }
 .bp-isle-check {
   width: 22px; height: 22px; border-radius: 50%;
   background: linear-gradient(135deg, #6dd64a, #2fb028);
@@ -5667,47 +5724,86 @@ html.dark .chat-game-btn img {
 /* ===== BATTLEPASS — летние островки ===== */
 .bp-page {
   position: relative;
-  background: linear-gradient(180deg, #7ed3ff 0%, #b3e5ff 35%, #d4f1ff 60%, #5ec3e8 100%);
+  background: linear-gradient(180deg, #3fa8e0 0%, #7ed3ff 25%, #b3e5ff 45%, #d4f1ff 60%, #5ec3e8 85%, #3fa0d0 100%);
   border-radius: 16px;
   overflow: hidden;
   min-height: calc(100dvh - 152px);
   padding-bottom: 40px;
+  backdrop-filter: blur(1px);
 }
 html.dark .bp-page {
-  background: linear-gradient(180deg, #0f2849 0%, #163d6b 35%, #1a4d7a 65%, #0d2944 100%);
+  background: linear-gradient(180deg, #0a1e3d 0%, #0f2849 25%, #163d6b 45%, #1a4d7a 65%, #0d2944 85%, #081a30 100%);
 }
 .bp-loading { text-align:center;padding:60px 20px;color:#0d3a55;font-size:15px;font-weight:600;position:relative;z-index:3; }
 html.dark .bp-loading { color:#cfe8ff; }
 
 /* Sky / Sun / Clouds / Sea */
 .bp-sky {
-  position: absolute; inset: 0 0 auto 0; height: 220px;
-  background: linear-gradient(180deg, rgba(255,255,255,0) 60%, rgba(255,255,255,0.25) 100%);
+  position: absolute; inset: 0 0 auto 0; height: 280px;
+  background: linear-gradient(180deg, #56c8ff 0%, #7ed3ff 40%, rgba(255,255,255,0.15) 100%);
   z-index: 0; pointer-events: none;
 }
+html.dark .bp-sky {
+  background: linear-gradient(180deg, #0c3a6a 0%, #1a5a8a 40%, rgba(255,255,255,0.05) 100%);
+}
 .bp-sun {
-  position: absolute; top: 22px; right: 24px; width: 56px; height: 56px;
-  background: radial-gradient(circle, #fff7a8 0%, #ffd84a 55%, rgba(255,216,74,0) 75%);
+  position: absolute; top: 18px; right: 28px; width: 64px; height: 64px;
+  background: radial-gradient(circle, #fffbe6 0%, #ffd84a 40%, #ffa726 60%, rgba(255,167,38,0) 75%);
   border-radius: 50%; z-index: 1; pointer-events: none;
   animation: bp-sun-pulse 4s ease-in-out infinite;
+  filter: blur(1px);
 }
 html.dark .bp-sun {
-  background: radial-gradient(circle, #f0f6ff 0%, #b8d4ff 50%, rgba(184,212,255,0) 75%);
+  background: radial-gradient(circle, #e8f0ff 0%, #8ab8ff 40%, rgba(138,184,255,0) 75%);
 }
 @keyframes bp-sun-pulse { 0%,100% { transform:scale(1); filter:brightness(1); } 50% { transform:scale(1.06); filter:brightness(1.1); } }
 
 .bp-cloud {
   position: absolute; z-index: 1; pointer-events: none;
-  background: rgba(255,255,255,0.85); border-radius: 50px;
-  box-shadow: 14px -6px 0 -2px rgba(255,255,255,0.7), -14px 2px 0 -4px rgba(255,255,255,0.7);
+  filter: blur(3px);
 }
-html.dark .bp-cloud {
-  background: rgba(200,220,255,0.18);
-  box-shadow: 14px -6px 0 -2px rgba(200,220,255,0.12), -14px 2px 0 -4px rgba(200,220,255,0.12);
+.bp-cloud::before, .bp-cloud::after {
+  content:''; position:absolute; border-radius:50%; background:inherit;
 }
-.bp-cloud-1 { top: 50px; left: 12%; width: 54px; height: 16px; animation: bp-cloud-drift 22s linear infinite; }
-.bp-cloud-2 { top: 100px; left: 60%; width: 70px; height: 20px; animation: bp-cloud-drift 30s linear infinite reverse; opacity:0.85; }
-.bp-cloud-3 { top: 160px; left: 30%; width: 44px; height: 14px; animation: bp-cloud-drift 26s linear infinite; opacity:0.75; }
+.bp-cloud-1 {
+  top: 45px; left: 10%; width: 80px; height: 24px;
+  background: rgba(255,255,255,0.9);
+  border-radius: 50px;
+  box-shadow: 20px -8px 0 -4px rgba(255,255,255,0.7), -18px 4px 0 -6px rgba(255,255,255,0.65);
+  animation: bp-cloud-drift 24s linear infinite;
+}
+.bp-cloud-1::before { width:36px; height:20px; top:-10px; left:12px; background:rgba(255,255,255,0.85); }
+.bp-cloud-1::after { width:28px; height:16px; top:-6px; right:18px; background:rgba(255,255,255,0.8); }
+.bp-cloud-2 {
+  top: 90px; left: 55%; width: 100px; height: 28px;
+  background: rgba(255,255,255,0.8);
+  border-radius: 50px;
+  box-shadow: 26px -10px 0 -4px rgba(255,255,255,0.6), -22px 4px 0 -6px rgba(255,255,255,0.55);
+  animation: bp-cloud-drift 32s linear infinite reverse;
+  opacity:0.85;
+}
+.bp-cloud-2::before { width:44px; height:24px; top:-12px; left:16px; background:rgba(255,255,255,0.75); }
+.bp-cloud-2::after { width:34px; height:18px; top:-8px; right:22px; background:rgba(255,255,255,0.7); }
+.bp-cloud-3 {
+  top: 150px; left: 28%; width: 66px; height: 20px;
+  background: rgba(255,255,255,0.75);
+  border-radius: 50px;
+  box-shadow: 16px -6px 0 -2px rgba(255,255,255,0.55), -14px 2px 0 -4px rgba(255,255,255,0.5);
+  animation: bp-cloud-drift 28s linear infinite;
+  opacity:0.7;
+}
+.bp-cloud-3::before { width:30px; height:16px; top:-8px; left:10px; background:rgba(255,255,255,0.7); }
+.bp-cloud-3::after { width:22px; height:14px; top:-5px; right:14px; background:rgba(255,255,255,0.65); }
+
+html.dark .bp-cloud-1 { background: rgba(180,210,255,0.25); box-shadow: 20px -8px 0 -4px rgba(180,210,255,0.15), -18px 4px 0 -6px rgba(180,210,255,0.12); }
+html.dark .bp-cloud-1::before { background:rgba(180,210,255,0.22); }
+html.dark .bp-cloud-1::after { background:rgba(180,210,255,0.2); }
+html.dark .bp-cloud-2 { background: rgba(160,200,255,0.2); box-shadow: 26px -10px 0 -4px rgba(160,200,255,0.12), -22px 4px 0 -6px rgba(160,200,255,0.1); }
+html.dark .bp-cloud-2::before { background:rgba(160,200,255,0.18); }
+html.dark .bp-cloud-2::after { background:rgba(160,200,255,0.15); }
+html.dark .bp-cloud-3 { background: rgba(140,190,255,0.15); box-shadow: 16px -6px 0 -2px rgba(140,190,255,0.1), -14px 2px 0 -4px rgba(140,190,255,0.08); }
+html.dark .bp-cloud-3::before { background:rgba(140,190,255,0.12); }
+html.dark .bp-cloud-3::after { background:rgba(140,190,255,0.1); }
 @keyframes bp-cloud-drift {
   0% { transform: translateX(-30px); }
   100% { transform: translateX(40px); }
@@ -5732,10 +5828,27 @@ html.dark .bp-cloud {
 /* Header */
 .bp-head { position:relative; z-index:3; padding:18px 16px 14px; text-align:center; }
 .bp-head-title {
-  font-size: 20px; font-weight: 900; margin:0 0 12px;
+  font-size: 20px; font-weight: 900; margin:0 0 8px;
   color: #fff;
   text-shadow: 0 2px 0 #1a6ea1, 0 3px 6px rgba(0,0,0,0.2);
   letter-spacing: 0.3px;
+}
+.bp-season-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+  color: rgba(255,255,255,0.65); margin-bottom: 2px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.25);
+}
+.bp-head-icon-slot {
+  width: 60px; height: 60px; margin: 8px auto 12px;
+  border: 2px dashed rgba(255,255,255,0.35);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.06);
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+}
+.bp-head-icon-slot:hover {
+  border-color: rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.1);
 }
 .bp-head-xp { max-width: 320px; margin: 0 auto; }
 .bp-head-bar {
@@ -5832,7 +5945,8 @@ html.dark .bp-isle-lvl { background: linear-gradient(135deg, #2a4a6b 0%, #1a3a5c
   text-shadow: 0 1px 1px rgba(0,0,0,0.4);
 }
 
-.bp-isle-lock { font-size: 16px; opacity: 0.85; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3)); }
+.bp-isle-lock { width:18px;height:18px;opacity:0.5;background:rgba(255,255,255,0.25);border-radius:4px 4px 6px 6px;position:relative; }
+.bp-isle-lock::before { content:'';position:absolute;top:-6px;left:3px;width:12px;height:7px;border:2px solid rgba(255,255,255,0.35);border-bottom:none;border-radius:6px 6px 0 0; }
 .bp-isle-check {
   width: 22px; height: 22px; border-radius: 50%;
   background: linear-gradient(135deg, #6dd64a, #2fb028);

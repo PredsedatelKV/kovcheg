@@ -131,9 +131,7 @@ export async function renderHome(root) {
       <div class="hero-art" title="Ковчег"><img src="/static/img/cube.svg" alt="Ковчег" class="hero-img"/></div>
     </section>
 
-    <div id="bp-mini-card" style="margin-bottom:14px"></div>
-
-    ${bannerCarousel(data.banners)}
+${bannerCarousel(data.banners)}
 
     ${assistantCard()}
 

@@ -73,7 +73,9 @@ function _renderBP(data) {
 
   // Header
   html += '<div class="bp-head">';
-  html += '<h2 class="bp-head-title">☀️ ' + s.name + ' 🌴</h2>';
+  html += '<div class="bp-season-label">СЕЗОН 1</div>';
+  html += '<h2 class="bp-head-title">' + s.name + '</h2>';
+  html += '<div class="bp-head-icon-slot" title="Нажми чтобы добавить свою иконку (пока пусто)"></div>';
   html += '<div class="bp-head-xp">';
   html += '<div class="bp-head-bar"><div class="bp-head-fill" style="width:' + xpPct + '%"></div></div>';
   html += '<div class="bp-head-stats"><span>Уровень ' + (currentLevel + 1) + " / " + s.total_levels + "</span><span>" + data.current_xp + " / " + data.xp_for_level + " XP</span></div>";
@@ -110,7 +112,7 @@ function _renderBP(data) {
     } else if (isCurrent || isDone) {
       html += '<button class="bp-isle-claim">Забрать</button>';
     } else {
-      html += '<div class="bp-isle-lock">🔒</div>';
+      html += '<div class="bp-isle-lock"></div>';
     }
 
     html += "</div>";
