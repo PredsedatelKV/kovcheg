@@ -151,6 +151,12 @@ window.kov.emit = function (event, data) {
   if (list) list.forEach(function(fn) { fn(data); });
 };
 
+// Live-update balance display anywhere on the page
+window.kov.on("balance:update", function(data) {
+  var els = document.querySelectorAll(".wallet-balance-value strong");
+  els.forEach(function(el) { el.textContent = data.balance; });
+});
+
 window.closeModal = function () {
   document.getElementById("modal-root").innerHTML = "";
 };

@@ -124,11 +124,14 @@ function _renderBP(data) {
 
   _bpRoot.innerHTML = html;
 
-  // Auto-scroll
-  requestAnimationFrame(function() {
-    var el = document.getElementById("bp-lvl-" + (currentLevel + 1));
-    if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
-  });
+  // Auto-scroll only on first render
+  if (!_bpRoot._bpScrolled) {
+    _bpRoot._bpScrolled = true;
+    requestAnimationFrame(function() {
+      var el = document.getElementById("bp-lvl-" + (currentLevel + 1));
+      if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+  }
 
   // Bind claims
   _bpRoot.querySelectorAll(".bp-isle-claim").forEach(function(btn) {
@@ -147,7 +150,8 @@ function _renderBP(data) {
         }
         // Animate node before re-render
         node.classList.add("bp-isle-pop");
-        setTimeout(function() { _renderBP(_bpData); }, 380);
+        var savedScroll = _bpRoot.closest('.tab-content') ? _bpRoot.closest('.tab-content').scrollTop : 0;
+        setTimeout(function() { _renderBP(_bpData); _bpRoot.closest('.tab-content') && (_bpRoot.closest('.tab-content').scrollTop = savedScroll); }, 380);
         window.kov && window.kov.toast && window.kov.toast("Награда получена!");
       } catch (err) {
         btn.disabled = false;

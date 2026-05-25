@@ -63,9 +63,13 @@ async function renderShop(root) {
   content.querySelectorAll("[data-buy]").forEach((b) =>
     b.addEventListener("click", async () => {
       try {
-        await post("/api/shop/buy", { product_id: Number(b.dataset.buy) });
+        var buyResult = await post("/api/shop/buy", { product_id: Number(b.dataset.buy) });
         playUISound("win");
         window.kov.toast("Куплено! Предмет в инвентаре");
+        if (buyResult && buyResult.balance != null && window.kov && window.kov.me) {
+          window.kov.me.balance = buyResult.balance;
+          if (window.kov.emit) window.kov.emit("balance:update", { balance: buyResult.balance });
+        }
         await renderShop(root);
       } catch (e) {
         window.kov.toast(e.message);
@@ -107,8 +111,12 @@ async function renderMarket(root) {
   content.querySelectorAll("[data-buy-listing]").forEach((b) =>
     b.addEventListener("click", async () => {
       try {
-        await post("/api/market/buy", { listing_id: Number(b.dataset.buyListing) });
+        var buyResult = await post("/api/market/buy", { listing_id: Number(b.dataset.buyListing) });
         window.kov.toast("Куплено! Предмет в инвентаре");
+        if (buyResult && buyResult.balance != null && window.kov && window.kov.me) {
+          window.kov.me.balance = buyResult.balance;
+          if (window.kov.emit) window.kov.emit("balance:update", { balance: buyResult.balance });
+        }
         await renderMarket(root);
       } catch (e) {
         window.kov.toast(e.message);
