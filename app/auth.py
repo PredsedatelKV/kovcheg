@@ -68,10 +68,35 @@ def validate_init_data(init_data: str, bot_token: str, max_age_seconds: int = 60
     return {"user": user, "auth_date": auth_date, "raw": data}
 
 
-def upsert_user(db: Session, tg_user: dict[str, Any]) -> models.User:
+def _is_allowed_user(tg_user: dict[str, Any]) -> bool:
+    """Check if this Telegram user is permitted to access the mini-app or bot."""
+    return _is_allowed_tg_id(int(tg_user["id"]), tg_user.get("username", ""))
+
+
+def _is_allowed_tg_id(tg_id: int, username: str = "") -> bool:
+    settings = get_settings()
+    if settings.admin_id_list and tg_id in settings.admin_id_list:
+        return True
+    username_clean = username.lower().lstrip("@") if username else ""
+    if username_clean and username_clean in settings.admin_username_list:
+        return True
+    return False
+
+
+def upsert_user(db: Session, tg_user: dict[str, Any]) -> models.User | None:
+    """Return existing user or None (no auto-creation — restricted access).
+
+    Admins (by telegram_id or username in config) can auto-register on first visit.
+    """
     tg_id = int(tg_user["id"])
     user = db.query(models.User).filter(models.User.telegram_id == tg_id).one_or_none()
-    if user is None:
+    if user is not None:
+        user.username = tg_user.get("username") or user.username
+        user.first_name = tg_user.get("first_name", user.first_name)
+        user.last_name = tg_user.get("last_name") or user.last_name
+        user.photo_url = tg_user.get("photo_url") or user.photo_url
+        return user
+    if _is_allowed_user(tg_user):
         user = models.User(
             telegram_id=tg_id,
             username=tg_user.get("username"),
@@ -83,12 +108,8 @@ def upsert_user(db: Session, tg_user: dict[str, Any]) -> models.User:
         db.flush()
         db.add(models.Wallet(user_id=user.id, balance=0))
         db.flush()
-    else:
-        user.username = tg_user.get("username") or user.username
-        user.first_name = tg_user.get("first_name", user.first_name)
-        user.last_name = tg_user.get("last_name") or user.last_name
-        user.photo_url = tg_user.get("photo_url") or user.photo_url
-    return user
+        return user
+    return None
 
 
 def current_user(
@@ -97,7 +118,7 @@ def current_user(
 ) -> models.User:
     settings = get_settings()
     if settings.skip_init_data_check and x_telegram_init_data == "DEV":
-        tg_user = {"id": 10001, "username": "omarbutuev", "first_name": "Омар"}
+        tg_user = {"id": 849162365, "username": "omarbutuev", "first_name": "Омар"}
     else:
         if not settings.telegram_bot_token:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="bot token not configured")
@@ -105,6 +126,12 @@ def current_user(
         tg_user = parsed["user"]
 
     user = upsert_user(db, tg_user)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Доступ только для граждан Федерации Ковчега",
+        )
+    user.last_seen = models.utcnow()
     db.commit()
     db.refresh(user)
     return user

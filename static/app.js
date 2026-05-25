@@ -1,12 +1,11 @@
-import { renderHome } from "/static/pages/home.js?v=26";
-import { renderProfile } from "/static/pages/profile.js?v=26";
-import { renderKoverna } from "/static/pages/koverna.js?v=26";
-import { renderArcade } from "/static/pages/arcade.js?v=26";
-import { renderAdmin } from "/static/pages/admin.js?v=26";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=26";
-import { get } from "/static/api.js?v=26";
-
-console.log("[KOVCHEG] App starting...");
+import { renderHome } from "/static/pages/home.js?v=40";
+import { renderProfile } from "/static/pages/profile.js?v=40";
+import { renderKoverna } from "/static/pages/koverna.js?v=40";
+import { renderArcade } from "/static/pages/arcade.js?v=40";
+import { renderAdmin } from "/static/pages/admin.js?v=40";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=41";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=40";
+import { get } from "/static/api.js?v=40";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -22,6 +21,7 @@ const RENDERERS = {
   profile: renderProfile,
   koverna: renderKoverna,
   arcade: renderArcade,
+  battlepass: renderBattlePass,
   admin: renderAdmin,
 };
 
@@ -31,36 +31,79 @@ const containers = {};
 
 let currentTab = null;
 
+// Tab change listeners for cleanup
+const tabListeners = {};
+
+function onTabChange(name, fn) {
+  if (!tabListeners[name]) tabListeners[name] = [];
+  tabListeners[name].push(fn);
+}
+
+function notifyTabHidden(name) {
+  const list = tabListeners[name];
+  if (list) list.forEach(function(fn) { fn(); });
+}
+
+let _switching = false;
+
 async function setTab(name) {
+  if (_switching) return;
   if (!RENDERERS[name]) name = "home";
   const btn = document.querySelector(`.tabbtn[data-tab="${name}"]`);
   if (btn && btn.hidden) name = "home";
 
   if (name === currentTab) return;
+
+  _switching = true;
   const prevTab = currentTab;
+
+  if (prevTab) notifyTabHidden(prevTab);
+
   currentTab = name;
 
   tabButtons.forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
-
-  if (!containers[name]) {
-    const div = document.createElement("div");
-    div.className = "tab-content";
-    div.style.display = "none";
-    viewEl.appendChild(div);
-    containers[name] = div;
-    await RENDERERS[name](div);
-  }
 
   if (prevTab && containers[prevTab]) {
     containers[prevTab].style.display = "none";
   }
 
-  const next = containers[name];
-  next.style.display = "";
-  next.classList.remove("tab-enter");
-  void next.offsetWidth;
-  next.classList.add("tab-enter");
+  const needsRender = !containers[name] || name === "admin";
 
+  if (needsRender) {
+    if (containers[name]) containers[name].remove();
+    const div = document.createElement("div");
+    div.className = "tab-content";
+    div.style.display = "";
+    viewEl.appendChild(div);
+    containers[name] = div;
+    div.innerHTML = '<div class="card"><p>Загрузка…</p></div>';
+    _switching = false;
+    await RENDERERS[name](div);
+    _finishTabSwitch(name);
+  } else {
+    const next = containers[name];
+    next.style.display = "";
+    next.classList.remove("tab-enter");
+    void next.offsetWidth;
+    next.classList.add("tab-enter");
+
+    if (viewEl.scrollTo) viewEl.scrollTo({ top: 0 });
+    localStorage.setItem("kovcheg.tab", name);
+    _switching = false;
+  }
+}
+
+// Separate finalization for tabs that need async render
+function _finishTabSwitch(name) {
+  if (currentTab !== name) return; // user switched away during render
+  const next = containers[name];
+  if (!next) return;
+  next.style.display = "";
+  requestAnimationFrame(() => {
+    next.classList.remove("tab-enter");
+    void next.offsetWidth;
+    next.classList.add("tab-enter");
+  });
   if (viewEl.scrollTo) viewEl.scrollTo({ top: 0 });
   localStorage.setItem("kovcheg.tab", name);
 }
@@ -72,33 +115,11 @@ tabButtons.forEach((btn) => {
   });
 });
 
-(async () => {
-  try {
-    const me = await get("/api/profile/me");
-    window.kov && (window.kov.me = me.user);
-    if (me.user && me.user.is_admin) {
-      document.querySelectorAll(".admin-only").forEach((el) => el.removeAttribute("hidden"));
-    }
-  } catch (err) {
-    console.warn("Failed to fetch /me for admin gate", err);
-  }
-  const initial = localStorage.getItem("kovcheg.tab") || "home";
-  await setTab(initial);
-  for (const name of Object.keys(RENDERERS)) {
-    if (!containers[name]) {
-      const div = document.createElement("div");
-      div.className = "tab-content";
-      div.style.display = "none";
-      viewEl.appendChild(div);
-      containers[name] = div;
-      RENDERERS[name](div).catch(() => {});
-    }
-  }
-})();
-
-// Global helpers
+// Global helpers — set early so renderers can use them
 window.kov = {
   setTab,
+  onTabChange,
+  me: null,
   toast(msg) {
     playUISound("toast");
     const el = document.createElement("div");
@@ -118,6 +139,46 @@ window.kov = {
   },
 };
 
+// Event bus for cross-tab incremental updates
+const _listeners = {};
+window.kov.on = function (event, fn) {
+  if (!_listeners[event]) _listeners[event] = [];
+  _listeners[event].push(fn);
+  return function () { _listeners[event] = _listeners[event].filter(function(l) { return l !== fn; }); };
+};  
+window.kov.emit = function (event, data) {
+  var list = _listeners[event];
+  if (list) list.forEach(function(fn) { fn(data); });
+};
+
 window.closeModal = function () {
   document.getElementById("modal-root").innerHTML = "";
 };
+
+(async () => {
+  try {
+    const me = await get("/api/profile/me");
+    window.kov.me = me.user;
+    if (me.user && me.user.is_admin && me.user.username === "omarbutuev") {
+      document.querySelectorAll(".admin-only").forEach((el) => el.removeAttribute("hidden"));
+    }
+  } catch (err) {
+    // non-critical — admin button stays hidden
+  }
+  const initial = localStorage.getItem("kovcheg.tab") || "home";
+  try {
+    await setTab(initial);
+  } catch (e) {
+    document.getElementById('view').innerHTML = '<div class="card"><p style="color:var(--danger);padding:20px">Не удалось загрузить приложение: ' + e.message + '</p></div>';
+  }
+  for (const name of Object.keys(RENDERERS)) {
+    if (!containers[name]) {
+      const div = document.createElement("div");
+      div.className = "tab-content";
+      div.style.display = "none";
+      viewEl.appendChild(div);
+      containers[name] = div;
+      RENDERERS[name](div).catch(function() {});
+    }
+  }
+})();

@@ -101,6 +101,7 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
         else:
             inv.quantity += 1
 
+    user.xp += 2
     db.add(
         models.WheelSpin(
             user_id=user.id,

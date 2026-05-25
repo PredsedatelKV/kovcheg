@@ -24,6 +24,8 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(64), default="Гражданин")
     restrictions: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    xp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     wallet: Mapped[Wallet] = relationship("Wallet", back_populates="user", uselist=False, cascade="all, delete-orphan")
     inventory: Mapped[list[InventoryItem]] = relationship(
@@ -57,6 +59,7 @@ class Item(Base):
     category: Mapped[str] = mapped_column(String(32), default="Ресурсы")  # Ресурсы/Ускорители/Декор/Другое
     can_gift: Mapped[bool] = mapped_column(Boolean, default=True)
     can_activate: Mapped[bool] = mapped_column(Boolean, default=False)
+    lootbox_pool_code: Mapped[str | None] = mapped_column(String(64), nullable=True)  # bronze/silver/gold
 
 
 class InventoryItem(Base):
@@ -84,6 +87,7 @@ class Task(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_daily_plan: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    xp_reward: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class UserTask(Base):
@@ -266,9 +270,77 @@ class GameInvite(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     from_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     to_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    game: Mapped[str] = mapped_column(String(32), nullable=False)  # tictactoe, checkers, pingpong, tanks
+    game: Mapped[str] = mapped_column(String(32), nullable=False)  # tictactoe, checkers, pingpong
     status: Mapped[str] = mapped_column(String(16), default="pending")  # pending, accepted, declined
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     from_user: Mapped["User"] = relationship("User", foreign_keys=[from_user_id])
     to_user: Mapped["User"] = relationship("User", foreign_keys=[to_user_id])
+
+
+class BattlePassSeason(Base):
+    __tablename__ = "battlepass_seasons"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)  # "Сезон 1: Лето"
+    theme: Mapped[str] = mapped_column(String(32), default="summer")  # summer/winter/...
+    xp_per_level: Mapped[int] = mapped_column(Integer, default=100)
+    total_levels: Mapped[int] = mapped_column(Integer, default=30)
+    price_current: Mapped[int] = mapped_column(Integer, default=499)
+    price_old: Mapped[int] = mapped_column(Integer, default=799)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    rewards: Mapped[list["BattlePassReward"]] = relationship("BattlePassReward", back_populates="season", cascade="all, delete-orphan")
+
+
+class BattlePassReward(Base):
+    __tablename__ = "battlepass_rewards"
+    __table_args__ = (UniqueConstraint("season_id", "level", "track", name="uq_bp_reward"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    season_id: Mapped[int] = mapped_column(ForeignKey("battlepass_seasons.id"), nullable=False)
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+    track: Mapped[str] = mapped_column(String(16), nullable=False)  # free | premium
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # coins | xp | item | lootbox
+    value: Mapped[int] = mapped_column(Integer, default=0)
+    item_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    label: Mapped[str] = mapped_column(String(128), default="")
+    icon: Mapped[str] = mapped_column(String(256), default="")
+
+    season: Mapped["BattlePassSeason"] = relationship("BattlePassSeason", back_populates="rewards")
+
+
+class UserBattlePass(Base):
+    __tablename__ = "user_battlepass"
+    __table_args__ = (UniqueConstraint("user_id", "season_id", name="uq_user_season"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    season_id: Mapped[int] = mapped_column(ForeignKey("battlepass_seasons.id"), nullable=False)
+    has_premium: Mapped[bool] = mapped_column(Boolean, default=False)
+    claimed_rewards: Mapped[str] = mapped_column(Text, default="[]")  # JSON [[level, track], ...]
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class LootboxPool(Base):
+    """Пул призов для лутбокса (по code: bronze/silver/gold)."""
+    __tablename__ = "lootbox_pools"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    entries: Mapped[list["LootboxPoolEntry"]] = relationship("LootboxPoolEntry", back_populates="pool", cascade="all, delete-orphan")
+
+
+class LootboxPoolEntry(Base):
+    __tablename__ = "lootbox_pool_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pool_id: Mapped[int] = mapped_column(ForeignKey("lootbox_pools.id"), nullable=False)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id"), nullable=False)
+    weight: Mapped[int] = mapped_column(Integer, default=10)
+
+    pool: Mapped["LootboxPool"] = relationship("LootboxPool", back_populates="entries")
+    item: Mapped["Item"] = relationship("Item")

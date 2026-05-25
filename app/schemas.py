@@ -15,6 +15,7 @@ class UserOut(BaseModel):
     role: str
     restrictions: str | None = None
     balance: int
+    xp: int = 0
     is_admin: bool = False
 
 
@@ -24,6 +25,7 @@ class PlayerOut(BaseModel):
     username: str | None = None
     first_name: str
     role: str
+    is_online: bool = False
 
 
 class ItemOut(BaseModel):
@@ -37,6 +39,7 @@ class ItemOut(BaseModel):
     category: str
     can_gift: bool
     can_activate: bool
+    lootbox_pool_code: str | None = None
 
 
 class InventoryItemOut(BaseModel):
@@ -189,6 +192,7 @@ class AdminUserOut(BaseModel):
     role: str
     restrictions: str | None = None
     balance: int
+    xp: int = 0
     is_admin: bool = False
 
 
@@ -199,8 +203,9 @@ class AdminUserUpdate(BaseModel):
 
 
 class AdminBalanceUpdate(BaseModel):
-    delta: int  # may be negative
+    delta: int
     note: str | None = None
+    mode: str = "add"  # "add", "sub", "set"
 
 
 class AdminInventoryUpdate(BaseModel):
@@ -402,7 +407,7 @@ class ChatSendRequest(BaseModel):
 
 
 class GameInviteRequest(BaseModel):
-    game: str  # tictactoe, checkers, pingpong, tanks
+    game: str  # tictactoe, checkers, pingpong
     to_user_id: int
 
 
@@ -419,3 +424,52 @@ class TransactionOut(BaseModel):
     amount: int
     note: str | None = None
     created_at: datetime
+
+
+class BattlePassRewardOut(BaseModel):
+    id: int = 0
+    level: int = 0
+    kind: str = ""
+    value: int = 0
+    item_code: str | None = None
+    label: str = ""
+    icon: str = ""
+    claimed: bool = False
+
+
+class ClaimRewardRequest(BaseModel):
+    level: int
+
+
+class BattlePassSeasonOut(BaseModel):
+    id: int
+    name: str
+    theme: str
+    xp_per_level: int
+    total_levels: int
+    is_active: bool
+    rewards: list[BattlePassRewardOut] = []
+
+
+class UserBattlePassOut(BaseModel):
+    season: BattlePassSeasonOut
+    current_level: int
+    current_xp: int
+    xp_for_level: int
+    claimed_rewards: list[list]
+
+
+class OpenLootboxRequest(BaseModel):
+    item_id: int
+
+
+class LootboxOpenResult(BaseModel):
+    item: ItemOut
+    quantity: int
+
+
+class AwardXpRequest(BaseModel):
+    user_id: int | None = None  # None = текущий
+    amount: int
+    reason: str = ""
+    mode: str = "add"  # "add", "sub", "set"

@@ -76,6 +76,16 @@ def _register_handlers(dp: Dispatcher) -> None:
                 "Привет! Мини-аппа ещё не настроена (нет публичного URL). Скажи админу запустить деплой."
             )
             return
+        if message.from_user:
+            from app.auth import _is_allowed_tg_id
+            with session_scope() as db:
+                existing = db.query(models.User).filter(models.User.telegram_id == message.from_user.id).one_or_none()
+            if existing is None and not _is_allowed_tg_id(message.from_user.id, message.from_user.username or ""):
+                await message.answer(
+                    "🚫 Доступ только для граждан Федерации Ковчега.\n\n"
+                    "Если ты считаешь, что это ошибка, свяжись с администратором."
+                )
+                return
         text = (
             "Добро пожаловать в <b>Ковчег</b>! 🏰\n\n"
             "Это цифровая община — выполняй задания, торгуй на Коверне, крути колесо фортуны.\n"

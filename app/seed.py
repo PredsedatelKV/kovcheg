@@ -16,6 +16,7 @@ def _get_or_create_item(
     category: str = "Ресурсы",
     can_gift: bool = True,
     can_activate: bool = False,
+    lootbox_pool_code: str | None = None,
 ) -> models.Item:
     item = db.query(models.Item).filter(models.Item.code == code).one_or_none()
     if item:
@@ -29,6 +30,7 @@ def _get_or_create_item(
         category=category,
         can_gift=can_gift,
         can_activate=can_activate,
+        lootbox_pool_code=lootbox_pool_code,
     )
     db.add(item)
     db.flush()
@@ -95,6 +97,30 @@ def migrate_schema(db: Session) -> None:
         db.execute(text("ALTER TABLE shop_products ADD COLUMN stock INTEGER NOT NULL DEFAULT -1"))
         db.commit()
 
+    # users.last_seen — дата/время последнего запроса (online-индикатор)
+    ucols = {row[1] for row in db.execute(text("PRAGMA table_info(users)")).fetchall()}
+    if "last_seen" not in ucols:
+        db.execute(text("ALTER TABLE users ADD COLUMN last_seen DATETIME"))
+        db.commit()
+
+    # users.xp — опыт игрока (battle pass)
+    ucols = {row[1] for row in db.execute(text("PRAGMA table_info(users)")).fetchall()}
+    if "xp" not in ucols:
+        db.execute(text("ALTER TABLE users ADD COLUMN xp INTEGER NOT NULL DEFAULT 0"))
+        db.commit()
+
+    # tasks.xp_reward — XP за выполнение задания
+    tcols = {row[1] for row in db.execute(text("PRAGMA table_info(tasks)")).fetchall()}
+    if "xp_reward" not in tcols:
+        db.execute(text("ALTER TABLE tasks ADD COLUMN xp_reward INTEGER NOT NULL DEFAULT 0"))
+        db.commit()
+
+    # items.lootbox_pool_code — если предмет является лутбоксом, указывает на пул
+    icols = {row[1] for row in db.execute(text("PRAGMA table_info(items)")).fetchall()}
+    if "lootbox_pool_code" not in icols:
+        db.execute(text("ALTER TABLE items ADD COLUMN lootbox_pool_code VARCHAR(64)"))
+        db.commit()
+
 
 PLAYERS: list[dict] = [
     {
@@ -113,8 +139,7 @@ PLAYERS: list[dict] = [
 
 
 def seed_players(db: Session) -> None:
-    """Seed the fixed citizens and rename any 'M' user to 'Магомет'."""
-    # Delete legacy Магомет (telegram_id 10002) if still around
+    """Seed the fixed citizens, rename Respach → Магомет, block new users."""
     old_magomet = db.query(models.User).filter(models.User.telegram_id == 10002).one_or_none()
     if old_magomet is not None:
         db.query(models.ChatMessage).filter(models.ChatMessage.user_id == old_magomet.id).delete()
@@ -125,11 +150,12 @@ def seed_players(db: Session) -> None:
         db.query(models.WheelSpin).filter(models.WheelSpin.user_id == old_magomet.id).delete()
         db.delete(old_magomet)
         db.flush()
-    # Rename any user whose first_name is "M" to "Магомет"
-    m_user = db.query(models.User).filter(models.User.first_name == "M").first()
-    if m_user is not None:
-        m_user.first_name = "Магомет"
-    # Clean up legacy 'Dev' user
+    respach = db.query(models.User).filter(
+        (models.User.first_name.ilike("Respach")) | (models.User.username.ilike("Respach"))
+    ).first()
+    if respach is not None:
+        respach.first_name = "Магомет"
+        respach.role = respach.role or "Гражданин"
     legacy_dev = db.query(models.User).filter(models.User.telegram_id == 1).one_or_none()
     if legacy_dev is not None:
         db.query(models.MarketListing).filter(models.MarketListing.seller_id == legacy_dev.id).delete()
@@ -432,6 +458,117 @@ def seed(db: Session) -> None:
         ibragim = db.query(models.User).filter(models.User.first_name == "Ибрагим").first()
         if ibragim:
             db.add(models.ChatMessage(user_id=ibragim.id, content="Привет всем!", message_type="text"))
+        db.commit()
+
+    # XP за задания (по умолчанию)
+    for t in db.query(models.Task).filter(models.Task.is_active == True).all():
+        if t.xp_reward == 0:
+            t.xp_reward = 10
+    db.commit()
+
+    # Seed lootbox items
+    _get_or_create_item(
+        db, "lootbox_bronze",
+        name="Бронзовый ковбокс",
+        icon="/static/img/items/lootbox_bronze.svg",
+        description="Ковбокс бронзового ранга. Содержит случайный обычный предмет.",
+        category="Ковбоксы",
+        lootbox_pool_code="bronze",
+    )
+    _get_or_create_item(
+        db, "lootbox_silver",
+        name="Серебряный ковбокс",
+        icon="/static/img/items/lootbox_silver.svg",
+        description="Ковбокс серебряного ранга. Содержит случайный предмет (шанс на редкий).",
+        category="Ковбоксы",
+        rarity="Редкий",
+        lootbox_pool_code="silver",
+    )
+    _get_or_create_item(
+        db, "lootbox_gold",
+        name="Золотой ковбокс",
+        icon="/static/img/items/lootbox_gold.svg",
+        description="Ковбокс золотого ранга. Гарантированный редкий или легендарный предмет!",
+        category="Ковбоксы",
+        rarity="Легендарный",
+        lootbox_pool_code="gold",
+    )
+    db.commit()
+
+    # Seed lootbox pools
+    props = ["snickers", "skittles", "bounty", "mars", "kitkat", "twix", "juice", "popcorn"]
+    rarities = ["nutella", "booster_1h", "exp_scroll"]
+    legendary = ["scroll_of_wisdom"] if db.query(models.Item).filter(models.Item.code == "scroll_of_wisdom").first() else []
+
+    def _fill_pool(code: str, entries: list[tuple[str, int]]):
+        pool = db.query(models.LootboxPool).filter(models.LootboxPool.code == code).first()
+        if pool:
+            return
+        pool = models.LootboxPool(code=code, name=code.capitalize())
+        db.add(pool)
+        db.flush()
+        for item_code, weight in entries:
+            item = db.query(models.Item).filter(models.Item.code == item_code).first()
+            if item:
+                db.add(models.LootboxPoolEntry(pool_id=pool.id, item_id=item.id, weight=weight))
+
+    _fill_pool("bronze", [(c, 15) for c in props] + [(c, 1) for c in rarities])
+    _fill_pool("silver", [(c, 10) for c in props] + [(c, 5) for c in rarities])
+    _fill_pool("gold", [(c, 2) for c in props] + [(c, 8) for c in rarities] + [(c, 10) for c in legendary])
+    db.commit()
+
+    # Seed Battle Pass season
+    if db.query(models.BattlePassSeason).count() == 0:
+        season = models.BattlePassSeason(
+            name="Сезон 1: Лето",
+            theme="summer",
+            xp_per_level=100,
+            total_levels=30,
+            is_active=True,
+        )
+        db.add(season)
+        db.flush()
+
+        # Free rewards — coins/xp/item/lootbox every few levels
+        rewards: dict[int, tuple[str, int, str, str]] = {
+            1: ("coins", 50, "50 монет", "/static/img/items/coin.svg"),
+            2: ("xp", 25, "25 опыта", "/static/img/item_icons/xp.svg"),
+            3: ("lootbox", 1, "Бронзовый ковбокс", "/static/img/items/lootbox_bronze.svg"),
+            4: ("coins", 75, "75 монет", "/static/img/items/coin.svg"),
+            5: ("xp", 50, "50 опыта", "/static/img/item_icons/xp.svg"),
+            6: ("coins", 100, "100 монет", "/static/img/items/coin.svg"),
+            7: ("lootbox", 1, "Бронзовый ковбокс", "/static/img/items/lootbox_bronze.svg"),
+            8: ("xp", 75, "75 опыта", "/static/img/item_icons/xp.svg"),
+            9: ("coins", 150, "150 монет", "/static/img/items/coin.svg"),
+            10: ("lootbox", 1, "Серебряный ковбокс", "/static/img/items/lootbox_silver.svg"),
+            12: ("coins", 200, "200 монет", "/static/img/items/coin.svg"),
+            14: ("xp", 100, "100 опыта", "/static/img/item_icons/xp.svg"),
+            15: ("lootbox", 1, "Серебряный ковбокс", "/static/img/items/lootbox_silver.svg"),
+            18: ("coins", 300, "300 монет", "/static/img/items/coin.svg"),
+            20: ("lootbox", 1, "Золотой ковбокс", "/static/img/items/lootbox_gold.svg"),
+            22: ("xp", 150, "150 опыта", "/static/img/item_icons/xp.svg"),
+            25: ("lootbox", 1, "Золотой ковбокс", "/static/img/items/lootbox_gold.svg"),
+            28: ("coins", 500, "500 монет", "/static/img/items/coin.svg"),
+            30: ("lootbox", 1, "Золотой ковбокс", "/static/img/items/lootbox_gold.svg"),
+        }
+
+        for lvl, (kind, val, label, icon) in rewards.items():
+            db.add(models.BattlePassReward(
+                season_id=season.id, level=lvl, track="free",
+                kind=kind, value=val, label=label, icon=icon,
+            ))
+        db.commit()
+
+    # Create UserBattlePass for every existing user
+    season = db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active == True).first()
+    if season:
+        for user in db.query(models.User).all():
+            ubp = db.query(models.UserBattlePass).filter(
+                models.UserBattlePass.user_id == user.id,
+                models.UserBattlePass.season_id == season.id,
+            ).first()
+            if not ubp:
+                db.add(models.UserBattlePass(user_id=user.id, season_id=season.id))
         db.commit()
 
     seed_wheel_prizes(db)

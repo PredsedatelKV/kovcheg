@@ -530,7 +530,7 @@ function openItemActionsDialog(row) {
       var poolItems = pool ? pool.entries : [];
       var result = await post("/api/battlepass/open-lootbox", { item_id: item.id });
       _updateSections(["inventory", "balance"]);
-      if (poolItems.length > 1) {
+      if (poolItems.length >= 1) {
         await showLootboxRoulette(poolItems, result.item);
       } else {
         window.kov.toast("🎁 " + result.item.name);
@@ -779,12 +779,23 @@ function _lootboxFanfare(ctx) {
   });
 }
 
+function _rarityColor(r) {
+  var r2 = (r || "").toLowerCase();
+  if (r2.indexOf("легендар") !== -1 || r2.indexOf("legend") !== -1) return "#42a5f5";
+  if (r2.indexOf("эпическ") !== -1 || r2.indexOf("epic") !== -1) return "#ab47bc";
+  if (r2.indexOf("редк") !== -1 || r2.indexOf("rare") !== -1) return "#66bb6a";
+  if (r2.indexOf("обычн") !== -1 || r2.indexOf("common") !== -1) return "#9e9e9e";
+  return "#ffd700";
+}
+
 function showLootboxRoulette(poolItems, winItem) {
   var ctx = null;
   try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch(_) {}
 
   // Prepare items: show all, highlight winner
-  var items = poolItems.map(function(e) { return { name: e.item_name, icon: e.item_icon }; });
+  var items = poolItems.map(function(e) { return { name: e.item_name, icon: e.item_icon, rarity: e.item_rarity || "" }; });
+  // If pool is empty, just show the winner
+  if (items.length === 0) items = [{ name: winItem.name, icon: winItem.icon, rarity: "" }];
   // Ensure at least 8 items for smooth scroll
   while (items.length < 8) { items = items.concat(items); }
   // Winner index in the duplicated list
@@ -811,6 +822,9 @@ function showLootboxRoulette(poolItems, winItem) {
     var div = document.createElement("div");
     div.className = "lootbox-track-item" + (it.isWinner ? " win-target" : "");
     div.dataset.idx = idx;
+    var borderColor = _rarityColor(it.rarity);
+    div.style.borderColor = borderColor;
+    div.style.boxShadow = "0 0 6px " + borderColor + "44";
     div.innerHTML = '<img src="' + it.icon + '" alt=""/>';
     track.appendChild(div);
   });
@@ -883,13 +897,14 @@ function showLootboxRoulette(poolItems, winItem) {
           if (targetEl) {
             targetEl.classList.remove("win-target");
             targetEl.classList.add("win");
-            targetEl.classList.add("win-rarity-" + (winItem.rarity || "Обычный"));
           }
           // Show result
           var result = overlay.querySelector("#lb-result");
           result.querySelector("#lb-win-name").textContent = winItem.name;
-          result.querySelector("#lb-win-rarity").textContent = winItem.rarity || "";
-          result.querySelector("#lb-win-rarity").className = "lootbox-result-rarity rr-" + (winItem.rarity || "Обычный");
+          var rarColor = _rarityColor(winItem.rarity);
+          var rarEl = result.querySelector("#lb-win-rarity");
+          rarEl.textContent = winItem.rarity || "";
+          rarEl.style.color = rarColor;
           result.classList.add("show");
         }
       }

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <radialGradient id="c-bg" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#ffd54f"/>
+      <stop offset="40%" stop-color="#ffc107"/>
+      <stop offset="80%" stop-color="#ff8f00"/>
+      <stop offset="100%" stop-color="#e65100"/>
+    </radialGradient>
+    <radialGradient id="c-shine" cx="35%" cy="30%" r="25%">
+      <stop offset="0%" stop-color="#fff8e1" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#fff8e1" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c-rim" cx="50%" cy="50%" r="50%">
+      <stop offset="85%" stop-color="#ffb300"/>
+      <stop offset="90%" stop-color="#ff8f00"/>
+      <stop offset="100%" stop-color="#e65100"/>
+    </radialGradient>
+  </defs>
+  <!-- Outer rim -->
+  <circle cx="24" cy="24" r="22" fill="url(#c-rim)" stroke="#bf360c" stroke-width="0.5"/>
+  <!-- Inner face -->
+  <circle cx="24" cy="24" r="18" fill="url(#c-bg)"/>
+  <!-- Inner decorative ring -->
+  <circle cx="24" cy="24" r="14" fill="none" stroke="#fff" stroke-width="0.6" opacity="0.25"/>
+  <!-- Dots around the ring -->
+  <circle cx="24" cy="6" r="1" fill="#fff" opacity="0.2"/>
+  <circle cx="24" cy="42" r="1" fill="#fff" opacity="0.2"/>
+  <circle cx="6" cy="24" r="1" fill="#fff" opacity="0.2"/>
+  <circle cx="42" cy="24" r="1" fill="#fff" opacity="0.2"/>
+  <!-- Shine -->
+  <circle cx="24" cy="24" r="18" fill="url(#c-shine)"/>
+  <circle cx="16" cy="14" r="3.5" fill="#fff" opacity="0.18"/>
+  <!-- K letter -->
+  <text x="24" y="31" text-anchor="middle" font-family="Arial,sans-serif" font-weight="900" font-size="20" fill="#bf360c" letter-spacing="-1">K</text>
+</svg>

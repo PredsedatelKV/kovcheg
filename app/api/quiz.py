@@ -102,6 +102,7 @@ def submit_quiz(
     # Award prize if grade is good or excellent
     if grade in ("good", "excellent"):
         prize_awarded = True
+        user.xp += 25 if grade == "excellent" else 10
         if q.prize_kind == "coins":
             user.wallet.balance += q.prize_value
             db.add(

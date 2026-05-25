@@ -1,49 +1,32 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" shape-rendering="crispEdges" aria-hidden="true">
-  <!-- Minimalist market stall in Minecraft pixel style -->
-
-  <!-- Top beam -->
-  <rect x="4" y="12" width="72" height="5" fill="#3a2a18"/>
-
-  <!-- Awning red+white stripes -->
-  <rect x="6" y="17" width="68" height="12" fill="#c93232"/>
-  <rect x="6" y="17" width="10" height="12" fill="#f5f5f5"/>
-  <rect x="26" y="17" width="10" height="12" fill="#f5f5f5"/>
-  <rect x="46" y="17" width="10" height="12" fill="#f5f5f5"/>
-  <rect x="66" y="17" width="8" height="12" fill="#f5f5f5"/>
-
-  <!-- Awning scalloped bottom -->
-  <rect x="6" y="29" width="10" height="3" fill="#f5f5f5"/>
-  <rect x="26" y="29" width="10" height="3" fill="#f5f5f5"/>
-  <rect x="46" y="29" width="10" height="3" fill="#f5f5f5"/>
-  <rect x="66" y="29" width="8" height="3" fill="#f5f5f5"/>
-  <rect x="16" y="29" width="10" height="3" fill="#c93232"/>
-  <rect x="36" y="29" width="10" height="3" fill="#c93232"/>
-  <rect x="56" y="29" width="10" height="3" fill="#c93232"/>
-
-  <!-- Posts -->
-  <rect x="8" y="34" width="4" height="32" fill="#7a5a36"/>
-  <rect x="68" y="34" width="4" height="32" fill="#7a5a36"/>
-
-  <!-- Sign plate -->
-  <rect x="30" y="36" width="20" height="6" fill="#e8d49a"/>
-  <rect x="32" y="38" width="4" height="2" fill="#7a5a36"/>
-  <rect x="38" y="38" width="4" height="2" fill="#7a5a36"/>
-  <rect x="44" y="38" width="4" height="2" fill="#7a5a36"/>
-
-  <!-- Counter -->
-  <rect x="4" y="56" width="72" height="8" fill="#a07440"/>
-  <rect x="4" y="60" width="72" height="2" fill="#7a5a30"/>
-
-  <!-- Goods on counter: apple, watermelon-ish, pumpkin -->
-  <rect x="18" y="48" width="8" height="8" fill="#d63838"/>
-  <rect x="20" y="46" width="4" height="2" fill="#2a8030"/>
-
-  <rect x="34" y="48" width="8" height="8" fill="#52a23a"/>
-  <rect x="36" y="46" width="4" height="2" fill="#2a8030"/>
-
-  <rect x="50" y="48" width="8" height="8" fill="#e3a830"/>
-  <rect x="52" y="46" width="4" height="2" fill="#2a8030"/>
-
-  <!-- Ground -->
-  <rect x="4" y="66" width="72" height="4" fill="#3a2a18"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 86 86" shape-rendering="crispEdges" aria-hidden="true">
+  <g transform="translate(3,3)">
+    <rect x="4" y="12" width="72" height="5" fill="#3a2a18"/>
+    <rect x="6" y="17" width="68" height="12" fill="#c93232"/>
+    <rect x="6" y="17" width="10" height="12" fill="#f5f5f5"/>
+    <rect x="26" y="17" width="10" height="12" fill="#f5f5f5"/>
+    <rect x="46" y="17" width="10" height="12" fill="#f5f5f5"/>
+    <rect x="66" y="17" width="8" height="12" fill="#f5f5f5"/>
+    <rect x="6" y="29" width="10" height="3" fill="#f5f5f5"/>
+    <rect x="26" y="29" width="10" height="3" fill="#f5f5f5"/>
+    <rect x="46" y="29" width="10" height="3" fill="#f5f5f5"/>
+    <rect x="66" y="29" width="8" height="3" fill="#f5f5f5"/>
+    <rect x="16" y="29" width="10" height="3" fill="#c93232"/>
+    <rect x="36" y="29" width="10" height="3" fill="#c93232"/>
+    <rect x="56" y="29" width="10" height="3" fill="#c93232"/>
+    <rect x="8" y="34" width="4" height="32" fill="#7a5a36"/>
+    <rect x="68" y="34" width="4" height="32" fill="#7a5a36"/>
+    <rect x="30" y="36" width="20" height="6" fill="#e8d49a"/>
+    <rect x="32" y="38" width="4" height="2" fill="#7a5a36"/>
+    <rect x="38" y="38" width="4" height="2" fill="#7a5a36"/>
+    <rect x="44" y="38" width="4" height="2" fill="#7a5a36"/>
+    <rect x="4" y="56" width="72" height="8" fill="#a07440"/>
+    <rect x="4" y="60" width="72" height="2" fill="#7a5a30"/>
+    <rect x="18" y="48" width="8" height="8" fill="#d63838"/>
+    <rect x="20" y="46" width="4" height="2" fill="#2a8030"/>
+    <rect x="34" y="48" width="8" height="8" fill="#52a23a"/>
+    <rect x="36" y="46" width="4" height="2" fill="#2a8030"/>
+    <rect x="50" y="48" width="8" height="8" fill="#e3a830"/>
+    <rect x="52" y="46" width="4" height="2" fill="#2a8030"/>
+    <rect x="4" y="66" width="72" height="4" fill="#3a2a18"/>
+  </g>
 </svg>

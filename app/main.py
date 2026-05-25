@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app import models  # noqa: F401  ensure models imported for create_all
 from app.api import admin as admin_api
 from app.api import arcade as arcade_api
+from app.api import battlepass as battlepass_api
 from app.api import chat as chat_api
 from app.api import content as content_api
 from app.api import game as game_api
@@ -73,6 +74,7 @@ app.include_router(shop_api.router)
 app.include_router(market_api.router)
 app.include_router(content_api.router)
 app.include_router(arcade_api.router)
+app.include_router(battlepass_api.router)
 app.include_router(admin_api.router)
 app.include_router(game_api.router)
 app.include_router(assistant_api)

@@ -111,13 +111,7 @@ function tasksList(tasks, userTasks) {
 
 export async function renderHome(root) {
   root.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
-  var data;
-  try {
-    data = await get("/api/home");
-  } catch (e) {
-    root.innerHTML = '<div class="card"><p style="color:var(--danger)">Ошибка загрузки</p></div>';
-    return;
-  }
+  const data = await get("/api/home");
   const user = data.user;
   const welcome = "Добро пожаловать!";
 

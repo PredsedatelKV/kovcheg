@@ -21,6 +21,7 @@ def _user_to_out(user: models.User) -> schemas.UserOut:
         role=user.role,
         restrictions=user.restrictions,
         balance=user.wallet.balance if user.wallet else 0,
+        xp=user.xp,
         is_admin=is_admin(user),
     )
 
@@ -31,6 +32,8 @@ def list_players(
     db: Session = Depends(get_db),
 ) -> list[schemas.PlayerOut]:
     """Все игроки кроме текущего — для выпадающего списка получателя при переводе."""
+    from datetime import datetime, timezone, timedelta
+    threshold = datetime.now(timezone.utc) - timedelta(minutes=5)
     rows = (
         db.query(models.User)
         .filter(models.User.id != user.id)
@@ -44,6 +47,7 @@ def list_players(
             username=p.username,
             first_name=p.first_name,
             role=p.role,
+            is_online=p.last_seen is not None and p.last_seen.replace(tzinfo=timezone.utc) > threshold,
         )
         for p in rows
     ]
@@ -61,6 +65,7 @@ def _item_to_out(item: models.Item) -> schemas.ItemOut:
         category=item.category,
         can_gift=item.can_gift,
         can_activate=item.can_activate,
+        lootbox_pool_code=item.lootbox_pool_code,
     )
 
 
