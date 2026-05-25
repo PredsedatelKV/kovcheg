@@ -815,22 +815,17 @@ function showLootboxRoulette(poolItems, winItem) {
     track.appendChild(div);
   });
 
-  var itemW = 56; // 48px + 8px gap
-  var targetOffset = -(WIN_IDX * itemW - track.parentElement.offsetWidth / 2 + itemW / 2);
-  var startOffset = -(items.length * itemW - track.parentElement.offsetWidth) / 2;
-
-  // Initial position (shuffled look)
-  track.style.transform = "translateX(" + startOffset + "px)";
-
-  // Tick during animation
+  var itemW = 56;
   var tickInterval = null;
   var tickSpeed = 60;
+
   function startTick() {
     if (!ctx) return;
     tickInterval = setInterval(function() {
       _lootboxTick(ctx);
     }, tickSpeed);
   }
+
   function updateTickSpeed(slow) {
     if (tickInterval) clearInterval(tickInterval);
     tickSpeed = slow;
@@ -841,62 +836,66 @@ function showLootboxRoulette(poolItems, winItem) {
     }
   }
 
-  // Animation phases
-  startTick();
+  // Wait for layout before reading dimensions
+  requestAnimationFrame(function() {
+    var wrapW = track.parentElement.offsetWidth;
+    if (!wrapW || wrapW < 50) wrapW = 300;
+    var targetOffset = -(WIN_IDX * itemW - wrapW / 2 + itemW / 2);
+    var startOffset = -(items.length * itemW - wrapW) / 2;
 
-  // Phase 1: fast scroll to near-target (3s)
-  var phase1Time = 2500;
-  var phase1Start = startOffset;
-  var phase1End = targetOffset + itemW * 8;
-  var phase1StartTime = Date.now();
+    track.style.transform = "translateX(" + startOffset + "px)";
+    startTick();
 
-  function phase1() {
-    var elapsed = Date.now() - phase1StartTime;
-    var p = Math.min(1, elapsed / phase1Time);
-    var eased = 1 - Math.pow(1 - p, 3);
-    var x = phase1Start + (phase1End - phase1Start) * eased;
-    track.style.transform = "translateX(" + x + "px)";
-    if (p < 1) {
-      requestAnimationFrame(phase1);
-    } else {
-      updateTickSpeed(200);
-      // Phase 2: slow final positioning (1s)
-      var phase2StartTime = Date.now();
-      var phase2Start = x;
-      var phase2End = targetOffset;
-      function phase2() {
-        var elapsed2 = Date.now() - phase2StartTime;
-        var p2 = Math.min(1, elapsed2 / 800);
-        var eased2 = 1 - Math.pow(1 - p2, 4);
-        var x2 = phase2Start + (phase2End - phase2Start) * eased2;
-        track.style.transform = "translateX(" + x2 + "px)";
-        if (p2 < 1) {
-          requestAnimationFrame(phase2);
-        } else {
-          // Done!
-          updateTickSpeed(0);
-          if (ctx) _lootboxFanfare(ctx);
-          // Highlight winner
-          var allItems = track.querySelectorAll(".lootbox-track-item");
-          allItems.forEach(function(el) { el.classList.remove("active"); });
-          var targetEl = track.querySelector(".win-target");
-          if (targetEl) {
-            targetEl.classList.remove("win-target");
-            targetEl.classList.add("win");
-            targetEl.classList.add("win-rarity-" + (winItem.rarity || "Обычный"));
+    // Phase 1: fast scroll
+    var phase1Time = 2500;
+    var phase1Start = startOffset;
+    var phase1Target = targetOffset + itemW * 8;
+    var phase1StartTime = Date.now();
+
+    function phase1() {
+      var elapsed = Date.now() - phase1StartTime;
+      var p = Math.min(1, elapsed / phase1Time);
+      var eased = 1 - Math.pow(1 - p, 3);
+      var x = phase1Start + (phase1Target - phase1Start) * eased;
+      track.style.transform = "translateX(" + x + "px)";
+      if (p < 1) {
+        requestAnimationFrame(phase1);
+      } else {
+        updateTickSpeed(200);
+        // Phase 2: slow final positioning
+        var phase2StartTime = Date.now();
+        var phase2Start = x;
+        function phase2() {
+          var elapsed2 = Date.now() - phase2StartTime;
+          var p2 = Math.min(1, elapsed2 / 800);
+          var eased2 = 1 - Math.pow(1 - p2, 4);
+          var x2 = phase2Start + (targetOffset - phase2Start) * eased2;
+          track.style.transform = "translateX(" + x2 + "px)";
+          if (p2 < 1) {
+            requestAnimationFrame(phase2);
+          } else {
+            updateTickSpeed(0);
+            if (ctx) _lootboxFanfare(ctx);
+            var allItems = track.querySelectorAll(".lootbox-track-item");
+            allItems.forEach(function(el) { el.classList.remove("active"); });
+            var targetEl = track.querySelector(".win-target");
+            if (targetEl) {
+              targetEl.classList.remove("win-target");
+              targetEl.classList.add("win");
+              targetEl.classList.add("win-rarity-" + (winItem.rarity || "Обычный"));
+            }
+            var result = overlay.querySelector("#lb-result");
+            result.querySelector("#lb-win-name").textContent = winItem.name;
+            result.querySelector("#lb-win-rarity").textContent = winItem.rarity || "";
+            result.querySelector("#lb-win-rarity").className = "lootbox-result-rarity rr-" + (winItem.rarity || "Обычный");
+            result.classList.add("show");
           }
-          // Show result
-          var result = overlay.querySelector("#lb-result");
-          result.querySelector("#lb-win-name").textContent = winItem.name;
-          result.querySelector("#lb-win-rarity").textContent = winItem.rarity || "";
-          result.querySelector("#lb-win-rarity").className = "lootbox-result-rarity rr-" + (winItem.rarity || "Обычный");
-          result.classList.add("show");
         }
+        requestAnimationFrame(phase2);
       }
-      requestAnimationFrame(phase2);
     }
-  }
-  requestAnimationFrame(phase1);
+    requestAnimationFrame(phase1);
+  });
 
   overlay.querySelector("#lb-close").addEventListener("click", function() {
     overlay.remove();

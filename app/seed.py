@@ -468,30 +468,40 @@ def seed(db: Session) -> None:
 
     # Seed lootbox items
     _get_or_create_item(
-        db, "lootbox_bronze",
-        name="Бронзовый ковбокс",
-        icon="/static/img/items/lootbox_bronze.svg",
-        description="Ковбокс бронзового ранга. Содержит случайный обычный предмет.",
+        db, "lootbox_common",
+        name="Обычный ковбокс",
+        icon="/static/img/items/lootbox_common.svg",
+        description="Обычный ковбокс. Содержит случайный предмет.",
         category="Ковбоксы",
-        lootbox_pool_code="bronze",
+        rarity="Обычный",
+        lootbox_pool_code="common",
     )
     _get_or_create_item(
-        db, "lootbox_silver",
-        name="Серебряный ковбокс",
-        icon="/static/img/items/lootbox_silver.svg",
-        description="Ковбокс серебряного ранга. Содержит случайный предмет (шанс на редкий).",
+        db, "lootbox_rare",
+        name="Редкий ковбокс",
+        icon="/static/img/items/lootbox_rare.svg",
+        description="Редкий ковбокс. Повышенный шанс на редкий предмет.",
         category="Ковбоксы",
         rarity="Редкий",
-        lootbox_pool_code="silver",
+        lootbox_pool_code="rare",
     )
     _get_or_create_item(
-        db, "lootbox_gold",
-        name="Золотой ковбокс",
-        icon="/static/img/items/lootbox_gold.svg",
-        description="Ковбокс золотого ранга. Гарантированный редкий или легендарный предмет!",
+        db, "lootbox_epic",
+        name="Эпический ковбокс",
+        icon="/static/img/items/lootbox_epic.svg",
+        description="Эпический ковбокс. Гарантированный редкий или эпический предмет!",
+        category="Ковбоксы",
+        rarity="Эпический",
+        lootbox_pool_code="epic",
+    )
+    _get_or_create_item(
+        db, "lootbox_legendary",
+        name="Легендарный ковбокс",
+        icon="/static/img/items/lootbox_legendary.svg",
+        description="Легендарный ковбокс. Гарантированный легендарный предмет!",
         category="Ковбоксы",
         rarity="Легендарный",
-        lootbox_pool_code="gold",
+        lootbox_pool_code="legendary",
     )
     db.commit()
 
@@ -512,9 +522,10 @@ def seed(db: Session) -> None:
             if item:
                 db.add(models.LootboxPoolEntry(pool_id=pool.id, item_id=item.id, weight=weight))
 
-    _fill_pool("bronze", [(c, 15) for c in props] + [(c, 1) for c in rarities])
-    _fill_pool("silver", [(c, 10) for c in props] + [(c, 5) for c in rarities])
-    _fill_pool("gold", [(c, 2) for c in props] + [(c, 8) for c in rarities] + [(c, 10) for c in legendary])
+    _fill_pool("common", [(c, 20) for c in props] + [(c, 1) for c in rarities])
+    _fill_pool("rare", [(c, 15) for c in props] + [(c, 8) for c in rarities])
+    _fill_pool("epic", [(c, 5) for c in props] + [(c, 15) for c in rarities] + [(c, 2) for c in legendary])
+    _fill_pool("legendary", [(c, 1) for c in props] + [(c, 20) for c in rarities] + [(c, 15) for c in legendary])
     db.commit()
 
     # Seed Battle Pass season

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+  <defs>
+    <linearGradient id="lg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff0000"/>
+      <stop offset="16%" stop-color="#ff8800"/>
+      <stop offset="33%" stop-color="#ffdd00"/>
+      <stop offset="50%" stop-color="#00cc44"/>
+      <stop offset="66%" stop-color="#0088ff"/>
+      <stop offset="83%" stop-color="#8800ff"/>
+      <stop offset="100%" stop-color="#ff0088"/>
+      <animateTransform attributeName="gradientTransform" type="rotate" from="0 0.5 0.5" to="360 0.5 0.5" dur="4s" repeatCount="indefinite"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="28" width="56" height="40" rx="6" fill="url(#lg-grad)" stroke="#fff" stroke-width="2"/>
+  <path d="M12 34 L40 18 L68 34" fill="url(#lg-grad)" stroke="#fff" stroke-width="2"/>
+  <rect x="30" y="36" width="20" height="16" rx="3" fill="rgba(0,0,0,0.3)" stroke="#fff" stroke-width="1.5"/>
+  <circle cx="40" cy="44" r="4" fill="#fff" opacity="0.9"/>
+  <rect x="20" y="52" width="6" height="10" rx="2" fill="#fff"/>
+  <rect x="54" y="52" width="6" height="10" rx="2" fill="#fff"/>
+</svg>

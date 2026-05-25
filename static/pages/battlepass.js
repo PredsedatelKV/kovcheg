@@ -66,16 +66,12 @@ function _renderBP(data) {
   // Decorative sky/sea layers
   html += '<div class="bp-sky"></div>';
   html += '<div class="bp-sun"></div>';
-  html += '<div class="bp-cloud bp-cloud-1"></div>';
-  html += '<div class="bp-cloud bp-cloud-2"></div>';
-  html += '<div class="bp-cloud bp-cloud-3"></div>';
   html += '<div class="bp-sea"></div>';
   html += '<div class="bp-flowers"></div>';
 
   // Header
   html += '<div class="bp-head">';
   html += '<div class="bp-season-label">СЕЗОН 1</div>';
-  html += '<h2 class="bp-head-title">' + s.name + '</h2>';
   html += '<div class="bp-head-icon-slot" title="Нажми чтобы добавить свою иконку (пока пусто)"></div>';
   html += '<div class="bp-head-xp">';
   html += '<div class="bp-head-bar"><div class="bp-head-fill" style="width:' + xpPct + '%"></div></div>';
@@ -117,12 +113,51 @@ function _renderBP(data) {
     }
 
     html += "</div>";
-    if (isMilestone) html += '<div class="bp-isle-flag">🚩</div>';
     html += "</div>";
   }
   html += "</div>";
 
   _bpRoot.innerHTML = html;
+
+  // Dynamic clouds: one per 2 islands
+  (function() {
+    var sky = _bpRoot.querySelector(".bp-sky");
+    if (!sky) return;
+    for (var ci = 0; ci < Math.ceil(s.total_levels / 2); ci++) {
+      var c = document.createElement("div");
+      c.className = "bp-cloud";
+      var size = 40 + Math.random() * 70;
+      c.style.width = size + "px";
+      c.style.height = (size * 0.3) + "px";
+      c.style.left = (Math.random() * 60) + "%";
+      c.style.top = (15 + Math.random() * 35) + "%";
+      c.style.animationDuration = (18 + Math.random() * 22) + "s";
+      c.style.animationDelay = (-Math.random() * 35) + "s";
+      c.style.opacity = "0";
+      sky.appendChild(c);
+    }
+  })();
+
+  // First 15 islands: cloudy class
+  for (var ci = 1; ci <= Math.min(15, s.total_levels); ci++) {
+    var el = document.getElementById("bp-lvl-" + ci);
+    if (el) el.classList.add("bp-isle-cloudy");
+  }
+
+  // Cap XP display at level 30 (max 100%)
+  (function() {
+    var maxXp = s.xp_per_level;
+    var curXp = Math.min(data.current_xp, maxXp);
+    var pct = Math.min(100, Math.round((curXp / maxXp) * 100));
+    var fillEl = _bpRoot.querySelector(".bp-head-fill");
+    if (fillEl) fillEl.style.width = pct + "%";
+    var stats = _bpRoot.querySelectorAll(".bp-head-stats span");
+    if (stats.length >= 2) {
+      var lvl = Math.min(data.current_level + 1, s.total_levels);
+      stats[0].textContent = "\u0423\u0440\u043e\u0432\u0435\u043d\u044c " + lvl + " / " + s.total_levels;
+      stats[1].textContent = curXp + " / " + maxXp + " XP";
+    }
+  })();
 
   // Auto-scroll only on first render
   if (!_bpRoot._bpScrolled) {
