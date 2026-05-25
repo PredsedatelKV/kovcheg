@@ -70,6 +70,7 @@ function _renderBP(data) {
   html += '<div class="bp-cloud bp-cloud-2"></div>';
   html += '<div class="bp-cloud bp-cloud-3"></div>';
   html += '<div class="bp-sea"></div>';
+  html += '<div class="bp-flowers"></div>';
 
   // Header
   html += '<div class="bp-head">';
