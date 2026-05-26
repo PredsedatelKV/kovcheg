@@ -72,7 +72,7 @@ function _renderBP(data) {
   // Header
   html += '<div class="bp-head">';
   html += '<div class="bp-season-label">СЕЗОН 1</div>';
-  html += '<div class="bp-head-icon-slot" title="Нажми чтобы добавить свою иконку (пока пусто)"></div>';
+  html += '<img class="bp-head-icon-slot" src="/static/img/season_banner.png" alt="Сезон 1"/>';
   html += '<div class="bp-head-xp">';
   html += '<div class="bp-head-bar"><div class="bp-head-fill" style="width:' + xpPct + '%"></div></div>';
   html += '<div class="bp-head-stats"><span>Уровень ' + (currentLevel + 1) + " / " + s.total_levels + "</span><span>" + data.current_xp + " / " + data.xp_for_level + " XP</span></div>";
