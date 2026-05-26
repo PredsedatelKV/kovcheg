@@ -95,8 +95,22 @@ async def telegram_webhook(secret: str, request: Request) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
+class NoCacheStaticFiles(StaticFiles):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
 if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    sf = NoCacheStaticFiles(directory=str(STATIC_DIR))
+    app.mount("/static", sf, name="static")
+
+    @app.middleware("http")
+    async def no_cache_static(request, call_next):
+        resp = await call_next(request)
+        if request.url.path.startswith("/static/") or request.url.path == "/" or request.url.path == "/manifest.json":
+            resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            resp.headers["Pragma"] = "no-cache"
+            resp.headers["Expires"] = "0"
+        return resp
 
     @app.get("/")
     def root() -> FileResponse:
