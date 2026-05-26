@@ -2853,21 +2853,21 @@ html.dark .bp-flowers {
 .bp-path::before {
   /* dashed sand path */
   content:""; position:absolute; top:0; bottom:40px; left:50%;
-  width: 4px; transform: translateX(-50%);
+  width: 2px; transform: translateX(-50%);
   background-image: linear-gradient(180deg, #f4d28a 50%, transparent 50%);
-  background-size: 4px 14px;
-  opacity: 0.7;
+  background-size: 2px 12px;
+  opacity: 0.6;
 }
 html.dark .bp-path::before { background-image: linear-gradient(180deg, #6b8aa8 50%, transparent 50%); opacity:0.4; }
 
 .bp-isle {
   position: relative;
-  width: 52%;
+  width: 50%;
   padding: 6px 8px;
   display: flex; align-items:center; justify-content:center;
   animation: bp-isle-in .4s ease-out both;
 }
-.bp-isle-cloudy { pointer-events: none; }
+.bp-isle-cloudy {}
 .bp-isle-cloudy .bp-isle-body {
   background: linear-gradient(180deg, #ffffff 0%, #fdf8f2 40%, #f5efe8 100%);
   border-color: rgba(255,255,255,0.95);
@@ -2918,8 +2918,8 @@ html.dark .bp-isle-stone .bp-isle-lvl {
 }
 
 
-.bp-isle-left  { align-self: flex-start; padding-left: 9px; }
-.bp-isle-right { align-self: flex-end;   padding-right: 9px; }
+.bp-isle-left  { align-self: flex-start; padding-left: 8px; }
+.bp-isle-right { align-self: flex-end;   padding-right: 8px; }
 @keyframes bp-isle-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 
 .bp-isle-body {

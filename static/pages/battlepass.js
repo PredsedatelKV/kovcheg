@@ -119,20 +119,20 @@ function _renderBP(data) {
 
   _bpRoot.innerHTML = html;
 
-  // Dynamic clouds: one per 2 islands
+  // Dynamic clouds: float at first 10 islands level
   (function() {
     var sky = _bpRoot.querySelector(".bp-sky");
     if (!sky) return;
     for (var ci = 0; ci < Math.ceil(s.total_levels / 2); ci++) {
       var c = document.createElement("div");
       c.className = "bp-cloud";
-      var size = 40 + Math.random() * 70;
+      var size = 30 + Math.random() * 50;
       c.style.width = size + "px";
       c.style.height = (size * 0.3) + "px";
-      c.style.left = (Math.random() * 60) + "%";
-      c.style.top = (15 + Math.random() * 35) + "%";
-      c.style.animationDuration = (18 + Math.random() * 22) + "s";
-      c.style.animationDelay = (-Math.random() * 35) + "s";
+      c.style.left = (Math.random() * 70 + 5) + "%";
+      c.style.top = (2 + Math.random() * 30) + "%";
+      c.style.animationDuration = (25 + Math.random() * 30) + "s";
+      c.style.animationDelay = (-Math.random() * 40) + "s";
       c.style.opacity = "0";
       sky.appendChild(c);
     }
