@@ -138,11 +138,13 @@ function _renderBP(data) {
     }
   })();
 
-  // Island themes: 1-10 clouds, milestones (10,20,30) gold
+  // Island themes: 1-10 blue, 11-20 green, 21-30 gray, milestones gold
   for (var ci = 1; ci <= s.total_levels; ci++) {
     var el = document.getElementById("bp-lvl-" + ci);
     if (!el) continue;
     if (ci <= 10) el.classList.add("bp-isle-cloudy");
+    else if (ci <= 20) el.classList.add("bp-isle-grass");
+    else el.classList.add("bp-isle-stone");
     if (ci === 10 || ci === 20 || ci === 30) el.classList.add("bp-isle-gold");
   }
 

@@ -2891,6 +2891,52 @@ html.dark .bp-isle-cloudy .bp-isle-lvl {
 }
 .bp-isle-cloudy .bp-isle-check { color: #8a7a6a; }
 
+
+.bp-isle-grass .bp-isle-body {
+  background: linear-gradient(180deg, #b8d98a 0%, #8cc63f 30%, #6aaa2a 60%, #4d8c1a 100%);
+  border-color: rgba(100,180,50,0.6);
+  box-shadow: 0 6px 0 rgba(80,140,30,0.3), 0 8px 24px rgba(100,160,40,0.2), inset 0 2px 0 rgba(200,255,150,0.4);
+}
+.bp-isle-grass .bp-isle-lvl {
+  background: rgba(130,180,70,0.5);
+  color: #2a4a0a;
+  border-color: rgba(100,160,50,0.5);
+}
+html.dark .bp-isle-grass .bp-isle-body {
+  background: linear-gradient(180deg, #4a6a2a 0%, #3a5a1a 40%, #2a4a10 60%, #1a3a08 100%);
+  border-color: rgba(80,140,40,0.4);
+  box-shadow: 0 6px 0 rgba(20,60,10,0.3), 0 8px 24px rgba(40,80,20,0.15);
+}
+html.dark .bp-isle-grass .bp-isle-lvl {
+  background: rgba(40,80,20,0.5);
+  color: #a0d080;
+  border-color: rgba(60,120,30,0.4);
+}
+.bp-isle-grass .bp-isle-check { color: #3a6a1a; }
+
+
+.bp-isle-stone .bp-isle-body {
+  background: linear-gradient(180deg, #c8c8c8 0%, #b0b0b0 30%, #989898 60%, #808080 100%);
+  border-color: rgba(160,160,180,0.5);
+  box-shadow: 0 6px 0 rgba(100,100,110,0.3), 0 8px 24px rgba(120,120,130,0.2), inset 0 2px 0 rgba(220,220,240,0.3);
+}
+.bp-isle-stone .bp-isle-lvl {
+  background: rgba(160,160,170,0.5);
+  color: #3a3a3a;
+  border-color: rgba(140,140,150,0.5);
+}
+html.dark .bp-isle-stone .bp-isle-body {
+  background: linear-gradient(180deg, #4a4a4a 0%, #3a3a3a 40%, #2a2a2a 60%, #1a1a1a 100%);
+  border-color: rgba(100,100,110,0.4);
+  box-shadow: 0 6px 0 rgba(0,0,0,0.3), 0 8px 24px rgba(60,60,70,0.15);
+}
+html.dark .bp-isle-stone .bp-isle-lvl {
+  background: rgba(60,60,70,0.5);
+  color: #a0a0a0;
+  border-color: rgba(80,80,90,0.4);
+}
+.bp-isle-stone .bp-isle-check { color: #5a5a5a; }
+
 .bp-isle-gold .bp-isle-body {
   background: linear-gradient(180deg, #f7d875 0%, #f2c94c 30%, #e6b422 60%, #d4a017 100%);
   border-color: rgba(255,215,0,0.7);

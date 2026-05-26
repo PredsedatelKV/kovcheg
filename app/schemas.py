@@ -456,7 +456,7 @@ class UserBattlePassOut(BaseModel):
     current_level: int
     current_xp: int
     xp_for_level: int
-    claimed_rewards: list[list]
+    claimed_rewards: list[int]
 
 
 class OpenLootboxRequest(BaseModel):
