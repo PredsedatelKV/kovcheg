@@ -110,6 +110,7 @@ if STATIC_DIR.exists():
             resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             resp.headers["Pragma"] = "no-cache"
             resp.headers["Expires"] = "0"
+            resp.headers["Clear-Site-Data"] = '"cache"'
         return resp
 
     @app.get("/")
