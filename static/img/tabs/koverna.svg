@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <path d="M4 12h24v2H4z"/>
-  <path d="M6 14h20v12H6z"/>
-  <path d="M3 12l5-6h16l5 6H3z"/>
-  <rect x="13" y="18" width="6" height="8" rx="0.5"/>
-  <circle cx="17.5" cy="22" r="0.5"/>
-  <rect x="8" y="16" width="4" height="3" rx="0.5"/>
-  <rect x="20" y="16" width="4" height="3" rx="0.5"/>
-  <path d="M10 17.5h2M11 16.5v2"/>
-  <path d="M22 17.5h2M23 16.5v2"/>
+  <path d="M4 12v16h24V12H4z"/>
+  <path d="M4 12l12-8 12 8H4z"/>
+  <rect x="8" y="18" width="16" height="10"/>
+  <rect x="18" y="18" width="4" height="6" rx="1"/>
+  <rect x="10" y="18" width="4" height="6" rx="1"/>
+  <path d="M12 22h8v6h-8z"/>
+  <rect x="13" y="24" width="6" height="4" rx="0.5"/>
+  <path d="M11 10l5-3 5 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="16" cy="8" r="1"/>
 </svg>

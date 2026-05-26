@@ -138,10 +138,12 @@ function _renderBP(data) {
     }
   })();
 
-  // First 15 islands: cloudy class
-  for (var ci = 1; ci <= Math.min(15, s.total_levels); ci++) {
+  // Level-based island themes: 1-10 clouds, 11-20 default, 21-30 stone
+  for (var ci = 1; ci <= s.total_levels; ci++) {
     var el = document.getElementById("bp-lvl-" + ci);
-    if (el) el.classList.add("bp-isle-cloudy");
+    if (!el) continue;
+    if (ci <= 10) el.classList.add("bp-isle-cloudy");
+    else if (ci >= 21) el.classList.add("bp-isle-stone");
   }
 
   // Cap XP display at level 30 (max 100%)

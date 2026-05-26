@@ -2869,27 +2869,54 @@ html.dark .bp-path::before { background-image: linear-gradient(180deg, #6b8aa8 5
 }
 .bp-isle-cloudy { pointer-events: none; }
 .bp-isle-cloudy .bp-isle-body {
-  background: linear-gradient(180deg, #f8fbff 0%, #e8f0ff 40%, #dce6f8 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #fdf8f2 40%, #f5efe8 100%);
   border-color: rgba(255,255,255,0.95);
-  box-shadow: 0 6px 0 rgba(180,200,230,0.25), 0 8px 24px rgba(200,220,255,0.35), inset 0 2px 0 rgba(255,255,255,0.8);
+  box-shadow: 0 6px 0 rgba(200,190,180,0.25), 0 8px 24px rgba(220,210,200,0.35), inset 0 2px 0 rgba(255,255,255,0.8);
   border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
 }
 .bp-isle-cloudy .bp-isle-lvl {
-  background: rgba(255,255,255,0.7);
-  color: #6a8099;
-  border-color: rgba(180,200,230,0.5);
+  background: rgba(255,255,255,0.8);
+  color: #8a7a6a;
+  border-color: rgba(200,190,180,0.5);
 }
 html.dark .bp-isle-cloudy .bp-isle-body {
-  background: linear-gradient(180deg, #3a4f70 0%, #2a3f60 40%, #1f3450 100%);
-  border-color: rgba(120,160,220,0.3);
-  box-shadow: 0 6px 0 rgba(0,0,0,0.2), 0 8px 24px rgba(60,100,180,0.15);
+  background: linear-gradient(180deg, #4a4a5a 0%, #3a3a4a 40%, #2a2a3a 100%);
+  border-color: rgba(180,180,200,0.3);
+  box-shadow: 0 6px 0 rgba(0,0,0,0.2), 0 8px 24px rgba(100,100,140,0.15);
 }
 html.dark .bp-isle-cloudy .bp-isle-lvl {
-  background: rgba(40,60,90,0.7);
-  color: #8aacd0;
-  border-color: rgba(80,120,180,0.4);
+  background: rgba(50,50,70,0.7);
+  color: #9a9ab0;
+  border-color: rgba(120,120,160,0.4);
 }
-.bp-isle-cloudy .bp-isle-check { color: #6a8099; }
+.bp-isle-cloudy .bp-isle-check { color: #8a7a6a; }
+
+.bp-isle-stone .bp-isle-body {
+  background: linear-gradient(180deg, #8a8a8e 0%, #6a6a6e 40%, #5a5a5e 60%, #4a4a4e 100%);
+  border-color: rgba(180,180,190,0.6);
+  box-shadow: 0 6px 0 rgba(0,0,0,0.15), 0 8px 24px rgba(100,100,110,0.2), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.bp-isle-stone .bp-isle-lvl {
+  background: rgba(100,100,110,0.6);
+  color: #d0d0d8;
+  border-color: rgba(120,120,130,0.5);
+}
+.bp-isle-stone .bp-isle-shadow {
+  background: rgba(30,30,40,0.3);
+}
+.bp-isle-stone .bp-isle-check { color: #b0b0b8; }
+.bp-isle-stone .bp-isle-icon { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)); }
+html.dark .bp-isle-stone .bp-isle-body {
+  background: linear-gradient(180deg, #5a5a62 0%, #4a4a52 40%, #3a3a42 60%, #2a2a32 100%);
+  border-color: rgba(100,100,120,0.4);
+  box-shadow: 0 6px 0 rgba(0,0,0,0.25), 0 8px 24px rgba(40,40,60,0.2);
+}
+html.dark .bp-isle-stone .bp-isle-lvl {
+  background: rgba(50,50,60,0.6);
+  color: #9a9aaa;
+  border-color: rgba(80,80,100,0.4);
+}
+
 
 .bp-isle-left  { align-self: flex-start; padding-left: 9px; }
 .bp-isle-right { align-self: flex-end;   padding-right: 9px; }
