@@ -2891,27 +2891,27 @@ html.dark .bp-isle-cloudy .bp-isle-lvl {
 }
 .bp-isle-cloudy .bp-isle-check { color: #8a7a6a; }
 
-.bp-isle-stone .bp-isle-body {
+.bp-isle-gold .bp-isle-body {
   background: linear-gradient(180deg, #f7d875 0%, #f2c94c 30%, #e6b422 60%, #d4a017 100%);
   border-color: rgba(255,215,0,0.7);
   box-shadow: 0 6px 0 rgba(180,140,20,0.35), 0 8px 24px rgba(200,170,50,0.25), inset 0 2px 0 rgba(255,255,200,0.5);
 }
-.bp-isle-stone .bp-isle-lvl {
+.bp-isle-gold .bp-isle-lvl {
   background: rgba(200,170,50,0.5);
   color: #5a3e00;
   border-color: rgba(200,170,50,0.6);
 }
-.bp-isle-stone .bp-isle-shadow {
+.bp-isle-gold .bp-isle-shadow {
   background: rgba(180,140,20,0.25);
 }
-.bp-isle-stone .bp-isle-check { color: #8a6a00; }
-.bp-isle-stone .bp-isle-icon { filter: drop-shadow(0 1px 3px rgba(200,150,0,0.4)); }
-html.dark .bp-isle-stone .bp-isle-body {
+.bp-isle-gold .bp-isle-check { color: #8a6a00; }
+.bp-isle-gold .bp-isle-icon { filter: drop-shadow(0 1px 3px rgba(200,150,0,0.4)); }
+html.dark .bp-isle-gold .bp-isle-body {
   background: linear-gradient(180deg, #c8a030 0%, #b8922a 40%, #a07820 60%, #886818 100%);
   border-color: rgba(200,170,50,0.5);
   box-shadow: 0 6px 0 rgba(100,80,10,0.3), 0 8px 24px rgba(120,100,20,0.2);
 }
-html.dark .bp-isle-stone .bp-isle-lvl {
+html.dark .bp-isle-gold .bp-isle-lvl {
   background: rgba(100,80,20,0.5);
   color: #e8d080;
   border-color: rgba(140,120,40,0.4);

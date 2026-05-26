@@ -138,12 +138,12 @@ function _renderBP(data) {
     }
   })();
 
-  // Level-based island themes: 1-10 clouds, 11-20 default, 21-30 stone
+  // Island themes: 1-10 clouds, milestones (10,20,30) gold
   for (var ci = 1; ci <= s.total_levels; ci++) {
     var el = document.getElementById("bp-lvl-" + ci);
     if (!el) continue;
     if (ci <= 10) el.classList.add("bp-isle-cloudy");
-    else if (ci >= 21) el.classList.add("bp-isle-stone");
+    if (ci === 10 || ci === 20 || ci === 30) el.classList.add("bp-isle-gold");
   }
 
   // Cap XP display at level 30 (max 100%)
