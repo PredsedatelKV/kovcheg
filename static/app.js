@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=210";
-import { renderProfile } from "/static/pages/profile.js?v=210";
-import { renderKoverna } from "/static/pages/koverna.js?v=210";
-import { renderArcade } from "/static/pages/arcade.js?v=210";
-import { renderAdmin } from "/static/pages/admin.js?v=210";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=210";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=210";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=210";
-import { get } from "/static/api.js?v=210";
+import { renderHome } from "/static/pages/home.js?v=211";
+import { renderProfile } from "/static/pages/profile.js?v=211";
+import { renderKoverna } from "/static/pages/koverna.js?v=211";
+import { renderArcade } from "/static/pages/arcade.js?v=211";
+import { renderAdmin } from "/static/pages/admin.js?v=211";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=211";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=211";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=211";
+import { get } from "/static/api.js?v=211";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -184,6 +184,11 @@ window.closeModal = function () {
     if (window.kov.me) initMultiplayer();
   } catch (err) {
     // non-critical — admin button stays hidden
+  }
+  // Без подтверждённой личности Telegram приложение не запускаем (иначе доступ к чужому профилю).
+  if (!window.kov.me) {
+    document.getElementById('view').innerHTML = '<div class="card"><p style="padding:20px;text-align:center">Откройте «Ковчег» через Telegram — нажмите кнопку меню (🎮) у бота. Прямая ссылка в браузере не работает.</p></div>';
+    return;
   }
   const initial = localStorage.getItem("kovcheg.tab") || "home";
   try {

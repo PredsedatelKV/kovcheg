@@ -3,8 +3,11 @@ const tg = window.Telegram && window.Telegram.WebApp;
 function initData() {
   const v = tg && tg.initData;
   if (v && v.length > 0) return v;
-  // dev fallback — only works with server flag SKIP_INIT_DATA_CHECK
-  return "DEV";
+  // DEV-фолбэк ТОЛЬКО на localhost. На проде пустой initData НЕ подставляем —
+  // иначе игрок без подписи Telegram аутентифицировался бы как админ (Омар).
+  const host = location.hostname;
+  if (host === "localhost" || host === "127.0.0.1") return "DEV";
+  return "";
 }
 
 export async function api(path, options = {}) {
