@@ -26,7 +26,7 @@ function _rewardLabel(r) {
 }
 
 function _isMilestone(lvl) {
-  return lvl % 10 === 0 || lvl === 1;
+  return lvl % 10 === 0;
 }
 
 export async function renderBattlePass(root) {
@@ -66,13 +66,15 @@ function _renderBP(data) {
   // Decorative sky/sea layers
   html += '<div class="bp-sky"></div>';
   html += '<div class="bp-sun"></div>';
+  html += '<div class="bp-cloud-static bp-cloud-left1"></div>';
+  html += '<div class="bp-cloud-static bp-cloud-left2"></div>';
   html += '<div class="bp-sea"></div>';
   html += '<div class="bp-flowers"></div>';
 
   // Header
   html += '<div class="bp-head">';
   html += '<div class="bp-season-label">СЕЗОН 1</div>';
-  html += '<img class="bp-head-icon-slot" src="/static/img/season_banner.png" alt="Сезон 1"/>';
+  html += '<img class="bp-head-icon-slot" src="/static/img/season_icon.png" alt="Сезон 1"/>';
   html += '<div class="bp-head-xp">';
   html += '<div class="bp-head-bar"><div class="bp-head-fill" style="width:' + xpPct + '%"></div></div>';
   html += '<div class="bp-head-stats"><span>Уровень ' + (currentLevel + 1) + " / " + s.total_levels + "</span><span>" + data.current_xp + " / " + data.xp_for_level + " XP</span></div>";
@@ -138,7 +140,7 @@ function _renderBP(data) {
     }
   })();
 
-  // Island themes: 1-10 blue, 11-20 green, 21-30 gray, milestones gold
+  // Island themes: cloudy 1-9, grass 10-19, stone 20-30; gold 1/10/20/30
   for (var ci = 1; ci <= s.total_levels; ci++) {
     var el = document.getElementById("bp-lvl-" + ci);
     if (!el) continue;
@@ -173,29 +175,60 @@ function _renderBP(data) {
   }
 
   // Bind claims
+  async function _handleClaim(btn, node, lvl) {
+    btn.disabled = true;
+    try {
+      var result = await post("/api/battlepass/claim", { level: lvl });
+      _bpData.claimed_rewards.push(lvl);
+      if (result && result.balance != null && window.kov && window.kov.me) {
+        window.kov.me.balance = result.balance;
+        if (window.kov.emit) window.kov.emit("balance:update", { balance: result.balance });
+      }
+        // Smooth update: only change this island, no full re-render
+        node.classList.remove("is-ready", "is-current");
+        node.classList.add("is-claimed", "bp-isle-pop");
+        btn.remove();
+        var check = document.createElement("div");
+        check.className = "bp-isle-check";
+        check.textContent = "\u2713";
+        node.querySelector(".bp-isle-body").appendChild(check);
+        // Update header XP display
+        var headFill = _bpRoot.querySelector(".bp-head-fill");
+        var headStats = _bpRoot.querySelectorAll(".bp-head-stats span");
+        if (headFill && _bpData.xp_for_level) {
+          var pct = Math.min(100, Math.round((_bpData.current_xp || 0) / _bpData.xp_for_level * 100));
+          headFill.style.width = pct + "%";
+        }
+        if (headStats.length > 1) {
+          headStats[1].textContent = (_bpData.current_xp || 0) + " / " + (_bpData.xp_for_level || 0) + " XP";
+        }
+        // Unlock next island if it was locked
+        var nextLvl = lvl + 1;
+        var nextNode = _bpRoot.querySelector('[data-lvl="' + nextLvl + '"]');
+        if (nextNode && nextNode.classList.contains("is-locked")) {
+          nextNode.classList.remove("is-locked");
+          nextNode.classList.add("is-current");
+          var claimBtn = document.createElement("button");
+          claimBtn.className = "bp-isle-claim";
+          claimBtn.textContent = "\u0417\u0430\u0431\u0440\u0430\u0442\u044c";
+          nextNode.querySelector(".bp-isle-body").appendChild(claimBtn);
+          claimBtn.addEventListener("click", function(ev) {
+            ev.stopPropagation();
+            _handleClaim(claimBtn, nextNode, nextLvl);
+          });
+        }
+        window.kov && window.kov.toast && window.kov.toast("\u041d\u0430\u0433\u0440\u0430\u0434\u0430 \u043f\u043e\u043b\u0443\u0447\u0435\u043d\u0430!");
+    } catch (err) {
+      btn.disabled = false;
+      window.kov && window.kov.toast && window.kov.toast(err.message);
+    }
+  }
   _bpRoot.querySelectorAll(".bp-isle-claim").forEach(function(btn) {
-    btn.addEventListener("click", async function(e) {
+    btn.addEventListener("click", function(e) {
       e.stopPropagation();
       var node = btn.closest("[data-lvl]");
       if (!node) return;
-      var lvl = Number(node.dataset.lvl);
-      btn.disabled = true;
-      try {
-        var result = await post("/api/battlepass/claim", { level: lvl });
-        _bpData.claimed_rewards.push(lvl);
-        if (result && result.balance != null && window.kov && window.kov.me) {
-          window.kov.me.balance = result.balance;
-          if (window.kov.emit) window.kov.emit("balance:update", { balance: result.balance });
-        }
-        // Animate node before re-render
-        node.classList.add("bp-isle-pop");
-        var savedScroll = _bpRoot.closest('.tab-content') ? _bpRoot.closest('.tab-content').scrollTop : 0;
-        setTimeout(function() { _renderBP(_bpData); _bpRoot.closest('.tab-content') && (_bpRoot.closest('.tab-content').scrollTop = savedScroll); }, 380);
-        window.kov && window.kov.toast && window.kov.toast("Награда получена!");
-      } catch (err) {
-        btn.disabled = false;
-        window.kov && window.kov.toast && window.kov.toast(err.message);
-      }
+      _handleClaim(btn, node, Number(node.dataset.lvl));
     });
   });
 }

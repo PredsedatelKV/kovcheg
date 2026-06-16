@@ -96,7 +96,6 @@ def _user_task_to_out(ut: models.UserTask) -> schemas.UserTaskOut:
         finished_at=ut.finished_at,
     )
 
-
 @router.get("/me", response_model=schemas.ProfilePayload)
 def me(user: models.User = Depends(current_user), db: Session = Depends(get_db)) -> schemas.ProfilePayload:
     inventory = (
@@ -142,6 +141,30 @@ def _resolve_recipient(db: Session, recipient: str) -> models.User:
         raise HTTPException(status_code=404, detail="Пользователь не найден. Попроси его зайти в mini-app хотя бы раз.")
     return user
 
+
+
+
+@router.get("/{user_id}")
+def get_user_profile(
+    user_id: int,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Получить публичный профиль игрока."""
+    target = db.query(models.User).filter(models.User.id == user_id).first()
+    if not target:
+        raise HTTPException(404, "Пользователь не найден")
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    last_active = target.last_active if hasattr(target, "last_active") and target.last_active else None
+    is_online = bool(last_active and (now - last_active.replace(tzinfo=timezone.utc)).total_seconds() < 300) if last_active else False
+    return {
+        "id": target.id,
+        "first_name": target.first_name or "Игрок",
+        "username": target.username,
+        "balance": target.balance,
+        "is_online": is_online,
+    }
 
 @router.post("/transfer", response_model=schemas.UserOut)
 def transfer(

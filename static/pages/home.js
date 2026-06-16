@@ -226,13 +226,14 @@ ${bannerCarousel(data.banners)}
       });
 
       var realSlides = track.querySelectorAll('.slide[data-clone="false"]');
-      var startSlide = realSlides.length > 1 ? realSlides[1] : realSlides[0];
-      if (startSlide) {
+      if (realSlides.length > 1) {
         requestAnimationFrame(function() {
-          track.scrollLeft = startSlide.offsetLeft;
+          track.style.scrollSnapType = "none";
+          track.scrollLeft = realSlides[0].offsetLeft - 8;
+          setTimeout(function() { track.style.scrollSnapType = "x mandatory"; }, 200);
         });
       }
-      currentIdx = 1;
+      currentIdx = 0;
       updateDots();
     }
   }
@@ -478,12 +479,12 @@ async function openWheel() {
 
     const modal = window.kov.showModal(`
       <button class="close" onclick="closeModal()">×</button>
-      <h2 style="text-align:center;margin-top:0;margin-bottom:4px">🎡 Колесо фортуны</h2>
+      <h2 style="text-align:center;margin-top:0;margin-bottom:4px">Колесо фортуны</h2>
       <p style="text-align:center;color:var(--text-soft);margin:0 0 10px;font-size:13px">Крути и выигрывай K и призы!</p>
       <div class="wheel-stage">
         <div class="wheel-wrap">
           <div class="wheel-pointer"></div>
-          <svg class="wheel-svg" id="wheel-svg" viewBox="0 0 380 380">
+          <svg class="wheel-svg" id="wheel-svg" viewBox="0 0 361 361">
             <defs>
               <radialGradient id="rimGrad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#FFF8DC"/><stop offset="30%" stop-color="#FFD700"/><stop offset="70%" stop-color="#DAA520"/><stop offset="100%" stop-color="#8B6914"/></radialGradient>
               <radialGradient id="hubGrad" cx="40%" cy="35%" r="60%"><stop offset="0%" stop-color="#FFF8DC"/><stop offset="50%" stop-color="#FFD700"/><stop offset="100%" stop-color="#B8860B"/></radialGradient>
@@ -504,7 +505,7 @@ async function openWheel() {
           </svg>
         </div>
         <button class="btn" id="spin-btn" ${status.can_spin ? "" : "disabled"}>
-          ${status.can_spin ? "🎰 Крутить!" : "🔒 Доступно завтра"}
+          ${status.can_spin ? "Крутить!" : "Доступно завтра"}
         </button>
         <div class="wheel-prize" id="prize">
           <div class="ic" id="prize-ic">${iconHtml("/static/img/ui/coin.svg", "lg", "")}</div>
@@ -549,7 +550,7 @@ async function openWheel() {
           modal.querySelector("#prize-ic").innerHTML = iconHtml(result.result.icon, "lg", "");
           modal.querySelector("#prize-lbl").textContent = result.result.prize_label;
           prize.classList.add("show");
-          animateElement(prize, "popIn", 400);
+          prize.style.animation = "popIn 400ms ease-out forwards";
         }, 4600);
       } catch (e) {
         clearInterval(spinSoundInterval);

@@ -278,6 +278,25 @@ class GameInvite(Base):
     to_user: Mapped["User"] = relationship("User", foreign_keys=[to_user_id])
 
 
+class GameSession(Base):
+    __tablename__ = "game_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    invite_id: Mapped[int] = mapped_column(ForeignKey("game_invites.id"), nullable=True)
+    game: Mapped[str] = mapped_column(String(32), nullable=False)
+    player_x_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    player_o_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    board: Mapped[str] = mapped_column(String(64), default="_________")  # 9 chars, _ = empty, X, O
+    current_turn: Mapped[str] = mapped_column(String(1), default="X")  # X or O
+    status: Mapped[str] = mapped_column(String(16), default="playing")  # playing, x_won, o_won, draw
+    winner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    player_x: Mapped["User"] = relationship("User", foreign_keys=[player_x_id])
+    player_o: Mapped["User"] = relationship("User", foreign_keys=[player_o_id])
+
+
 class BattlePassSeason(Base):
     __tablename__ = "battlepass_seasons"
 

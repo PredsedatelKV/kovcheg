@@ -1,4 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <path d="M2 26 Q9 10 16 20 Q23 8 30 14 L30 30 L2 30 Z"/>
-  <path d="M2 22 Q9 16 16 20 Q23 14 30 19 L30 30 L2 30 Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="currentColor">
+<circle cx="16" cy="16" r="10" opacity="0.9"/>
+<circle cx="16" cy="16" r="7.5" fill="white" opacity="0.3"/>
+<circle cx="16" cy="16" r="5.5" opacity="0.9"/>
+<path d="M13.5 5L11 12h3l-1.5 4L16 13l3.5 3L18 12h3l-2.5-7" opacity="0.7"/>
+<path d="M14.5 14l1.5 1.5L18 13.5l-1 2.5 2 1.5-2.5 0.5 0.5 2.5-2-1.5-2 1.5 0.5-2.5-2.5-0.5 2-1.5-1-2.5z" fill="white" opacity="0.7"/>
 </svg>

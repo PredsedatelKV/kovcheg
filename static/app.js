@@ -1,9 +1,9 @@
-import { renderHome } from "/static/pages/home.js?v=40";
-import { renderProfile } from "/static/pages/profile.js?v=40";
+import { renderHome } from "/static/pages/home.js?v=43";
+import { renderProfile } from "/static/pages/profile.js?v=44";
 import { renderKoverna } from "/static/pages/koverna.js?v=40";
-import { renderArcade } from "/static/pages/arcade.js?v=40";
-import { renderAdmin } from "/static/pages/admin.js?v=40";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=99";
+import { renderArcade } from "/static/pages/arcade.js?v=43";
+import { renderAdmin } from "/static/pages/admin.js?v=43";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=113";
 import { initSettings, playUISound } from "/static/pages/settings.js?v=40";
 import { get } from "/static/api.js?v=40";
 

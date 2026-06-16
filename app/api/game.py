@@ -117,6 +117,149 @@ def accept_invite(
     return {"status": "accepted", "game": invite.game}
 
 
+
+@router.post("/session/create")
+def create_game_session(
+    payload: dict,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Создать игровую сессию после принятия приглашения."""
+    invite_id = payload.get("invite_id")
+    if not invite_id:
+        raise HTTPException(400, "invite_id обязателен")
+    
+    invite = db.query(models.GameInvite).filter(models.GameInvite.id == invite_id).first()
+    if not invite:
+        raise HTTPException(404, "Приглашение не найдено")
+    if invite.status != "accepted":
+        raise HTTPException(400, "Приглашение не принято")
+    
+    # Check if session already exists
+    existing = db.query(models.GameSession).filter(models.GameSession.invite_id == invite_id).first()
+    if existing:
+        return {"session_id": existing.id, "game": existing.game}
+    
+    session = models.GameSession(
+        invite_id=invite_id,
+        game=invite.game,
+        player_x_id=invite.from_user_id,
+        player_o_id=invite.to_user_id,
+        board="_________",
+        current_turn="X",
+        status="playing",
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return {"session_id": session.id, "game": session.game}
+
+
+@router.get("/session/{session_id}")
+def get_game_session(
+    session_id: int,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Получить состояние игровой сессии."""
+    session = db.query(models.GameSession).filter(models.GameSession.id == session_id).first()
+    if not session:
+        raise HTTPException(404, "Сессия не найдена")
+    
+    my_symbol = "X" if session.player_x_id == user.id else "O" if session.player_o_id == user.id else None
+    opponent_id = session.player_o_id if my_symbol == "X" else session.player_x_id
+    opponent = db.query(models.User).filter(models.User.id == opponent_id).first()
+    
+    return {
+        "id": session.id,
+        "game": session.game,
+        "board": session.board,
+        "current_turn": session.current_turn,
+        "status": session.status,
+        "my_symbol": my_symbol,
+        "winner_id": session.winner_id,
+        "player_x_id": session.player_x_id,
+        "player_o_id": session.player_o_id,
+        "opponent_name": opponent.first_name if opponent else "Игрок",
+        "opponent_id": opponent_id,
+    }
+
+
+@router.post("/session/{session_id}/move")
+def make_move(
+    session_id: int,
+    payload: dict,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Сделать ход в игре."""
+    session = db.query(models.GameSession).filter(models.GameSession.id == session_id).first()
+    if not session:
+        raise HTTPException(404, "Сессия не найдена")
+    if session.status != "playing":
+        raise HTTPException(400, "Игра завершена")
+    
+    my_symbol = "X" if session.player_x_id == user.id else "O" if session.player_o_id == user.id else None
+    if not my_symbol:
+        raise HTTPException(403, "Вы не участник этой игры")
+    if session.current_turn != my_symbol:
+        raise HTTPException(400, "Не ваш ход")
+    
+    pos = payload.get("position")
+    if pos is None or pos < 0 or pos > 8:
+        raise HTTPException(400, "Неверная позиция")
+    
+    board = list(session.board)
+    if board[pos] != "_":
+        raise HTTPException(400, "Клетка занята")
+    
+    board[pos] = my_symbol
+    session.board = "".join(board)
+    
+    # Check win
+    wins = [(0,1,2),(3,4,5),(6,7,8),(0,3,6),(1,4,7),(2,5,8),(0,4,8),(2,4,6)]
+    for a, b, c in wins:
+        if board[a] == board[b] == board[c] and board[a] != "_":
+            session.status = "x_won" if board[a] == "X" else "o_won"
+            session.winner_id = session.player_x_id if board[a] == "X" else session.player_o_id
+            break
+    else:
+        if "_" not in board:
+            session.status = "draw"
+        else:
+            session.current_turn = "O" if my_symbol == "X" else "X"
+    
+    db.commit()
+    return {"ok": True, "board": session.board, "status": session.status, "current_turn": session.current_turn}
+
+
+@router.get("/session/{session_id}/poll")
+def poll_session(
+    session_id: int,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Опрос состояния сессии (для реалтайм обновлений)."""
+    return get_game_session(session_id, user, db)
+
+
+@router.get("/my-sessions")
+def get_my_sessions(
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Получить активные игровые сессии."""
+    sessions = db.query(models.GameSession).filter(
+        (models.GameSession.player_x_id == user.id) | (models.GameSession.player_o_id == user.id),
+        models.GameSession.status == "playing",
+    ).all()
+    return {"sessions": [{
+        "id": s.id, "game": s.game, "board": s.board,
+        "current_turn": s.current_turn, "status": s.status,
+        "my_symbol": "X" if s.player_x_id == user.id else "O",
+    } for s in sessions]}
+
+
 @router.post("/decline")
 def decline_invite(
     payload: schemas.GameInviteAction,

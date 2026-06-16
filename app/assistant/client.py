@@ -28,6 +28,7 @@ async def _ask_openrouter(messages: list[dict[str, str]], max_tokens: int | None
     headers = {
         "Authorization": f"Bearer {settings.llm_api_key}",
         "Content-Type": "application/json",
+        "Accept-Encoding": "identity",
         "HTTP-Referer": settings.public_url or "https://kovcheg.app",
         "X-Title": "Kovcheg Assistant",
     }
@@ -44,7 +45,11 @@ async def _ask_openrouter(messages: list[dict[str, str]], max_tokens: int | None
             resp.raise_for_status()
             data = resp.json()
             if "choices" in data and len(data["choices"]) > 0:
-                return data["choices"][0].get("message", {}).get("content", "").strip()
+                msg = data["choices"][0].get("message", {})
+                content = msg.get("content", "").strip()
+                if not content:
+                    content = msg.get("reasoning", "").strip()
+                return content
             log.warning("Unexpected OpenRouter response: %s", data)
             return "⚠️ Агент получил неожиданный ответ."
         except httpx.HTTPStatusError as exc:

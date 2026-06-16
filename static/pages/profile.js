@@ -106,8 +106,9 @@ export async function renderProfile(root) {
     </div>
 
     <div class="card chat-card">
-      <div class="inv-row-title">
-        <h3 class="card-title">Чат</h3>
+      <div class="inv-row-title" style="display:flex;align-items:center;gap:8px">
+        <h3 class="card-title" style="margin:0">Чат</h3>
+        <div id="online-avatars" style="display:flex;gap:-4px;flex:1;overflow:hidden"></div>
       </div>
       <div class="chat-messages" id="chat-messages">
         <div class="empty">Загрузка…</div>
@@ -229,42 +230,140 @@ async function checkPendingInvites(root, silent) {
   } catch (e) {}
 }
 
-function startGameInChat(game, root) {
+async function loadOnlineAvatars(root) {
+  try {
+    const data = await get("/api/profile/players");
+    const container = root.querySelector("#online-avatars");
+    if (!container || !data || data.length === 0) return;
+    const online = data.filter(p => p.is_online).slice(0, 8);
+    container.innerHTML = online.map(p => {
+      const initial = (p.first_name || "?")[0].toUpperCase();
+      const colors = ["#4CAF50","#2196F3","#FF9800","#9C27B0","#E91E63","#00BCD4","#8BC34A","#FF5722"];
+      const color = colors[p.id % colors.length];
+      return '<div style="width:24px;height:24px;border-radius:50%;background:' + color + ';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;cursor:pointer;border:2px solid var(--bg);margin-left:-4px" data-player-id="' + p.id + '" title="' + escapeHtml(p.first_name || "Игрок") + '">' + initial + '</div>';
+    }).join("");
+    // Click on avatar to view profile
+    container.querySelectorAll("[data-player-id]").forEach(el => {
+      el.addEventListener("click", async () => {
+        const pid = Number(el.dataset.playerId);
+        try {
+          const profile = await get("/api/profile/" + pid);
+          window.kov.showModal(`
+            <button class="close" onclick="closeModal()">×</button>
+            <div style="text-align:center;padding:12px">
+              <div style="width:60px;height:60px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:#fff;margin:0 auto 8px">${initial}</div>
+              <h3 style="margin:0">${escapeHtml(profile.first_name || "Игрок")}</h3>
+              ${profile.username ? '<div style="color:var(--text-muted);font-size:13px">@' + escapeHtml(profile.username) + '</div>' : ''}
+              <div style="margin-top:8px;font-size:13px">Баланс: <strong>${profile.balance || 0}</strong> К</div>
+            </div>
+          `);
+        } catch (e) { window.kov.toast(e.message); }
+      });
+    });
+  } catch (e) { console.error("Online avatars error:", e); }
+}
+
+function startGameInChat(game, root, sessionId) {
   const container = root.querySelector("#chat-messages");
   if (!container) return;
 
-  const inlineGames = ["tictactoe"];
+  const gameContainer = document.createElement("div");
+  gameContainer.id = "game-in-chat";
+  container.innerHTML = "";
+  container.appendChild(gameContainer);
   
-  if (inlineGames.includes(game)) {
-    const gameContainer = document.createElement("div");
-    gameContainer.id = "game-in-chat";
-    container.innerHTML = "";
-    container.appendChild(gameContainer);
+  const backBtn = document.createElement("button");
+  backBtn.className = "btn btn-sm";
+  backBtn.textContent = "\u2190 Вернуться в чат";
+  backBtn.style.marginBottom = "12px";
+  backBtn.addEventListener("click", () => {
+    if (window._gamePollTimer) clearInterval(window._gamePollTimer);
+    gameContainer.remove();
+    loadChat(root);
+    startInvitePoll(root);
+    loadOnlineAvatars(root);
+  });
+  gameContainer.appendChild(backBtn);
+
+  if (sessionId) {
+    startMultiplayerTicTacToe(gameContainer, sessionId, root);
+  } else if (window.kov.arcade && window.kov.arcade[game]) {
+    window.kov.arcade[game](gameContainer);
+  }
+}
+
+async function startMultiplayerTicTacToe(container, sessionId, root) {
+  const me = window.kov.me;
+  let session = null;
+  let myTurn = false;
+
+  function renderBoard(board, status, currentTurn, mySymbol, opponentName) {
+    const existing = container.querySelector(".mp-board");
+    if (existing) existing.remove();
+    const existingInfo = container.querySelector(".mp-info");
+    if (existingInfo) existingInfo.remove();
+
+    const info = document.createElement("div");
+    info.className = "mp-info";
+    info.style.cssText = "text-align:center;margin-bottom:12px";
+    const isMyTurn = currentTurn === mySymbol && status === "playing";
+    const statusText = status === "playing"
+      ? (isMyTurn ? "Твой ход (" + mySymbol + ")" : "Ход " + opponentName + " (" + currentTurn + ")")
+      : status === "draw" ? "Ничья!" : (status === "x_won" || status === "o_won")
+        ? (session?.winner_id === me?.id ? "Ты победил!" : opponentName + " победил")
+        : status;
+    info.innerHTML = '<div style="font-weight:700;font-size:16px;margin-bottom:4px">Крестики-нолики</div>' +
+      '<div style="font-size:13px;color:var(--text-soft)">Ты: <b>' + mySymbol + '</b> vs <b>' + escapeHtml(opponentName) + '</b></div>' +
+      '<div style="font-size:14px;font-weight:700;margin-top:6px;' + (isMyTurn ? 'color:#4caf50' : 'color:var(--text-muted)') + '">' + statusText + '</div>';
+    container.appendChild(info);
+
+    const boardDiv = document.createElement("div");
+    boardDiv.className = "mp-board";
+    boardDiv.style.cssText = "display:grid;grid-template-columns:repeat(3,80px);gap:4px;justify-content:center;margin:12px 0";
     
-    const backBtn = document.createElement("button");
-    backBtn.className = "btn btn-sm";
-    backBtn.textContent = "← Вернуться в чат";
-    backBtn.style.marginBottom = "12px";
-    backBtn.addEventListener("click", () => {
-      gameContainer.remove();
-      loadChat(root);
-      startInvitePoll(root);
-    });
-    gameContainer.appendChild(backBtn);
-    
-    const gameTitle = document.createElement("h3");
-    gameTitle.textContent = GAME_META[game]?.name || game;
-    gameTitle.style.margin = "0 0 12px";
-    gameContainer.appendChild(gameTitle);
-    
-    if (window.kov.arcade && window.kov.arcade[game]) {
-      window.kov.arcade[game](gameContainer);
+    for (let i = 0; i < 9; i++) {
+      const cell = document.createElement("div");
+      const val = board[i];
+      cell.style.cssText = "width:80px;height:80px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;border-radius:8px;cursor:" + (val === "_" && isMyTurn ? "pointer" : "default") + ";background:" + (val === "X" ? "rgba(76,175,80,0.15)" : val === "O" ? "rgba(233,30,99,0.15)" : "var(--surface-2)") + ";border:2px solid " + (val === "X" ? "#4caf50" : val === "O" ? "#e91e63" : "var(--border)") + ";color:" + (val === "X" ? "#4caf50" : val === "O" ? "#e91e63" : "var(--text-muted)") + ";transition:all .2s";
+      cell.textContent = val === "_" ? "" : val;
+      if (val === "_" && isMyTurn && status === "playing") {
+        cell.addEventListener("click", async () => {
+          try {
+            await post("/api/game/session/" + sessionId + "/move", { position: i });
+            await refreshSession();
+          } catch (e) { window.kov.toast(e.message); }
+        });
+        cell.addEventListener("mouseenter", () => { cell.style.background = "rgba(76,175,80,0.1)"; cell.style.transform = "scale(1.05)"; });
+        cell.addEventListener("mouseleave", () => { cell.style.background = "var(--surface-2)"; cell.style.transform = "scale(1)"; });
+      }
+      boardDiv.appendChild(cell);
     }
-  } else {
-    if (window.kov.arcade && window.kov.arcade[game]) {
-      window.kov.arcade[game]();
+    container.appendChild(boardDiv);
+
+    if (status !== "playing") {
+      const resultBtn = document.createElement("button");
+      resultBtn.className = "btn";
+      resultBtn.textContent = "Вернуться в чат";
+      resultBtn.style.marginTop = "12px";
+      resultBtn.addEventListener("click", () => {
+        if (window._gamePollTimer) clearInterval(window._gamePollTimer);
+        container.remove();
+        loadChat(root);
+        startInvitePoll(root);
+      });
+      container.appendChild(resultBtn);
     }
   }
+
+  async function refreshSession() {
+    try {
+      session = await get("/api/game/session/" + sessionId);
+      renderBoard(session.board, session.status, session.current_turn, session.my_symbol, session.opponent_name);
+    } catch (e) { console.error("Poll error:", e); }
+  }
+
+  await refreshSession();
+  window._gamePollTimer = setInterval(refreshSession, 1500);
 }
 
 window.startGameInChat = startGameInChat;
@@ -783,22 +882,22 @@ function showLootboxRoulette(poolItems, winItem) {
   var ctx = null;
   try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch(_) {}
 
-  // Prepare items: show all, highlight winner
-  var items = poolItems.map(function(e) { return { name: e.item_name, icon: e.item_icon }; });
-  // Ensure at least 8 items for smooth scroll
-  while (items.length < 8) { items = items.concat(items); }
-  // Winner index in the duplicated list
-  var WIN_IDX = 20;
-  // Pad up to WIN_IDX + visible count
-  while (items.length < WIN_IDX + 12) { items = items.concat(poolItems.map(function(e) { return { name: e.item_name, icon: e.item_icon }; })); }
-  // Place winner at WIN_IDX
+  var items = [];
+  var REPEAT = 6;
+  var totalPool = poolItems.length;
+  for (var r = 0; r < REPEAT; r++) {
+    for (var i = 0; i < totalPool; i++) {
+      items.push({ name: poolItems[i].item_name, icon: poolItems[i].item_icon });
+    }
+  }
+  var WIN_IDX = Math.floor(items.length / 2);
   items[WIN_IDX] = { name: winItem.name, icon: winItem.icon, isWinner: true };
 
   var overlay = document.createElement("div");
   overlay.className = "lootbox-overlay";
   overlay.innerHTML =
-    '<div class="lootbox-title">🎲 Открытие ковбокса</div>' +
-    '<div class="lootbox-track-wrap"><div class="lootbox-track" id="lb-track"></div></div>' +
+    '<div class="lootbox-title">Открытие ковбокса</div>' +
+    '<div class="lootbox-track-wrap"><div class="lootbox-pointer"></div><div class="lootbox-track" id="lb-track"></div></div>' +
     '<div class="lootbox-result" id="lb-result">' +
       '<div class="lootbox-result-name" id="lb-win-name"></div>' +
       '<div class="lootbox-result-rarity" id="lb-win-rarity"></div>' +
@@ -807,102 +906,69 @@ function showLootboxRoulette(poolItems, winItem) {
   document.body.appendChild(overlay);
 
   var track = overlay.querySelector("#lb-track");
-  items.forEach(function(it, idx) {
+  items.forEach(function(it) {
     var div = document.createElement("div");
     div.className = "lootbox-track-item" + (it.isWinner ? " win-target" : "");
-    div.dataset.idx = idx;
     div.innerHTML = '<img src="' + it.icon + '" alt=""/>';
     track.appendChild(div);
   });
 
-  var itemW = 56;
   var tickInterval = null;
-  var tickSpeed = 60;
+  var tickSpeed = 50;
 
   function startTick() {
     if (!ctx) return;
-    tickInterval = setInterval(function() {
-      _lootboxTick(ctx);
-    }, tickSpeed);
+    tickInterval = setInterval(function() { _lootboxTick(ctx); }, tickSpeed);
+  }
+  function stopTick() {
+    if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
   }
 
-  function updateTickSpeed(slow) {
-    if (tickInterval) clearInterval(tickInterval);
-    tickSpeed = slow;
-    if (tickSpeed > 0) {
-      tickInterval = setInterval(function() {
-        if (ctx) _lootboxTick(ctx);
-      }, tickSpeed);
-    }
-  }
-
-  // Wait for layout before reading dimensions
   requestAnimationFrame(function() {
     var wrapW = track.parentElement.offsetWidth;
-    if (!wrapW || wrapW < 50) wrapW = 300;
-    var targetOffset = -(WIN_IDX * itemW - wrapW / 2 + itemW / 2);
-    var startOffset = -(items.length * itemW - wrapW) / 2;
+    if (!wrapW || wrapW < 50) wrapW = 340;
+    var ITEM_W = 64;
+    var targetX = -(WIN_IDX * ITEM_W - wrapW / 2 + ITEM_W / 2);
+    var startX = targetX + wrapW * 8;
 
-    track.style.transform = "translateX(" + startOffset + "px)";
+    track.style.transition = "none";
+    track.style.transform = "translateX(" + startX + "px)";
+    track.offsetHeight;
+
     startTick();
 
-    // Phase 1: fast scroll
-    var phase1Time = 2500;
-    var phase1Start = startOffset;
-    var phase1Target = targetOffset + itemW * 8;
-    var phase1StartTime = Date.now();
+    track.style.transition = "transform 4.5s cubic-bezier(0.15, 0.85, 0.25, 1)";
+    track.style.transform = "translateX(" + targetX + "px)";
 
-    function phase1() {
-      var elapsed = Date.now() - phase1StartTime;
-      var p = Math.min(1, elapsed / phase1Time);
-      var eased = 1 - Math.pow(1 - p, 3);
-      var x = phase1Start + (phase1Target - phase1Start) * eased;
-      track.style.transform = "translateX(" + x + "px)";
-      if (p < 1) {
-        requestAnimationFrame(phase1);
-      } else {
-        updateTickSpeed(200);
-        // Phase 2: slow final positioning
-        var phase2StartTime = Date.now();
-        var phase2Start = x;
-        function phase2() {
-          var elapsed2 = Date.now() - phase2StartTime;
-          var p2 = Math.min(1, elapsed2 / 800);
-          var eased2 = 1 - Math.pow(1 - p2, 4);
-          var x2 = phase2Start + (targetOffset - phase2Start) * eased2;
-          track.style.transform = "translateX(" + x2 + "px)";
-          if (p2 < 1) {
-            requestAnimationFrame(phase2);
-          } else {
-            updateTickSpeed(0);
-            if (ctx) _lootboxFanfare(ctx);
-            var allItems = track.querySelectorAll(".lootbox-track-item");
-            allItems.forEach(function(el) { el.classList.remove("active"); });
-            var targetEl = track.querySelector(".win-target");
-            if (targetEl) {
-              targetEl.classList.remove("win-target");
-              targetEl.classList.add("win");
-              targetEl.classList.add("win-rarity-" + (winItem.rarity || "Обычный"));
-            }
-            var result = overlay.querySelector("#lb-result");
-            result.querySelector("#lb-win-name").textContent = winItem.name;
-            result.querySelector("#lb-win-rarity").textContent = winItem.rarity || "";
-            result.querySelector("#lb-win-rarity").className = "lootbox-result-rarity rr-" + (winItem.rarity || "Обычный");
-            result.classList.add("show");
-          }
-        }
-        requestAnimationFrame(phase2);
+    var slowTimers = [];
+    [1500, 2500, 3500].forEach(function(t) {
+      slowTimers.push(setTimeout(function() {
+        stopTick();
+        tickSpeed = Math.min(tickSpeed + 80, 300);
+        startTick();
+      }, t));
+    });
+
+    track.addEventListener("transitionend", function handler() {
+      track.removeEventListener("transitionend", handler);
+      stopTick();
+      if (ctx) _lootboxFanfare(ctx);
+
+      var targetEl = track.querySelector(".win-target");
+      if (targetEl) {
+        targetEl.classList.remove("win-target");
+        targetEl.classList.add("win");
+        targetEl.classList.add("win-rarity-" + (winItem.rarity || "Обычный"));
       }
-    }
-    requestAnimationFrame(phase1);
+      var result = overlay.querySelector("#lb-result");
+      result.querySelector("#lb-win-name").textContent = winItem.name;
+      result.querySelector("#lb-win-rarity").textContent = winItem.rarity || "";
+      result.querySelector("#lb-win-rarity").className = "lootbox-result-rarity rr-" + (winItem.rarity || "Обычный");
+      result.classList.add("show");
+    });
   });
 
   overlay.querySelector("#lb-close").addEventListener("click", function() {
     overlay.remove();
-    if (tickInterval) clearInterval(tickInterval);
-    if (ctx) ctx.close();
-  });
-  overlay.addEventListener("click", function(e) {
-    if (e.target === overlay) { overlay.remove(); if (tickInterval) clearInterval(tickInterval); if (ctx) ctx.close(); }
   });
 }

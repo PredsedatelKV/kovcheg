@@ -545,7 +545,7 @@ async function openWheel() {
           modal.querySelector("#prize-ic").innerHTML = iconHtml(result.result.icon, "lg", "");
           modal.querySelector("#prize-lbl").textContent = result.result.prize_label;
           prize.classList.add("show");
-          animateElement(prize, "popIn", 400);
+          prize.style.animation = "popIn 400ms ease-out forwards";
         }, 4600);
       } catch (e) {
         clearInterval(spinSoundInterval);

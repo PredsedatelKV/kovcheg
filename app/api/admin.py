@@ -862,11 +862,102 @@ def admin_seed_bp_season(body: dict, db: Session = Depends(get_db)):
 
 @router.post("/battlepass/reset/{user_id}")
 def admin_reset_bp(user_id: int, db: Session = Depends(get_db)):
-    """Сбросить прогресс пропуска игроку: обнулить XP."""
+    """Сбросить прогресс пропуска игроку: обнулить XP и все награды."""
     u = db.query(models.User).filter(models.User.id == user_id).first()
     if not u:
         raise HTTPException(404, "Пользователь не найден")
     u.xp = 0
     db.query(models.UserBattlePass).filter(models.UserBattlePass.user_id == user_id).delete()
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/battlepass/reset-level")
+def admin_reset_level(body: dict, db: Session = Depends(get_db)):
+    """Сбросить конкретный уровень пропуска у игрока."""
+    user_id = body.get("user_id")
+    level = body.get("level")
+    if not user_id or not level:
+        raise HTTPException(400, "user_id и level обязательны")
+    season = db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active == True).first()
+    if not season:
+        raise HTTPException(400, "Нет активного сезона")
+    ubp = db.query(models.UserBattlePass).filter(
+        models.UserBattlePass.user_id == user_id,
+        models.UserBattlePass.season_id == season.id,
+    ).first()
+    if not ubp:
+        raise HTTPException(404, "У игрока нет прогресса в этом сезоне")
+    import json
+    claimed = json.loads(ubp.claimed_rewards) if ubp.claimed_rewards else []
+    claimed = [c for c in claimed if not (isinstance(c, list) and len(c) >= 1 and c[0] == level)]
+    ubp.claimed_rewards = json.dumps(claimed)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/lootbox/pools")
+def admin_list_lootbox_pools(db: Session = Depends(get_db)):
+    """Список всех пулов лутбоксов с их записями."""
+    pools = db.query(models.LootboxPool).all()
+    result = []
+    for p in pools:
+        entries = []
+        for e in p.entries:
+            item = db.query(models.Item).filter(models.Item.id == e.item_id).first()
+            entries.append({
+                "id": e.id, "item_id": e.item_id, "weight": e.weight,
+                "item_name": item.name if item else "?",
+                "item_icon": item.icon if item else "",
+            })
+        result.append({"id": p.id, "code": p.code, "name": p.name, "entries": entries})
+    return result
+
+
+@router.post("/lootbox/pool")
+def admin_save_lootbox_pool(body: dict, db: Session = Depends(get_db)):
+    """Создать или обновить пул лутбокса."""
+    pool_id = body.get("id")
+    if pool_id:
+        p = db.query(models.LootboxPool).filter(models.LootboxPool.id == pool_id).first()
+        if not p:
+            raise HTTPException(404, "Пул не найден")
+    else:
+        p = models.LootboxPool(code=body.get("code", ""), name=body.get("name", ""))
+        db.add(p)
+        db.flush()
+    if "name" in body: p.name = body["name"]
+    if "code" in body: p.code = body["code"]
+    db.commit()
+    return {"ok": True, "id": p.id}
+
+
+@router.post("/lootbox/entry")
+def admin_save_lootbox_entry(body: dict, db: Session = Depends(get_db)):
+    """Создать или обновить запись в пуле лутбокса."""
+    entry_id = body.get("id")
+    if entry_id:
+        e = db.query(models.LootboxPoolEntry).filter(models.LootboxPoolEntry.id == entry_id).first()
+        if not e:
+            raise HTTPException(404, "Запись не найдена")
+    else:
+        pool_id = body.get("pool_id")
+        if not pool_id:
+            raise HTTPException(400, "pool_id обязателен")
+        e = models.LootboxPoolEntry(pool_id=pool_id)
+        db.add(e)
+        db.flush()
+    if "item_id" in body: e.item_id = body["item_id"]
+    if "weight" in body: e.weight = body["weight"]
+    db.commit()
+    return {"ok": True, "id": e.id}
+
+
+@router.delete("/lootbox/entry/{entry_id}")
+def admin_delete_lootbox_entry(entry_id: int, db: Session = Depends(get_db)):
+    e = db.query(models.LootboxPoolEntry).filter(models.LootboxPoolEntry.id == entry_id).first()
+    if not e:
+        raise HTTPException(404, "Запись не найдена")
+    db.delete(e)
     db.commit()
     return {"ok": True}

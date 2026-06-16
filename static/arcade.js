@@ -685,23 +685,394 @@ function gameRoulette() {
 }
 
 function gameCheckers() {
-  window.kov.toast("Шашки пока недоступны");
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Шашки</h2>
+    <p class="card-sub">Играй против Мошонки!</p>
+    <div class="game-result" id="checkers-result"></div>
+    <div id="checkers-board" style="display:grid;grid-template-columns:repeat(8,36px);gap:1px;margin:10px auto;width:fit-content"></div>
+    <div id="checkers-status" style="text-align:center;font-weight:700;margin-top:8px">Твой ход</div>
+  `);
+  const board = modal.querySelector("#checkers-board");
+  const status = modal.querySelector("#checkers-status");
+  const resultEl = modal.querySelector("#checkers-result");
+  let state = [];
+  let selected = null;
+  let turn = "white";
+
+  function initBoard() {
+    state = Array(64).fill(null);
+    for (let i = 0; i < 64; i++) {
+      const row = Math.floor(i / 8), col = i % 8;
+      if ((row + col) % 2 === 1) {
+        if (row < 3) state[i] = { color: "black", king: false };
+        else if (row > 4) state[i] = { color: "white", king: false };
+      }
+    }
+  }
+
+  function render() {
+    board.innerHTML = "";
+    for (let i = 0; i < 64; i++) {
+      const cell = document.createElement("div");
+      const row = Math.floor(i / 8), col = i % 8;
+      cell.style.cssText = "width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;border-radius:4px;";
+      cell.style.background = (row + col) % 2 === 0 ? "#f0d9b5" : "#b58863";
+      if (selected === i) cell.style.outline = "2px solid #ffd700";
+      const p = state[i];
+      if (p) {
+        cell.textContent = p.king ? "♛" : "●";
+        cell.style.color = p.color === "white" ? "#fff" : "#333";
+        cell.style.textShadow = p.color === "white" ? "0 1px 2px rgba(0,0,0,0.5)" : "0 1px 2px rgba(255,255,255,0.3)";
+      }
+      cell.addEventListener("click", () => handleClick(i));
+      board.appendChild(cell);
+    }
+  }
+
+  function getMoves(idx) {
+    const p = state[idx];
+    if (!p) return [];
+    const row = Math.floor(idx / 8), col = idx % 8;
+    const dirs = p.king ? [[-1,-1],[-1,1],[1,-1],[1,1]] : (p.color === "white" ? [[-1,-1],[-1,1]] : [[1,-1],[1,1]]);
+    const moves = [], jumps = [];
+    for (const [dr, dc] of dirs) {
+      const r1 = row + dr, c1 = col + dc;
+      if (r1 >= 0 && r1 < 8 && c1 >= 0 && c1 < 8) {
+        const ni = r1 * 8 + c1;
+        if (!state[ni]) { moves.push(ni); }
+        else if (state[ni].color !== p.color) {
+          const r2 = r1 + dr, c2 = c1 + dc;
+          if (r2 >= 0 && r2 < 8 && c2 >= 0 && c2 < 8) {
+            const ni2 = r2 * 8 + c2;
+            if (!state[ni2]) jumps.push({ to: ni2, cap: ni });
+          }
+        }
+      }
+    }
+    return jumps.length > 0 ? jumps.map(j => j.to) : moves;
+  }
+
+  function handleClick(idx) {
+    if (turn !== "white") return;
+    const p = state[idx];
+    if (selected !== null && selected !== idx) {
+      const moves = getMoves(selected);
+      if (moves.includes(idx)) {
+        state[idx] = state[selected];
+        state[selected] = null;
+        const sr = Math.floor(selected / 8), sc = selected % 8;
+        const dr = Math.floor(idx / 8), dc = idx % 8;
+        if (Math.abs(dr - sr) === 2) {
+          state[((sr + dr) / 2) * 8 + ((sc + dc) / 2)] = null;
+        }
+        if ((state[idx].color === "white" && Math.floor(idx / 8) === 0) || (state[idx].color === "black" && Math.floor(idx / 8) === 7)) {
+          state[idx].king = true;
+        }
+        selected = null;
+        turn = "black";
+        render();
+        checkWin();
+        if (turn === "black") setTimeout(aiMove, 500);
+        return;
+      }
+    }
+    selected = (p && p.color === "white") ? idx : null;
+    render();
+  }
+
+  function aiMove() {
+    const pieces = [];
+    for (let i = 0; i < 64; i++) {
+      if (state[i] && state[i].color === "black") {
+        const moves = getMoves(i);
+        moves.forEach(m => pieces.push({ from: i, to: m }));
+      }
+    }
+    if (pieces.length === 0) { resultEl.innerHTML = '<div class="game-win">Ты победил!</div>'; return; }
+    const move = pieces[Math.floor(Math.random() * pieces.length)];
+    state[move.to] = state[move.from];
+    state[move.from] = null;
+    const sr = Math.floor(move.from / 8), sc = move.from % 8;
+    const dr = Math.floor(move.to / 8), dc = move.to % 8;
+    if (Math.abs(dr - sr) === 2) {
+      state[((sr + dr) / 2) * 8 + ((sc + dc) / 2)] = null;
+    }
+    if (Math.floor(move.to / 8) === 7) state[move.to].king = true;
+    turn = "white";
+    render();
+    checkWin();
+  }
+
+  function checkWin() {
+    let w = 0, b = 0;
+    for (let i = 0; i < 64; i++) {
+      if (state[i]) { if (state[i].color === "white") w++; else b++; }
+    }
+    if (w === 0) { resultEl.innerHTML = '<div class="game-lose">Мошонка победил!</div>'; }
+    else if (b === 0) { resultEl.innerHTML = '<div class="game-win">Ты победил!</div>'; post("/api/arcade/win", { amount: 50 }).catch(() => {}); balance += 50; syncBalance(); }
+    status.textContent = turn === "white" ? "Твой ход" : "Ход Мошонки...";
+  }
+
+  initBoard();
+  render();
 }
 
 function gamePingPong() {
-  window.kov.toast("Пинг-понг пока недоступен");
+  const W = 300, H = 400, PW = 60, PH = 10, BS = 8;
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Пинг-понг</h2>
+    <p class="card-sub">Игра до 5 очков</p>
+    <canvas id="pp-canvas" width="${W}" height="${H}" style="background:#1a1a2e;border-radius:8px;display:block;margin:10px auto;touch-action:none"></canvas>
+    <div id="pp-score" style="text-align:center;font-weight:700;font-size:18px">0 : 0</div>
+    <div class="game-result" id="pp-result"></div>
+  `);
+  const canvas = modal.querySelector("#pp-canvas");
+  const ctx = canvas.getContext("2d");
+  const scoreEl = modal.querySelector("#pp-score");
+  const resultEl = modal.querySelector("#pp-result");
+  let px = W / 2 - PW / 2, ai = W / 2 - PW / 2;
+  let bx = W / 2, by = H - 30, bvx = 3, bvy = -3;
+  let ps = 0, as = 0, running = true;
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#6cb6fb";
+    ctx.fillRect(px, H - 20, PW, PH);
+    ctx.fillStyle = "#e55454";
+    ctx.fillRect(ai, 10, PW, PH);
+    ctx.fillStyle = "#ffd700";
+    ctx.beginPath(); ctx.arc(bx, by, BS, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function update() {
+    if (!running) return;
+    bx += bvx; by += bvy;
+    if (bx < BS || bx > W - BS) bvx = -bvx;
+    if (by < 10 + PH + BS && bx > ai && bx < ai + PW) { bvy = Math.abs(bvy); bvx += (bx - (ai + PW / 2)) * 0.1; }
+    if (by > H - 20 - BS && bx > px && bx < px + PW) { bvy = -Math.abs(bvy); bvx += (bx - (px + PW / 2)) * 0.1; }
+    if (by < 0) { ps++; scoreEl.textContent = ps + " : " + as; resetBall(); if (ps >= 5) { running = false; resultEl.innerHTML = '<div class="game-win">Ты победил! +30K</div>'; post("/api/arcade/win", { amount: 30 }).catch(() => {}); balance += 30; syncBalance(); return; } }
+    if (by > H) { as++; scoreEl.textContent = ps + " : " + as; resetBall(); if (as >= 5) { running = false; resultEl.innerHTML = '<div class="game-lose">Мошонка победил</div>'; return; } }
+    const target = bx - PW / 2;
+    ai += (target - ai) * 0.06;
+    draw();
+    requestAnimationFrame(update);
+  }
+
+  function resetBall() { bx = W / 2; by = H / 2; bvx = (Math.random() > 0.5 ? 1 : -1) * 3; bvy = -3; }
+
+  canvas.addEventListener("touchmove", e => { e.preventDefault(); px = e.touches[0].clientX - canvas.getBoundingClientRect().left - PW / 2; px = Math.max(0, Math.min(W - PW, px)); });
+  canvas.addEventListener("mousemove", e => { px = e.offsetX - PW / 2; px = Math.max(0, Math.min(W - PW, px)); });
+
+  draw();
+  update();
 }
 
 function gameSlots() {
-  window.kov.toast("Слоты пока недоступны");
+  const symbols = ["🍒", "🍋", "🍊", "🍇", "⭐", "💎", "7️⃣"];
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Слоты</h2>
+    <p class="card-sub">3 одинаковых = x200</p>
+    <div class="game-balance">Баланс: <strong id="slots-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
+    <div id="slots-reels" style="display:flex;gap:8px;justify-content:center;margin:16px 0;font-size:36px;min-height:50px">
+      <span id="s1" style="background:rgba(255,255,255,0.05);padding:8px 16px;border-radius:8px;min-width:50px;text-align:center">?</span>
+      <span id="s2" style="background:rgba(255,255,255,0.05);padding:8px 16px;border-radius:8px;min-width:50px;text-align:center">?</span>
+      <span id="s3" style="background:rgba(255,255,255,0.05);padding:8px 16px;border-radius:8px;min-width:50px;text-align:center">?</span>
+    </div>
+    ${betInputHTML("slots-bet")}
+    <button class="btn" id="slots-spin">Крутить!</button>
+    <div class="game-result" id="slots-result"></div>
+  `);
+  const resultEl = modal.querySelector("#slots-result");
+  const spinBtn = modal.querySelector("#slots-spin");
+  spinBtn.addEventListener("click", () => {
+    if (spinBtn.disabled) return;
+    spinBtn.disabled = true;
+    const bet = getBetValue("slots-bet");
+    if (balance < bet) { resultEl.innerHTML = '<div class="game-lose">Недостаточно K</div>'; spinBtn.disabled = false; return; }
+    balance -= bet;
+    updateBalanceDisplay("slots-balance", balance);
+    post("/api/arcade/bet", { amount: bet }).catch(() => {});
+    playUISound("spin");
+    const r1 = symbols[Math.floor(Math.random() * symbols.length)];
+    const r2 = symbols[Math.floor(Math.random() * symbols.length)];
+    const r3 = symbols[Math.floor(Math.random() * symbols.length)];
+    let spins = 0;
+    const si = setInterval(() => {
+      modal.querySelector("#s1").textContent = symbols[Math.floor(Math.random() * symbols.length)];
+      modal.querySelector("#s2").textContent = symbols[Math.floor(Math.random() * symbols.length)];
+      modal.querySelector("#s3").textContent = symbols[Math.floor(Math.random() * symbols.length)];
+      spins++;
+      if (spins > 15) {
+        clearInterval(si);
+        modal.querySelector("#s1").textContent = r1;
+        modal.querySelector("#s2").textContent = r2;
+        modal.querySelector("#s3").textContent = r3;
+        spinBtn.disabled = false;
+        if (r1 === r2 && r2 === r3) {
+          const win = Math.floor(bet * 200);
+          balance += win;
+          updateBalanceDisplay("slots-balance", balance);
+          post("/api/arcade/win", { amount: win }).catch(() => {});
+          resultEl.innerHTML = '<div class="game-win">ДЖЕКПОТ! +' + win + ' K</div>';
+          playUISound("win");
+        } else if (r1 === r2 || r2 === r3 || r1 === r3) {
+          const win = Math.floor(bet * 2);
+          balance += win;
+          updateBalanceDisplay("slots-balance", balance);
+          post("/api/arcade/win", { amount: win }).catch(() => {});
+          resultEl.innerHTML = '<div class="game-win">Пара! +' + win + ' K</div>';
+          playUISound("cashout");
+        } else {
+          resultEl.innerHTML = '<div class="game-lose">Мимо</div>';
+          playUISound("lose");
+        }
+        syncBalance();
+      }
+    }, 80);
+  });
 }
 
 function gameRocket() {
-  window.kov.toast("Ракетка пока недоступна");
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Ракета</h2>
+    <p class="card-sub">Забери выигрыш до взрыва!</p>
+    <div class="game-balance">Баланс: <strong id="rocket-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
+    <div id="rocket-mult" style="font-size:48px;font-weight:900;text-align:center;margin:20px 0;color:#6cb6fb">x1.00</div>
+    ${betInputHTML("rocket-bet")}
+    <button class="btn" id="rocket-start">Запустить!</button>
+    <button class="btn btn-secondary" id="rocket-cashout" style="display:none">Забрать</button>
+    <div class="game-result" id="rocket-result"></div>
+  `);
+  const multEl = modal.querySelector("#rocket-mult");
+  const resultEl = modal.querySelector("#rocket-result");
+  const startBtn = modal.querySelector("#rocket-start");
+  const cashBtn = modal.querySelector("#rocket-cashout");
+  let mult = 1, running = false, crashed = false, bet = 0, timer;
+
+  startBtn.addEventListener("click", () => {
+    if (running) return;
+    bet = getBetValue("rocket-bet");
+    if (balance < bet) { resultEl.innerHTML = '<div class="game-lose">Недостаточно K</div>'; return; }
+    balance -= bet;
+    updateBalanceDisplay("rocket-balance", balance);
+    post("/api/arcade/bet", { amount: bet }).catch(() => {});
+    mult = 1; running = true; crashed = false;
+    startBtn.style.display = "none"; cashBtn.style.display = "";
+    multEl.style.color = "#6cb6fb";
+    resultEl.innerHTML = "";
+
+    timer = setInterval(() => {
+      mult += 0.02 + Math.random() * 0.03;
+      multEl.textContent = "x" + mult.toFixed(2);
+      if (Math.random() < 0.013 * mult) {
+        clearInterval(timer); running = false; crashed = true;
+        multEl.style.color = "#e55454";
+        multEl.textContent = "💥 ВЗРЫВ";
+        resultEl.innerHTML = '<div class="game-lose">Ракета взорвалась на x' + mult.toFixed(2) + '</div>';
+        cashBtn.style.display = "none"; startBtn.style.display = "";
+        playUISound("lose");
+        syncBalance();
+      }
+    }, 100);
+  });
+
+  cashBtn.addEventListener("click", () => {
+    if (!running) return;
+    clearInterval(timer); running = false;
+    const win = Math.floor(bet * mult);
+    balance += win;
+    updateBalanceDisplay("rocket-balance", balance);
+    post("/api/arcade/win", { amount: win }).catch(() => {});
+    multEl.style.color = "#6bd995";
+    resultEl.innerHTML = '<div class="game-win">Забрал x' + mult.toFixed(2) + '! +' + win + ' K</div>';
+    cashBtn.style.display = "none"; startBtn.style.display = "";
+    playUISound("win");
+    syncBalance();
+  });
 }
 
 function gameDice() {
-  window.kov.toast("Кубик пока недоступен");
+  const diceSVG = [
+    '<svg viewBox="0 0 36 36" width="48" height="48"><rect width="36" height="36" rx="6" fill="#fff" stroke="#ccc"/><circle cx="18" cy="18" r="3" fill="#333"/></svg>',
+    '<svg viewBox="0 0 36 36" width="48" height="48"><rect width="36" height="36" rx="6" fill="#fff" stroke="#ccc"/><circle cx="10" cy="10" r="3" fill="#333"/><circle cx="26" cy="26" r="3" fill="#333"/></svg>',
+    '<svg viewBox="0 0 36 36" width="48" height="48"><rect width="36" height="36" rx="6" fill="#fff" stroke="#ccc"/><circle cx="10" cy="10" r="3" fill="#333"/><circle cx="18" cy="18" r="3" fill="#333"/><circle cx="26" cy="26" r="3" fill="#333"/></svg>',
+    '<svg viewBox="0 0 36 36" width="48" height="48"><rect width="36" height="36" rx="6" fill="#fff" stroke="#ccc"/><circle cx="10" cy="10" r="3" fill="#333"/><circle cx="26" cy="10" r="3" fill="#333"/><circle cx="10" cy="26" r="3" fill="#333"/><circle cx="26" cy="26" r="3" fill="#333"/></svg>',
+    '<svg viewBox="0 0 36 36" width="48" height="48"><rect width="36" height="36" rx="6" fill="#fff" stroke="#ccc"/><circle cx="10" cy="10" r="3" fill="#333"/><circle cx="26" cy="10" r="3" fill="#333"/><circle cx="18" cy="18" r="3" fill="#333"/><circle cx="10" cy="26" r="3" fill="#333"/><circle cx="26" cy="26" r="3" fill="#333"/></svg>',
+    '<svg viewBox="0 0 36 36" width="48" height="48"><rect width="36" height="36" rx="6" fill="#fff" stroke="#ccc"/><circle cx="10" cy="10" r="3" fill="#333"/><circle cx="26" cy="10" r="3" fill="#333"/><circle cx="10" cy="18" r="3" fill="#333"/><circle cx="26" cy="18" r="3" fill="#333"/><circle cx="10" cy="26" r="3" fill="#333"/><circle cx="26" cy="26" r="3" fill="#333"/></svg>',
+  ];
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Кости</h2>
+    <p class="card-sub">Брось кубик и угадай!</p>
+    <div class="game-balance">Баланс: <strong id="dice-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
+    <div id="dice-result" style="text-align:center;margin:20px 0">${diceSVG[0]}</div>
+    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:8px 0">
+      <button class="btn btn-sm dice-pick" data-pick="odd">Нечёт (x1.8)</button>
+      <button class="btn btn-sm dice-pick" data-pick="even">Чёт (x1.8)</button>
+    </div>
+    <div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin:8px 0">
+      <button class="btn btn-sm dice-pick" data-pick="1">1 (x5)</button>
+      <button class="btn btn-sm dice-pick" data-pick="2">2 (x5)</button>
+      <button class="btn btn-sm dice-pick" data-pick="3">3 (x5)</button>
+      <button class="btn btn-sm dice-pick" data-pick="4">4 (x5)</button>
+      <button class="btn btn-sm dice-pick" data-pick="5">5 (x5)</button>
+      <button class="btn btn-sm dice-pick" data-pick="6">6 (x5)</button>
+    </div>
+    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:8px 0">
+      <button class="btn btn-sm dice-pick" data-pick="low">1-3 (x1.8)</button>
+      <button class="btn btn-sm dice-pick" data-pick="high">4-6 (x1.8)</button>
+    </div>
+    ${betInputHTML("dice-bet")}
+    <div class="game-result" id="dice-res"></div>
+  `);
+  const diceEl = modal.querySelector("#dice-result");
+  const resEl = modal.querySelector("#dice-res");
+  let rolling = false;
+
+  modal.querySelectorAll(".dice-pick").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (rolling) return;
+      const bet = getBetValue("dice-bet");
+      if (balance < bet) { resEl.innerHTML = '<div class="game-lose">Недостаточно K</div>'; return; }
+      balance -= bet;
+      updateBalanceDisplay("dice-balance", balance);
+      post("/api/arcade/bet", { amount: bet }).catch(() => {});
+      rolling = true;
+      const roll = Math.floor(Math.random() * 6) + 1;
+      let spins = 0;
+      const si = setInterval(() => {
+        diceEl.innerHTML = diceSVG[Math.floor(Math.random() * 6)];
+        spins++;
+        if (spins > 15) {
+          clearInterval(si);
+          diceEl.innerHTML = diceSVG[roll - 1];
+          const pick = btn.dataset.pick;
+          let win = 0;
+          if (pick === "odd" && roll % 2 === 1) win = Math.floor(bet * 1.7);
+          else if (pick === "even" && roll % 2 === 0) win = Math.floor(bet * 1.7);
+          else if (pick === "low" && roll <= 3) win = Math.floor(bet * 1.7);
+          else if (pick === "high" && roll >= 4) win = Math.floor(bet * 1.7);
+          else if (pick === String(roll)) win = bet * 4;
+          if (win > 0) {
+            balance += win;
+            updateBalanceDisplay("dice-balance", balance);
+            post("/api/arcade/win", { amount: win }).catch(() => {});
+            resEl.innerHTML = '<div class="game-win">Выпало ' + roll + '! +' + win + ' K</div>';
+            playUISound("win");
+          } else {
+            resEl.innerHTML = '<div class="game-lose">Выпало ' + roll + '. Мимо</div>';
+            playUISound("lose");
+          }
+          syncBalance();
+          rolling = false;
+        }
+      }, 80);
+    });
+  });
 }
 
 // ============ RENDER ============
@@ -761,7 +1132,7 @@ export async function renderArcade(root) {
       <div class="game-tile casino" data-game="slots">
         <div class="game-tile-icon"><img src="/static/img/ui/slots.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Слоты</div>
-        <div class="game-tile-desc">3 одинаковых = x8</div>
+        <div class="game-tile-desc">3 одинаковых = x200</div>
       </div>
       <div class="game-tile casino" data-game="rocket">
         <div class="game-tile-icon"><img src="/static/img/ui/rocket.svg" alt="" class="game-icon-lg"/></div>
