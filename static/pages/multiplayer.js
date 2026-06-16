@@ -1,8 +1,8 @@
 // Сетевой мультиплеер: глобальный поллер приглашений/сессий + игры в модалке.
 // Запускается у обоих игроков без перезагрузки страницы. Поддержка:
 // крестики-нолики, шашки, пинг-понг.
-import { get, post } from "/static/api.js?v=212";
-import { playUISound } from "/static/pages/settings.js?v=212";
+import { get, post } from "/static/api.js?v=213";
+import { playUISound } from "/static/pages/settings.js?v=213";
 
 const esc = (s = "") =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -240,8 +240,12 @@ function renderPong(root, sessionId) {
   let sx = 0, so = 0;
   let myPaddle = 0.5;               // моя ракетка (управляемая)
   let raf = null, sendTimer = null, finished = false;
+  let syncing = false;             // один запрос в полёте за раз
+  let lastFrame = 0;               // для dt в экстраполяции мяча
+  let countdown = 3;               // отсчёт перед стартом: 3,2,1,0(Старт!),-1(идёт игра)
+  let countdownStarted = false;
 
-  const SYNC_MS = 100;             // период синка с сервером
+  const SYNC_MS = 80;              // период синка с сервером
 
   // --- Интерполяция: для значений, приходящих по сети, храним prev/target + время.
   // dispX — то, что реально рисуем; плавно движется к target за ~SYNC_MS.
@@ -291,8 +295,9 @@ function renderPong(root, sessionId) {
       ballX = ball.x; ballY = ball.y;        // хост — авторитет физики
     } else {
       oppX = stepInterp("px", now);          // ракетка хоста плавно
-      ballX = stepInterp("bx", now);
-      ballY = 1 - stepInterp("by", now);     // гость видит поле перевёрнутым
+      // Гость экстраполирует мяч локально (dead reckoning) — см. guestStep().
+      ballX = ball.x;
+      ballY = 1 - ball.y;                     // гость видит поле перевёрнутым
     }
     ctx.fillStyle = "#4caf50";
     ctx.fillRect(myPaddle * W - 32, H - 16, 64, 9);
@@ -303,11 +308,28 @@ function renderPong(root, sessionId) {
     ctx.arc(ballX * W, ballY * H, 7, 0, 7);
     ctx.fill();
     root.querySelector("#pong-score").textContent = (host ? sx : so) + " : " + (host ? so : sx);
+    // Оверлей отсчёта поверх поля.
+    if (countdown >= 0) {
+      const label = countdown > 0 ? String(countdown) : "Старт!";
+      ctx.save();
+      ctx.fillStyle = "rgba(16,20,24,0.55)";
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#fff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = "800 " + (countdown > 0 ? 96 : 56) + "px system-ui, sans-serif";
+      ctx.fillText(label, W / 2, H / 2);
+      ctx.restore();
+    }
   }
 
   function hostStep() {
     // px — это моя (хоста) ракетка снизу; po — ракетка гостя сверху (интерполируется в render)
     px = myPaddle;
+    if (countdown >= 0) {                   // во время отсчёта мяч стоит в центре
+      ball.x = 0.5; ball.y = 0.5;
+      return;
+    }
     const poX = interp.po.disp;            // используем сглаженную позицию гостя для коллизий
     ball.x += ball.vx; ball.y += ball.vy;
     if (ball.x < 0.02 || ball.x > 0.98) ball.vx *= -1;
@@ -327,24 +349,45 @@ function renderPong(root, sessionId) {
     ball = { x: 0.5, y: 0.5, vx: (Math.random() - 0.5) * 0.02, vy: 0.011 * (dir || 1) };
   }
 
-  function loop() {
+  // Гость экстраполирует мяч локально между апдейтами хоста (dead reckoning).
+  // dtFrames нормирует движение к ~60fps (скорости заданы в единицах на кадр).
+  function guestStep(dtFrames) {
+    if (countdown >= 0) { ball.x = 0.5; ball.y = 0.5; return; }
+    ball.x += ball.vx * dtFrames;
+    ball.y += ball.vy * dtFrames;
+    // Отражения у стенок, чтобы экстраполяция не «уезжала» за поле до синка.
+    if (ball.x < 0.02) { ball.x = 0.02; ball.vx = Math.abs(ball.vx); }
+    else if (ball.x > 0.98) { ball.x = 0.98; ball.vx = -Math.abs(ball.vx); }
+    if (ball.y < 0.02) { ball.y = 0.02; ball.vy = Math.abs(ball.vy); }
+    else if (ball.y > 0.98) { ball.y = 0.98; ball.vy = -Math.abs(ball.vy); }
+  }
+
+  function loop(now) {
     if (!document.body.contains(root)) { stop(); leaveSession(sessionId); return; }
+    now = now || performance.now();
+    const dtFrames = lastFrame ? Math.min(4, (now - lastFrame) / 16.6667) : 1;
+    lastFrame = now;
     if (!finished) {
       if (host) hostStep();
-      render(performance.now());
+      else guestStep(dtFrames);
+      render(now);
     }
     raf = requestAnimationFrame(loop);
   }
 
   async function syncTick() {
-    if (finished) return;
+    if (finished || syncing) return;          // один запрос в полёте за раз
+    syncing = true;
     try {
       const payload = host
         ? { ball, px, sx, so }
         : { po: myPaddle };
       const s = await post("/api/game/session/" + sessionId + "/pong", payload);
       applyRemote(s);
-    } catch (e) {}
+    } catch (e) {
+    } finally {
+      syncing = false;
+    }
   }
   function applyRemote(s) {
     if (!s || !s.state) { maybeFinish(s); return; }
@@ -353,7 +396,14 @@ function renderPong(root, sessionId) {
       if (st.po != null) setTarget("po", st.po);  // ракетка гостя — плавно
     } else {
       if (st.px != null) setTarget("px", st.px);  // ракетка хоста — плавно
-      if (st.ball) { setTarget("bx", st.ball.x); setTarget("by", st.ball.y); }
+      if (st.ball) {
+        // Берём авторитетную скорость хоста сразу — экстраполяция точная.
+        ball.vx = st.ball.vx; ball.vy = st.ball.vy;
+        // Позицию подтягиваем мягко (lerp), без телепорта — убирает рывки.
+        const k = 0.35;
+        ball.x += (st.ball.x - ball.x) * k;
+        ball.y += (st.ball.y - ball.y) * k;
+      }
       sx = st.sx ?? sx; so = st.so ?? so;          // счёт — мгновенно
     }
     maybeFinish(s);
@@ -375,7 +425,28 @@ function renderPong(root, sessionId) {
     }
   }
 
-  function stop() { if (raf) cancelAnimationFrame(raf); if (sendTimer) clearInterval(sendTimer); }
+  let cdTimer = null;
+  function startCountdown() {
+    if (countdownStarted) return;
+    countdownStarted = true;
+    countdown = 3;
+    try { playUISound("click"); } catch (e) {}   // тик на «3»
+    cdTimer = setInterval(() => {
+      countdown -= 1;
+      if (countdown > 0) { try { playUISound("click"); } catch (e) {} }       // «2», «1»
+      else if (countdown === 0) { try { playUISound("win"); } catch (e) {} }  // «Старт!»
+      else {                                                                  // отсчёт окончен
+        clearInterval(cdTimer); cdTimer = null;
+        lastFrame = 0;                            // сброс dt, чтобы мяч не «прыгнул»
+      }
+    }, 1000);
+  }
+
+  function stop() {
+    if (raf) cancelAnimationFrame(raf);
+    if (sendTimer) clearInterval(sendTimer);
+    if (cdTimer) clearInterval(cdTimer);
+  }
   _cleanup = stop;
 
   // Инициализация: узнаём, кто хост
@@ -392,6 +463,7 @@ function renderPong(root, sessionId) {
     interp.bx.prev = interp.bx.target = interp.bx.disp = ball.x;
     interp.by.prev = interp.by.target = interp.by.disp = ball.y;
     sendTimer = setInterval(syncTick, SYNC_MS);
+    startCountdown();              // у каждого клиента свой отсчёт 3→2→1→Старт!
     loop();
   }).catch(() => {});
 }

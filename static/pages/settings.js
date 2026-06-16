@@ -10,7 +10,7 @@ const DEFAULT_SETTINGS = {
   musicPaused: false,
   customTrackUrl: null,
   customTrackName: null,
-  uiSounds: false,
+  uiSounds: true,
   uiSoundsVolume: 0.5,
 };
 

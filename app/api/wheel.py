@@ -95,6 +95,10 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
                 note="wheel",
             )
         )
+    elif sector["kind"] == "xp":
+        user.xp += sector["value"]
+    elif sector["kind"] == "nothing":
+        pass
     else:
         item = db.query(models.Item).filter(models.Item.code == sector["item_code"]).one_or_none()
         if item is None:

@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=212";
+import { get, post, iconHtml } from "/static/api.js?v=213";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=212";
+import { openAssistantChat } from "/static/pages/assistant.js?v=213";
 
-import { playUISound } from "/static/pages/settings.js?v=212";
+import { playUISound } from "/static/pages/settings.js?v=213";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -352,7 +352,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=212").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=213").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {
@@ -526,14 +526,14 @@ async function openWheel() {
       const cx2 = C + contentR * Math.cos(rad);
       const cy2 = C + contentR * Math.sin(rad);
 
-      const label = clip(sectorLabel(s));
-      // Rotate label so it reads radially (outward) and sits centred in slice.
+      // Только иконка приза и количество — без названий.
+      const amount = (s.value && Number(s.value) > 0) ? String(s.value) : "";
       const content = `
         <g transform="rotate(${mid},${cx2},${cy2})">
-          ${s.icon ? `<image href="${s.icon}" x="${cx2 - 14}" y="${cy2 - 30}" width="28" height="28"/>` : ""}
-          <text x="${cx2}" y="${cy2 + (s.icon ? 8 : 4)}" text-anchor="middle"
-                font-size="13" font-weight="800" fill="#fff"
-                style="text-shadow:0 1px 3px rgba(0,0,0,.55)">${escapeHtml(label)}</text>
+          ${s.icon ? `<image href="${s.icon}" x="${cx2 - 16}" y="${cy2 - 28}" width="32" height="32"/>` : ""}
+          ${amount ? `<text x="${cx2}" y="${cy2 + (s.icon ? 16 : 5)}" text-anchor="middle"
+                font-size="15" font-weight="800" fill="#fff"
+                style="text-shadow:0 1px 3px rgba(0,0,0,.55)">${escapeHtml(amount)}</text>` : ""}
         </g>`;
 
       return `

@@ -844,25 +844,25 @@ def admin_save_bp_reward(body: dict, db: Session = Depends(get_db)):
             raise HTTPException(400, "Нет активного сезона")
         season_id = season.id
 
-    track = body.get("track")
-    if track is not None and track not in ("free", "premium"):
-        raise HTTPException(400, "track должен быть free или premium")
+    # Трек всегда "free" — premium-трек убран из интерфейса.
     kind = body.get("kind")
-    if kind is not None and kind not in ("coins", "xp", "item", "lootbox", "none"):
+    if kind is not None and kind not in ("coins", "xp", "item"):
         raise HTTPException(400, "Недопустимый тип награды")
+    item_code = body.get("item_code")
+    if kind == "item" and not item_code:
+        raise HTTPException(400, "Для предмета укажите item_code")
 
     if reward_id:
         r = db.query(models.BattlePassReward).filter(models.BattlePassReward.id == reward_id).first()
         if not r:
             raise HTTPException(404, "Награда не найдена")
     else:
-        r = models.BattlePassReward(season_id=season_id, track=track or "free", kind="xp")
+        r = models.BattlePassReward(season_id=season_id, track="free", kind="xp")
         db.add(r)
         db.flush()
+    r.track = "free"
     if "level" in body:
         r.level = _coerce_int(body, "level", r.level)
-    if track is not None:
-        r.track = track
     if "value" in body:
         r.value = _coerce_int(body, "value", r.value)
     for field in ("kind", "item_code", "label", "icon"):
