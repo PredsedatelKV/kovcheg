@@ -1,11 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=200";
-import { renderProfile } from "/static/pages/profile.js?v=200";
-import { renderKoverna } from "/static/pages/koverna.js?v=200";
-import { renderArcade } from "/static/pages/arcade.js?v=200";
-import { renderAdmin } from "/static/pages/admin.js?v=200";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=200";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=200";
-import { get } from "/static/api.js?v=200";
+import { renderHome } from "/static/pages/home.js?v=210";
+import { renderProfile } from "/static/pages/profile.js?v=210";
+import { renderKoverna } from "/static/pages/koverna.js?v=210";
+import { renderArcade } from "/static/pages/arcade.js?v=210";
+import { renderAdmin } from "/static/pages/admin.js?v=210";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=210";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=210";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=210";
+import { get } from "/static/api.js?v=210";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -179,6 +180,8 @@ window.closeModal = function () {
     if (me.user && me.user.is_admin && me.user.username === "omarbutuev") {
       document.querySelectorAll(".admin-only").forEach((el) => el.removeAttribute("hidden"));
     }
+    // Глобальный поллер мультиплеера: приглашения и сессии приходят без перезагрузки.
+    if (window.kov.me) initMultiplayer();
   } catch (err) {
     // non-critical — admin button stays hidden
   }

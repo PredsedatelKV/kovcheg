@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=200";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=210";
 
-import { playUISound } from "/static/pages/settings.js?v=200";
+import { playUISound } from "/static/pages/settings.js?v=210";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -9,10 +9,8 @@ const GAME_META = {
   checkers:  { name: "Шашки",           icon: "/static/img/ui/checkers.svg" },
   pingpong:  { name: "Пинг-понг",       icon: "/static/img/ui/pingpong.svg" },
 };
-let invitePollTimer = null;
 let _profileRoot = null;
 let _profileData = null;
-let _tabCleanupRegistered = false;
 
 function kovbaksWord(n) {
   const abs = Math.abs(n) % 100;
@@ -184,88 +182,8 @@ export async function renderProfile(root) {
     }
   });
   bindChatInput(root);
-
-  // Stop all profile polling whenever the profile tab is hidden. Registered once;
-  // the pre-render of the profile tab on startup must NOT leave timers running
-  // before the user ever opens the tab.
-  if (!_tabCleanupRegistered && window.kov && window.kov.onTabChange) {
-    _tabCleanupRegistered = true;
-    window.kov.onTabChange("profile", function () {
-      clearInterval(invitePollTimer);
-      invitePollTimer = null;
-      if (window._gamePollTimer) {
-        clearInterval(window._gamePollTimer);
-        window._gamePollTimer = null;
-      }
-    });
-  }
-
-  // Only run invite polling when the profile tab is actually visible. During the
-  // background pre-render (window.kov.getTab() !== "profile") we skip it so the
-  // 5s timer doesn't spin before the user opens the tab.
-  const isVisible = !window.kov || !window.kov.getTab || window.kov.getTab() === "profile";
-  if (isVisible) {
-    checkPendingInvites(root);
-    startInvitePoll(root);
-  }
-}
-
-function startInvitePoll(root) {
-  clearInterval(invitePollTimer);
-  invitePollTimer = setInterval(() => checkPendingInvites(root), 5000);
-}
-
-async function checkPendingInvites(root) {
-  try {
-    const data = await get("/api/game/my-invites");
-    const invites = data.invites || [];
-    const pending = invites.filter(i => i.status === "pending" && i.to_user_id === window.kov.me?.id);
-    
-    if (pending.length > 0) {
-      const existing = document.querySelector(".invite-modal-open");
-      if (existing) return;
-
-      const invite = pending[0];
-      
-      const modal = window.kov.showModal(`
-        <button class="close" onclick="closeModal()">×</button>
-        <h2>Приглашение на игру</h2>
-        <p class="card-sub">${escapeHtml(invite.from_user_name)} приглашает тебя в ${GAME_META[invite.game]?.name || invite.game}</p>
-        <div style="display:flex;gap:12px;margin-top:20px">
-          <button class="btn btn-primary" id="accept-invite-btn">Принять</button>
-          <button class="btn btn-outline" id="decline-invite-btn">Отклонить</button>
-        </div>
-      `);
-      modal.classList.add("invite-modal-open");
-      
-      modal.querySelector("#accept-invite-btn").addEventListener("click", async () => {
-        let ok = false;
-        try {
-          await post("/api/game/accept", { invite_id: invite.id });
-          ok = true;
-        } catch (err) {
-          window.kov.toast(err.message);
-        } finally {
-          closeModal();
-        }
-        if (ok) {
-          window.kov.toast("Принято! Начинаем игру...");
-          clearInterval(invitePollTimer);
-          startGameInChat(invite.game, root);
-        }
-      });
-
-      modal.querySelector("#decline-invite-btn").addEventListener("click", async () => {
-        try {
-          await post("/api/game/decline", { invite_id: invite.id });
-        } catch (err) {
-          window.kov.toast(err.message);
-        } finally {
-          closeModal();
-        }
-      });
-    }
-  } catch (e) {}
+  // Приглашения и сетевые игры обрабатываются глобально (static/pages/multiplayer.js),
+  // поэтому здесь поллинг приглашений больше не нужен.
 }
 
 const _AVATAR_COLORS = ["#4CAF50","#2196F3","#FF9800","#9C27B0","#E91E63","#00BCD4","#8BC34A","#FF5722"];
@@ -290,12 +208,14 @@ async function loadOnlineAvatars(root) {
     const players = [...data]
       .sort((a, b) => (a.is_online === b.is_online ? 0 : a.is_online ? -1 : 1))
       .slice(0, 12);
-    container.innerHTML = players.map(p => {
+    container.innerHTML = players.map((p, idx) => {
       const ring = p.is_online ? "#4CAF50" : "var(--border)";
       const dot = p.is_online
         ? '<span style="position:absolute;right:-1px;bottom:-1px;width:8px;height:8px;border-radius:50%;background:#4CAF50;border:1.5px solid var(--bg)"></span>'
         : "";
-      return `<div data-player-id="${p.id}" title="${escapeHtml(p.first_name || "Игрок")}" style="position:relative;cursor:pointer;flex-shrink:0;margin-left:-4px;border-radius:50%;border:2px solid ${ring};line-height:0">${avatarHtml(p, 26)}${dot}</div>`;
+      // Первая аватарка отступает вправо от слова «Чат», остальные перекрываются.
+      const ml = idx === 0 ? "10px" : "-8px";
+      return `<div data-player-id="${p.id}" title="${escapeHtml(p.first_name || "Игрок")}" style="position:relative;cursor:pointer;flex-shrink:0;margin-left:${ml};border-radius:50%;border:2px solid ${ring};line-height:0">${avatarHtml(p, 26)}${dot}</div>`;
     }).join("");
     container.querySelectorAll("[data-player-id]").forEach(el => {
       el.addEventListener("click", async () => {
@@ -320,119 +240,7 @@ async function loadOnlineAvatars(root) {
   } catch (e) { /* non-critical: avatars stay empty */ }
 }
 
-function startGameInChat(game, root, sessionId) {
-  const container = root.querySelector("#chat-messages");
-  if (!container) return;
-
-  const gameContainer = document.createElement("div");
-  gameContainer.id = "game-in-chat";
-  container.innerHTML = "";
-  container.appendChild(gameContainer);
-  
-  const backBtn = document.createElement("button");
-  backBtn.className = "btn btn-sm";
-  backBtn.textContent = "\u2190 Вернуться в чат";
-  backBtn.style.marginBottom = "12px";
-  backBtn.addEventListener("click", () => {
-    if (window._gamePollTimer) clearInterval(window._gamePollTimer);
-    gameContainer.remove();
-    loadChat(root);
-    startInvitePoll(root);
-    loadOnlineAvatars(root);
-  });
-  gameContainer.appendChild(backBtn);
-
-  if (sessionId) {
-    startMultiplayerTicTacToe(gameContainer, sessionId, root);
-  } else if (window.kov.arcade && window.kov.arcade[game]) {
-    window.kov.arcade[game](gameContainer);
-  }
-}
-
-async function startMultiplayerTicTacToe(container, sessionId, root) {
-  const me = window.kov.me;
-  let session = null;
-  let myTurn = false;
-  let moveInFlight = false;
-
-  function renderBoard(board, status, currentTurn, mySymbol, opponentName) {
-    const existing = container.querySelector(".mp-board");
-    if (existing) existing.remove();
-    const existingInfo = container.querySelector(".mp-info");
-    if (existingInfo) existingInfo.remove();
-
-    const info = document.createElement("div");
-    info.className = "mp-info";
-    info.style.cssText = "text-align:center;margin-bottom:12px";
-    const isMyTurn = currentTurn === mySymbol && status === "playing";
-    const statusText = status === "playing"
-      ? (isMyTurn ? "Твой ход (" + mySymbol + ")" : "Ход " + opponentName + " (" + currentTurn + ")")
-      : status === "draw" ? "Ничья!" : (status === "x_won" || status === "o_won")
-        ? (session?.winner_id === me?.id ? "Ты победил!" : opponentName + " победил")
-        : status;
-    info.innerHTML = '<div style="font-weight:700;font-size:16px;margin-bottom:4px">Крестики-нолики</div>' +
-      '<div style="font-size:13px;color:var(--text-soft)">Ты: <b>' + mySymbol + '</b> vs <b>' + escapeHtml(opponentName) + '</b></div>' +
-      '<div style="font-size:14px;font-weight:700;margin-top:6px;' + (isMyTurn ? 'color:#4caf50' : 'color:var(--text-muted)') + '">' + statusText + '</div>';
-    container.appendChild(info);
-
-    const boardDiv = document.createElement("div");
-    boardDiv.className = "mp-board";
-    boardDiv.style.cssText = "display:grid;grid-template-columns:repeat(3,80px);gap:4px;justify-content:center;margin:12px 0";
-    
-    for (let i = 0; i < 9; i++) {
-      const cell = document.createElement("div");
-      const val = board[i];
-      cell.style.cssText = "width:80px;height:80px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:900;border-radius:8px;cursor:" + (val === "_" && isMyTurn ? "pointer" : "default") + ";background:" + (val === "X" ? "rgba(76,175,80,0.15)" : val === "O" ? "rgba(233,30,99,0.15)" : "var(--surface-2)") + ";border:2px solid " + (val === "X" ? "#4caf50" : val === "O" ? "#e91e63" : "var(--border)") + ";color:" + (val === "X" ? "#4caf50" : val === "O" ? "#e91e63" : "var(--text-muted)") + ";transition:all .2s";
-      cell.textContent = val === "_" ? "" : val;
-      if (val === "_" && isMyTurn && status === "playing") {
-        cell.addEventListener("click", async () => {
-          if (moveInFlight) return;
-          moveInFlight = true;
-          boardDiv.style.pointerEvents = "none";
-          try {
-            await post("/api/game/session/" + sessionId + "/move", { position: i });
-            await refreshSession();
-          } catch (e) {
-            window.kov.toast(e.message);
-            boardDiv.style.pointerEvents = "";
-          } finally {
-            moveInFlight = false;
-          }
-        });
-        cell.addEventListener("mouseenter", () => { cell.style.background = "rgba(76,175,80,0.1)"; cell.style.transform = "scale(1.05)"; });
-        cell.addEventListener("mouseleave", () => { cell.style.background = "var(--surface-2)"; cell.style.transform = "scale(1)"; });
-      }
-      boardDiv.appendChild(cell);
-    }
-    container.appendChild(boardDiv);
-
-    if (status !== "playing") {
-      const resultBtn = document.createElement("button");
-      resultBtn.className = "btn";
-      resultBtn.textContent = "Вернуться в чат";
-      resultBtn.style.marginTop = "12px";
-      resultBtn.addEventListener("click", () => {
-        if (window._gamePollTimer) clearInterval(window._gamePollTimer);
-        container.remove();
-        loadChat(root);
-        startInvitePoll(root);
-      });
-      container.appendChild(resultBtn);
-    }
-  }
-
-  async function refreshSession() {
-    try {
-      session = await get("/api/game/session/" + sessionId);
-      renderBoard(session.board, session.status, session.current_turn, session.my_symbol, session.opponent_name);
-    } catch (e) { /* transient poll failure — keep last board, retry next tick */ }
-  }
-
-  await refreshSession();
-  window._gamePollTimer = setInterval(refreshSession, 1500);
-}
-
-window.startGameInChat = startGameInChat;
+// Сетевые игры теперь в static/pages/multiplayer.js (модалка, общий поллер).
 
 async function loadChat(root) {
   const container = root.querySelector("#chat-messages");
@@ -564,17 +372,11 @@ function bindChatInput(root) {
       modal.querySelectorAll(".player-picker-item").forEach(item => {
         item.addEventListener("click", async () => {
           const playerId = Number(item.dataset.id);
-          const isOnline = item.dataset.online === "true";
           closeModal();
           try {
-            if (isOnline) {
-              await post("/api/game/invite", { game: gameId, to_user_id: playerId });
-              window.kov.toast("Приглашение отправлено!");
-            } else {
-              await post("/api/game/invite-telegram", { game: gameId, to_user_id: playerId });
-              window.kov.toast("Приглашение отправлено в Telegram!");
-            }
-            loadChat(root);
+            // Сервер сам решает: онлайн — придёт в приложение, оффлайн — в Telegram.
+            const r = await post("/api/game/invite", { game: gameId, to_user_id: playerId });
+            window.kov.toast(r.delivered === "telegram" ? "Приглашение отправлено в Telegram!" : "Приглашение отправлено!");
           } catch (err) {
             window.kov.toast(err.message);
           }

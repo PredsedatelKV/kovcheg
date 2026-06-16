@@ -296,6 +296,7 @@ class GameSession(Base):
     current_turn: Mapped[str] = mapped_column(String(1), default="X")  # X or O
     status: Mapped[str] = mapped_column(String(16), default="playing")  # playing, x_won, o_won, draw
     winner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    state: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON для checkers/pong
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 

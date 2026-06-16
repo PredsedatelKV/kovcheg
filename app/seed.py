@@ -122,6 +122,12 @@ def migrate_schema(db: Session) -> None:
         db.execute(text("ALTER TABLE items ADD COLUMN lootbox_pool_code VARCHAR(64)"))
         db.commit()
 
+    # game_sessions.state — JSON-состояние для шашек/пинг-понга
+    gcols = {row[1] for row in db.execute(text("PRAGMA table_info(game_sessions)")).fetchall()}
+    if gcols and "state" not in gcols:
+        db.execute(text("ALTER TABLE game_sessions ADD COLUMN state TEXT"))
+        db.commit()
+
     # Бэкфилл: награды Battle Pass с kind='lootbox' исторически создавались без item_code,
     # из-за чего их клейм ничего не выдавал. Восстанавливаем код предмета из имени иконки
     # (lootbox_common/rare/epic/legendary).

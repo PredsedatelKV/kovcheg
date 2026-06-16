@@ -64,6 +64,43 @@ async def _send_to_chats(chat_ids: Iterable[int], text: str) -> None:
             log.warning("notify: send to %s failed: %s", chat_id, exc)
 
 
+async def _send_to_user(telegram_id: int, text: str, web_app_url: str | None) -> None:
+    from app.bot import get_bot
+
+    try:
+        bot = get_bot()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("notify: bot unavailable: %s", exc)
+        return
+    reply_markup = None
+    if web_app_url:
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+
+        reply_markup = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="🎮 Открыть Ковчег", web_app=WebAppInfo(url=web_app_url))]]
+        )
+    try:
+        await bot.send_message(telegram_id, text, reply_markup=reply_markup)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("notify: send to user %s failed: %s", telegram_id, exc)
+
+
+def notify_user_bg(telegram_id: int, text: str, web_app_url: str | None = None) -> None:
+    """Отправить одному пользователю Telegram-сообщение (с кнопкой WebApp) не блокируя запрос."""
+    if not telegram_id:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(_send_to_user(int(telegram_id), text, web_app_url))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+    except RuntimeError:
+        try:
+            asyncio.run(_send_to_user(int(telegram_id), text, web_app_url))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("notify: sync user send failed: %s", exc)
+
+
 def notify_admins_bg(text: str) -> None:
     """Schedule an admin broadcast without blocking the request."""
     chat_ids = _resolve_admin_chat_ids()
