@@ -1,8 +1,8 @@
 // Сетевой мультиплеер: глобальный поллер приглашений/сессий + игры в модалке.
 // Запускается у обоих игроков без перезагрузки страницы. Поддержка:
 // крестики-нолики, шашки, пинг-понг.
-import { get, post } from "/static/api.js?v=213";
-import { playUISound } from "/static/pages/settings.js?v=213";
+import { get, post } from "/static/api.js?v=214";
+import { playUISound } from "/static/pages/settings.js?v=214";
 
 const esc = (s = "") =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -10,6 +10,7 @@ const esc = (s = "") =>
 let _pollTimer = null;
 let _activeSession = null;     // id сессии, открытой сейчас
 let _dismissed = new Set();    // сессии, которые игрок закрыл (не переоткрывать)
+let _knownSessions = null;     // сессии, существовавшие при открытии (их НЕ автозапускаем)
 let _cleanup = null;           // остановка циклов текущей игры
 
 export function initMultiplayer() {
@@ -22,9 +23,17 @@ async function pollState() {
   if (document.querySelector(".mp-modal")) return; // уже открыта модалка игры/приглашения
   try {
     const st = await get("/api/game/state");
+    // Первый опрос при открытии: запоминаем уже существующие сессии и НЕ запускаем их —
+    // иначе старая незавершённая партия (напр. пинг-понг) стартует сама при каждом входе.
+    if (_knownSessions === null) {
+      _knownSessions = new Set((st.sessions || []).map((s) => s.id));
+    }
     const inv = (st.incoming_invites || [])[0];
     if (inv) { showInvite(inv); return; }
-    const sess = (st.sessions || []).find((s) => s.id !== _activeSession && !_dismissed.has(s.id));
+    // Автозапуск только для НОВОЙ сессии (появилась после открытия — соперник принял вызов).
+    const sess = (st.sessions || []).find(
+      (s) => !_knownSessions.has(s.id) && s.id !== _activeSession && !_dismissed.has(s.id)
+    );
     if (sess) launchGame(sess.id, sess.game);
   } catch (e) { /* транзиентная ошибка поллинга */ }
 }
