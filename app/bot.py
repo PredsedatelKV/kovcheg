@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from aiogram import Bot, Dispatcher, F
@@ -19,8 +19,10 @@ from aiogram.types import (
 
 import app.assistant as assistant
 from app import models
+from app.api._helpers import ensure_wallet
 from app.config import get_settings
 from app.db import session_scope
+from app.models import now_utc
 
 log = logging.getLogger(__name__)
 
@@ -162,33 +164,36 @@ def _register_handlers(dp: Dispatcher) -> None:
         user_task_id = int(parts[1])
         notify_text: str | None = None
         notify_tg_id: int | None = None
-        with session_scope() as db:
-            ut = db.query(models.UserTask).filter(models.UserTask.id == user_task_id).one_or_none()
-            if ut is None:
-                await message.answer("Запись задания не найдена")
-                return
-            if ut.status != "in_progress":
-                await message.answer(f"Статус: {ut.status} — изменить нельзя")
-                return
-            ut.status = "done"
-            ut.progress = ut.task.target_progress
-            ut.approved_by = message.from_user.id
-            from datetime import datetime as _dt
-
-            ut.finished_at = _dt.utcnow()
-            ut.user.wallet.balance += ut.task.reward
-            db.add(
-                models.Transaction(
-                    sender_id=None,
-                    recipient_id=ut.user_id,
-                    amount=ut.task.reward,
-                    note=f"task:{ut.task.id}",
+        try:
+            with session_scope() as db:
+                ut = db.query(models.UserTask).filter(models.UserTask.id == user_task_id).one_or_none()
+                if ut is None:
+                    await message.answer("Запись задания не найдена")
+                    return
+                if ut.status != "in_progress":
+                    await message.answer(f"Статус: {ut.status} — изменить нельзя")
+                    return
+                ut.status = "done"
+                ut.progress = ut.task.target_progress
+                ut.approved_by = message.from_user.id
+                ut.finished_at = now_utc()
+                ensure_wallet(db, ut.user).balance += ut.task.reward
+                db.add(
+                    models.Transaction(
+                        sender_id=None,
+                        recipient_id=ut.user_id,
+                        amount=ut.task.reward,
+                        note=f"task:{ut.task.id}",
+                    )
                 )
-            )
-            notify_text = (
-                f"🎉 Задание <b>{ut.task.name}</b> подтверждено!\nНаграда: {ut.task.reward} Ковбаксов."
-            )
-            notify_tg_id = ut.user.telegram_id
+                notify_text = (
+                    f"🎉 Задание <b>{ut.task.name}</b> подтверждено!\nНаграда: {ut.task.reward} Ковбаксов."
+                )
+                notify_tg_id = ut.user.telegram_id
+        except Exception as exc:  # noqa: BLE001
+            log.error("Ошибка при подтверждении задания #%s: %s", user_task_id, exc)
+            await message.answer(f"⚠️ Не удалось подтвердить задание #{user_task_id}: {exc}")
+            return
 
         await message.answer(f"OK, задание #{user_task_id} подтверждено")
         if notify_tg_id and notify_text:
@@ -213,10 +218,11 @@ def _register_handlers(dp: Dispatcher) -> None:
             if ut is None:
                 await message.answer("Запись задания не найдена")
                 return
+            if ut.status != "in_progress":
+                await message.answer(f"Статус: {ut.status} — изменить нельзя")
+                return
             ut.status = "cancelled"
-            from datetime import datetime as _dt
-
-            ut.finished_at = _dt.utcnow()
+            ut.finished_at = now_utc()
             notify_tg_id = ut.user.telegram_id
 
         await message.answer(f"OK, задание #{user_task_id} отклонено")
@@ -277,17 +283,22 @@ def _register_handlers(dp: Dispatcher) -> None:
         except ValueError:
             await message.answer("tg_id и amount должны быть числами")
             return
-        with session_scope() as db:
-            user = db.query(models.User).filter(models.User.telegram_id == tg_id).one_or_none()
-            if user is None:
-                await message.answer("Пользователь не найден")
-                return
-            user.wallet.balance += amount
-            db.add(
-                models.Transaction(
-                    sender_id=None, recipient_id=user.id, amount=amount, note=f"admin:{message.from_user.id}"
+        try:
+            with session_scope() as db:
+                user = db.query(models.User).filter(models.User.telegram_id == tg_id).one_or_none()
+                if user is None:
+                    await message.answer("Пользователь не найден")
+                    return
+                ensure_wallet(db, user).balance += amount
+                db.add(
+                    models.Transaction(
+                        sender_id=None, recipient_id=user.id, amount=amount, note=f"admin:{message.from_user.id}"
+                    )
                 )
-            )
+        except Exception as exc:  # noqa: BLE001
+            log.error("Ошибка при выдаче Ковбаксов пользователю %s: %s", tg_id, exc)
+            await message.answer(f"⚠️ Не удалось выдать Ковбаксы пользователю {tg_id}: {exc}")
+            return
         await message.answer(f"Выдано {amount} Ковбаксов пользователю {tg_id}")
 
     @dp.message(F.web_app_data)
@@ -302,12 +313,13 @@ def _register_handlers(dp: Dispatcher) -> None:
         """Агент Ковчега — отвечает на произвольные текстовые вопросы."""
         if not message.from_user or not message.text:
             return
-        # Пропускаем команды (они обработаны ранее фильтрами Command)
+        # Нераспознанная команда: ни один Command-хендлер выше не сработал.
         if message.text.startswith("/"):
+            await message.answer("Неизвестная команда. Список: /help")
             return
 
         settings = get_settings()
-        now = datetime.now(timezone.utc)
+        now = now_utc()
         tg_id = message.from_user.id
 
         # Rate limiting

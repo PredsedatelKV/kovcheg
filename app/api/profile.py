@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.api._helpers import ensure_wallet
 from app.auth import current_user, is_admin
 from app.db import get_db
 
@@ -144,149 +145,8 @@ def _resolve_recipient(db: Session, recipient: str) -> models.User:
 
 
 
-@router.get("/{user_id}")
-def get_user_profile(
-    user_id: int,
-    user: models.User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    """Получить публичный профиль игрока."""
-    target = db.query(models.User).filter(models.User.id == user_id).first()
-    if not target:
-        raise HTTPException(404, "Пользователь не найден")
-    from datetime import datetime, timezone, timedelta
-    now = datetime.now(timezone.utc)
-    last_active = target.last_active if hasattr(target, "last_active") and target.last_active else None
-    is_online = bool(last_active and (now - last_active.replace(tzinfo=timezone.utc)).total_seconds() < 300) if last_active else False
-    return {
-        "id": target.id,
-        "first_name": target.first_name or "Игрок",
-        "username": target.username,
-        "balance": target.balance,
-        "is_online": is_online,
-    }
-
-@router.post("/transfer", response_model=schemas.UserOut)
-def transfer(
-    payload: schemas.TransferRequest,
-    user: models.User = Depends(current_user),
-    db: Session = Depends(get_db),
-) -> schemas.UserOut:
-    recipient = _resolve_recipient(db, payload.recipient)
-    if recipient.id == user.id:
-        raise HTTPException(status_code=400, detail="Нельзя перевести себе")
-    if user.wallet.balance < payload.amount:
-        raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
-    user.wallet.balance -= payload.amount
-    recipient.wallet.balance += payload.amount
-    db.add(models.Transaction(sender_id=user.id, recipient_id=recipient.id, amount=payload.amount))
-    db.commit()
-    db.refresh(user)
-    from app.notify import notify_admins_bg
-    notify_admins_bg(
-        f"💸 <b>{user.first_name}</b> перевел(а) <b>{payload.amount} Ковбаксов</b> → <b>{recipient.first_name}</b>"
-    )
-    return _user_to_out(user)
-
-
-@router.post("/inventory/gift", response_model=schemas.ProfilePayload)
-def gift_item(
-    payload: schemas.GiftRequest,
-    user: models.User = Depends(current_user),
-    db: Session = Depends(get_db),
-) -> schemas.ProfilePayload:
-    inv = (
-        db.query(models.InventoryItem)
-        .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == payload.item_id)
-        .one_or_none()
-    )
-    if inv is None or inv.quantity < payload.quantity:
-        raise HTTPException(status_code=400, detail="Недостаточно предметов")
-    if not inv.item.can_gift:
-        raise HTTPException(status_code=400, detail="Этот предмет нельзя дарить")
-    recipient = _resolve_recipient(db, payload.recipient)
-    if recipient.id == user.id:
-        raise HTTPException(status_code=400, detail="Нельзя дарить себе")
-    inv.quantity -= payload.quantity
-    recipient_inv = (
-        db.query(models.InventoryItem)
-        .filter(models.InventoryItem.user_id == recipient.id, models.InventoryItem.item_id == payload.item_id)
-        .one_or_none()
-    )
-    if recipient_inv is None:
-        db.add(models.InventoryItem(user_id=recipient.id, item_id=payload.item_id, quantity=payload.quantity))
-    else:
-        recipient_inv.quantity += payload.quantity
-    db.commit()
-    db.refresh(user)
-    from app.notify import notify_admins_bg
-    notify_admins_bg(
-        f"🎁 <b>{user.first_name}</b> подарил(а) <b>{inv.item.name}</b> ×{payload.quantity} → <b>{recipient.first_name}</b>"
-    )
-    return me(user=user, db=db)
-
-
-@router.post("/inventory/sell", response_model=schemas.ProfilePayload)
-def sell_item(
-    payload: schemas.SellRequest,
-    user: models.User = Depends(current_user),
-    db: Session = Depends(get_db),
-) -> schemas.ProfilePayload:
-    """Выставить предмет на адресную продажу выбранному игроку.
-    Предмет резервируется (списывается из инвентаря) и появляется у покупателя в Коверне с пометкой «Это для тебя»."""
-    inv = (
-        db.query(models.InventoryItem)
-        .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == payload.item_id)
-        .one_or_none()
-    )
-    if inv is None or inv.quantity < payload.quantity:
-        raise HTTPException(status_code=400, detail="Недостаточно предметов")
-    recipient = _resolve_recipient(db, payload.recipient)
-    if recipient.id == user.id:
-        raise HTTPException(status_code=400, detail="Нельзя продать себе")
-    inv.quantity -= payload.quantity
-    listing = models.MarketListing(
-        seller_id=user.id,
-        item_id=payload.item_id,
-        quantity=payload.quantity,
-        price=payload.price,
-        is_active=True,
-        target_user_id=recipient.id,
-    )
-    db.add(listing)
-    db.commit()
-    db.refresh(user)
-    from app.notify import notify_admins_bg
-    notify_admins_bg(
-        f"🏷️ <b>{user.first_name}</b> выставил(а) на адресную продажу: <b>{inv.item.name}</b> ×{payload.quantity} за {payload.price} Ковбаксов → <b>{recipient.first_name}</b>"
-    )
-    return me(user=user, db=db)
-
-
-@router.post("/inventory/activate", response_model=schemas.ProfilePayload)
-def activate_item(
-    payload: schemas.GiftRequest,
-    user: models.User = Depends(current_user),
-    db: Session = Depends(get_db),
-) -> schemas.ProfilePayload:
-    inv = (
-        db.query(models.InventoryItem)
-        .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == payload.item_id)
-        .one_or_none()
-    )
-    if inv is None or inv.quantity < 1:
-        raise HTTPException(status_code=400, detail="Нет предмета")
-    inv.quantity -= 1
-    db.commit()
-    db.refresh(user)
-    db.refresh(user.wallet)
-    from app.notify import notify_admins_bg
-    notify_admins_bg(
-        f"✨ <b>{user.first_name}</b> активировал(а) <b>{inv.item.name}</b>"
-    )
-    return me(user=user, db=db)
-
-
+# NB: статические пути (/transactions и т.п.) объявлены ВЫШЕ динамического
+# `/{user_id}`, иначе FastAPI матчит их как user_id и отдаёт 422.
 @router.get("/transactions", response_model=list[schemas.TransactionOut])
 def list_transactions(
     user: models.User = Depends(current_user),
@@ -324,3 +184,169 @@ def list_transactions(
         )
         for t in txns
     ]
+
+
+@router.get("/{user_id}")
+def get_user_profile(
+    user_id: int,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Получить публичный профиль игрока."""
+    target = db.query(models.User).filter(models.User.id == user_id).first()
+    if not target:
+        raise HTTPException(404, "Пользователь не найден")
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    last_seen = target.last_seen
+    is_online = bool(
+        last_seen and (now - last_seen.replace(tzinfo=timezone.utc)).total_seconds() < 300
+    )
+    return {
+        "id": target.id,
+        "first_name": target.first_name or "Игрок",
+        "username": target.username,
+        "balance": target.wallet.balance if target.wallet else 0,
+        "is_online": is_online,
+    }
+
+@router.post("/transfer", response_model=schemas.UserOut)
+def transfer(
+    payload: schemas.TransferRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> schemas.UserOut:
+    recipient = _resolve_recipient(db, payload.recipient)
+    if recipient.id == user.id:
+        raise HTTPException(status_code=400, detail="Нельзя перевести себе")
+    sender_wallet = ensure_wallet(db, user)
+    recipient_wallet = ensure_wallet(db, recipient)
+    if sender_wallet.balance < payload.amount:
+        raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
+    try:
+        sender_wallet.balance -= payload.amount
+        recipient_wallet.balance += payload.amount
+        db.add(models.Transaction(sender_id=user.id, recipient_id=recipient.id, amount=payload.amount))
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Не удалось выполнить перевод")
+    db.refresh(user)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"💸 <b>{user.first_name}</b> перевел(а) <b>{payload.amount} Ковбаксов</b> → <b>{recipient.first_name}</b>"
+    )
+    return _user_to_out(user)
+
+
+@router.post("/inventory/gift", response_model=schemas.ProfilePayload)
+def gift_item(
+    payload: schemas.GiftRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> schemas.ProfilePayload:
+    inv = (
+        db.query(models.InventoryItem)
+        .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == payload.item_id)
+        .one_or_none()
+    )
+    if inv is None or inv.quantity < payload.quantity:
+        raise HTTPException(status_code=400, detail="Недостаточно предметов")
+    if not inv.item.can_gift:
+        raise HTTPException(status_code=400, detail="Этот предмет нельзя дарить")
+    recipient = _resolve_recipient(db, payload.recipient)
+    if recipient.id == user.id:
+        raise HTTPException(status_code=400, detail="Нельзя дарить себе")
+    item_name = inv.item.name
+    inv.quantity -= payload.quantity
+    if inv.quantity == 0:
+        db.delete(inv)
+    recipient_inv = (
+        db.query(models.InventoryItem)
+        .filter(models.InventoryItem.user_id == recipient.id, models.InventoryItem.item_id == payload.item_id)
+        .one_or_none()
+    )
+    if recipient_inv is None:
+        db.add(models.InventoryItem(user_id=recipient.id, item_id=payload.item_id, quantity=payload.quantity))
+    else:
+        recipient_inv.quantity += payload.quantity
+    db.commit()
+    db.refresh(user)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"🎁 <b>{user.first_name}</b> подарил(а) <b>{item_name}</b> ×{payload.quantity} → <b>{recipient.first_name}</b>"
+    )
+    return me(user=user, db=db)
+
+
+@router.post("/inventory/sell", response_model=schemas.ProfilePayload)
+def sell_item(
+    payload: schemas.SellRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> schemas.ProfilePayload:
+    """Выставить предмет на адресную продажу выбранному игроку.
+    Предмет резервируется (списывается из инвентаря) и появляется у покупателя в Коверне с пометкой «Это для тебя»."""
+    inv = (
+        db.query(models.InventoryItem)
+        .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == payload.item_id)
+        .one_or_none()
+    )
+    if inv is None or inv.quantity < payload.quantity:
+        raise HTTPException(status_code=400, detail="Недостаточно предметов")
+    if not inv.item.can_gift:
+        raise HTTPException(status_code=400, detail="Этот предмет нельзя продавать")
+    recipient = _resolve_recipient(db, payload.recipient)
+    if recipient.id == user.id:
+        raise HTTPException(status_code=400, detail="Нельзя продать себе")
+    item_name = inv.item.name
+    inv.quantity -= payload.quantity
+    if inv.quantity == 0:
+        db.delete(inv)
+    listing = models.MarketListing(
+        seller_id=user.id,
+        item_id=payload.item_id,
+        quantity=payload.quantity,
+        price=payload.price,
+        is_active=True,
+        target_user_id=recipient.id,
+    )
+    db.add(listing)
+    db.commit()
+    db.refresh(user)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"🏷️ <b>{user.first_name}</b> выставил(а) на адресную продажу: <b>{item_name}</b> ×{payload.quantity} за {payload.price} Ковбаксов → <b>{recipient.first_name}</b>"
+    )
+    return me(user=user, db=db)
+
+
+@router.post("/inventory/activate", response_model=schemas.ProfilePayload)
+def activate_item(
+    payload: schemas.GiftRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> schemas.ProfilePayload:
+    inv = (
+        db.query(models.InventoryItem)
+        .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == payload.item_id)
+        .one_or_none()
+    )
+    if inv is None or inv.quantity < 1:
+        raise HTTPException(status_code=400, detail="Нет предмета")
+    item_name = inv.item.name
+    wallet = ensure_wallet(db, user)
+    inv.quantity -= 1
+    if inv.quantity == 0:
+        db.delete(inv)
+    db.commit()
+    db.refresh(user)
+    db.refresh(wallet)
+    from app.notify import notify_admins_bg
+    notify_admins_bg(
+        f"✨ <b>{user.first_name}</b> активировал(а) <b>{item_name}</b>"
+    )
+    return me(user=user, db=db)

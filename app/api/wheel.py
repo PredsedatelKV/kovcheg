@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.api._helpers import ensure_wallet
 from app.auth import current_user
 from app.db import get_db
 
@@ -77,8 +78,9 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
         raise HTTPException(status_code=500, detail="Призы колеса не настроены")
     idx, sector = _pick_sector(sectors)
 
+    wallet = ensure_wallet(db, user)
     if sector["kind"] == "coins":
-        user.wallet.balance += sector["value"]
+        wallet.balance += sector["value"]
         db.add(
             models.Transaction(
                 sender_id=None,
@@ -90,7 +92,7 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
     else:
         item = db.query(models.Item).filter(models.Item.code == sector["item_code"]).one_or_none()
         if item is None:
-            raise HTTPException(status_code=500, detail="prize item missing")
+            raise HTTPException(status_code=400, detail="Приз колеса не найден")
         inv = (
             db.query(models.InventoryItem)
             .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == item.id)

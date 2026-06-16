@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app import models, schemas
 from app.api.profile import _user_task_to_out, _user_to_out
@@ -88,6 +88,7 @@ def get_home(user: models.User = Depends(current_user), db: Session = Depends(ge
     )
     user_tasks = (
         db.query(models.UserTask)
+        .options(joinedload(models.UserTask.task))
         .filter(models.UserTask.user_id == user.id, models.UserTask.status == "in_progress")
         .all()
     )

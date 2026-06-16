@@ -33,7 +33,21 @@ function getSettings() {
 }
 
 function saveSettings(s) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch (e) {
+    // QuotaExceededError: кастомный трек (data-URL до ~10МБ) не влезает в localStorage.
+    // Не падаем — пробуем сохранить настройки без тяжёлого трека, чтобы остальное не потерялось.
+    try {
+      const lite = { ...s, customTrackUrl: null };
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(lite));
+      if (window.kov && window.kov.toast) {
+        window.kov.toast("Недостаточно места: мелодия не сохранена, остальные настройки сохранены");
+      }
+    } catch (_) {
+      // Даже урезанные настройки не влезли — молча игнорируем, чтобы не ронять UI.
+    }
+  }
 }
 
 const TRACKS = [
@@ -435,10 +449,8 @@ export function openSettings() {
     saveSettings(s);
     if (audio) audio.volume = v;
   }
+  // Достаточно одного слушателя "input"; "change" дублировал бы _setVolume и лишние saveSettings.
   volSlider.addEventListener("input", function() {
-    _setVolume(Number(this.value) / 100);
-  });
-  volSlider.addEventListener("change", function() {
     _setVolume(Number(this.value) / 100);
   });
 

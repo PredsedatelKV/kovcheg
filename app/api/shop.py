@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.api._helpers import ensure_wallet
 from app.api.profile import _item_to_out
 from app.auth import current_user
 from app.db import get_db
@@ -30,9 +31,10 @@ def buy(
         raise HTTPException(status_code=404, detail="Товар не найден")
     if product.stock == 0:
         raise HTTPException(status_code=400, detail="Товар закончился")
-    if user.wallet.balance < product.price:
+    wallet = ensure_wallet(db, user)
+    if wallet.balance < product.price:
         raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
-    user.wallet.balance -= product.price
+    wallet.balance -= product.price
     inv = (
         db.query(models.InventoryItem)
         .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == product.item_id)
@@ -45,13 +47,18 @@ def buy(
     if product.stock > 0:
         product.stock -= 1
     db.add(models.Transaction(sender_id=user.id, recipient_id=None, amount=product.price, note=f"shop:{product.item.code}"))
+    # Сохраняем строки ДО commit (expire_on_commit аннулирует product).
+    buyer_name = user.first_name
+    item_name = product.item.name
+    product_price = product.price
+    product_stock = product.stock
     db.commit()
     db.refresh(user)
     from app.api.profile import _user_to_out  # avoid cycle at module load
     from app.notify import notify_admins_bg
 
     notify_admins_bg(
-        f"🛒 <b>{user.first_name}</b> купил(а) <b>{product.item.name}</b> за {product.price} Ковбаксов"
-        + (f" · осталось: {product.stock}" if product.stock >= 0 else "")
+        f"🛒 <b>{buyer_name}</b> купил(а) <b>{item_name}</b> за {product_price} Ковбаксов"
+        + (f" · осталось: {product_stock}" if product_stock >= 0 else "")
     )
     return _user_to_out(user)

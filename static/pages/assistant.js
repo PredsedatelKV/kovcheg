@@ -85,6 +85,8 @@ export function openAssistantChat() {
   });
 
   const sendMessage = async () => {
+    // Не отправляем повторный запрос, пока ждём ответ (кнопка задизейблена).
+    if (sendBtn.disabled) return;
     const text = input.value.trim();
     if (!text) return;
 
@@ -107,7 +109,12 @@ export function openAssistantChat() {
         history: messages.slice(0, -1), // без текущего вопроса, он уже в messages
       });
       typingEl.remove();
-      messages.push({ role: "bot", text: result.answer });
+      // Не сохраняем пустой пузырь бота, если ответа нет.
+      if (result && result.answer) {
+        messages.push({ role: "bot", text: result.answer });
+      } else {
+        messages.push({ role: "bot", text: "⚠️ Мошонка не смог ответить. Попробуй ещё раз." });
+      }
       saveHistory(messages);
       renderMessages(msgContainer);
     } catch (e) {
@@ -123,7 +130,10 @@ export function openAssistantChat() {
 
   sendBtn.addEventListener("click", sendMessage);
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") sendMessage();
+    if (e.key === "Enter") {
+      if (sendBtn.disabled) return;
+      sendMessage();
+    }
   });
 
   input.focus();

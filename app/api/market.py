@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.api._helpers import ensure_wallet
 from app.api.profile import _inventory_to_out, _item_to_out, _user_to_out
 from app.auth import current_user
 from app.db import get_db
@@ -68,7 +69,12 @@ def create_listing(
     )
     if inv is None or inv.quantity < payload.quantity:
         raise HTTPException(status_code=400, detail="Недостаточно предметов в инвентаре")
+    # Сохраняем нужные строки ДО commit (expire_on_commit аннулирует атрибуты).
+    item_name = inv.item.name
+    seller_name = user.first_name
     inv.quantity -= payload.quantity
+    if inv.quantity == 0:
+        db.delete(inv)
     listing = models.MarketListing(
         seller_id=user.id,
         item_id=payload.item_id,
@@ -81,7 +87,7 @@ def create_listing(
     db.refresh(listing)
     from app.notify import notify_admins_bg
     notify_admins_bg(
-        f"📜 <b>{user.first_name}</b> выставил(а) на рынок: <b>{inv.item.name}</b> ×{payload.quantity} за {payload.price} Ковбаксов"
+        f"📜 <b>{seller_name}</b> выставил(а) на рынок: <b>{item_name}</b> ×{payload.quantity} за {payload.price} Ковбаксов"
     )
     return _listing_to_out(listing)
 
@@ -107,11 +113,15 @@ def unlist(
         db.add(models.InventoryItem(user_id=user.id, item_id=listing.item_id, quantity=listing.quantity))
     else:
         inv.quantity += listing.quantity
+    # Сохраняем строки ДО commit (expire_on_commit).
+    item_name = listing.item.name
+    seller_name = user.first_name
+    listing_quantity = listing.quantity
     db.commit()
     db.refresh(listing)
     from app.notify import notify_admins_bg
     notify_admins_bg(
-        f"↩️ <b>{user.first_name}</b> снял(а) лот: <b>{listing.item.name}</b> ×{listing.quantity}"
+        f"↩️ <b>{seller_name}</b> снял(а) лот: <b>{item_name}</b> ×{listing_quantity}"
     )
     return _listing_to_out(listing)
 
@@ -129,11 +139,13 @@ def buy_listing(
         raise HTTPException(status_code=400, detail="Нельзя купить у себя")
     if listing.target_user_id is not None and listing.target_user_id != user.id:
         raise HTTPException(status_code=403, detail="Это предложение адресовано другому игроку")
-    if user.wallet.balance < listing.price:
+    buyer_wallet = ensure_wallet(db, user)
+    if buyer_wallet.balance < listing.price:
         raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
     seller = db.query(models.User).filter(models.User.id == listing.seller_id).one()
-    user.wallet.balance -= listing.price
-    seller.wallet.balance += listing.price
+    seller_wallet = ensure_wallet(db, seller)
+    buyer_wallet.balance -= listing.price
+    seller_wallet.balance += listing.price
     inv = (
         db.query(models.InventoryItem)
         .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == listing.item_id)
@@ -152,11 +164,17 @@ def buy_listing(
             note=f"market:{listing.item.code}",
         )
     )
+    # Сохраняем строки ДО commit (expire_on_commit аннулирует listing/seller).
+    buyer_name = user.first_name
+    seller_name = seller.first_name
+    item_name = listing.item.name
+    listing_quantity = listing.quantity
+    listing_price = listing.price
     db.commit()
     db.refresh(user)
     from app.notify import notify_admins_bg
     notify_admins_bg(
-        f"💱 <b>{user.first_name}</b> купил(а) на рынке <b>{listing.item.name}</b> ×{listing.quantity} у <b>{seller.first_name}</b> за {listing.price} Ковбаксов"
+        f"💱 <b>{buyer_name}</b> купил(а) на рынке <b>{item_name}</b> ×{listing_quantity} у <b>{seller_name}</b> за {listing_price} Ковбаксов"
     )
     return _user_to_out(user)
 

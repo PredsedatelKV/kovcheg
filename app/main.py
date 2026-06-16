@@ -41,6 +41,12 @@ async def lifespan(app: FastAPI):
         migrate_schema(db)
         seed(db)
         migrate_icons(db)
+    # Warm up the embeddings model so the first assistant request isn't slow.
+    try:
+        from app.assistant.embedder import warmup
+        warmup()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("embedder warmup failed: %s", exc)
     settings = get_settings()
     if settings.public_url and settings.telegram_bot_token:
         try:
@@ -95,12 +101,10 @@ async def telegram_webhook(secret: str, request: Request) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
-class NoCacheStaticFiles(StaticFiles):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
 if STATIC_DIR.exists():
-    sf = NoCacheStaticFiles(directory=str(STATIC_DIR))
+    # No-cache headers are applied by the no_cache_static middleware below,
+    # so a plain StaticFiles mount is sufficient here.
+    sf = StaticFiles(directory=str(STATIC_DIR))
     app.mount("/static", sf, name="static")
 
     @app.middleware("http")

@@ -77,9 +77,13 @@ async function setTab(name) {
     viewEl.appendChild(div);
     containers[name] = div;
     div.innerHTML = '<div class="card"><p>Загрузка…</p></div>';
-    _switching = false;
-    await RENDERERS[name](div);
-    _finishTabSwitch(name);
+    try {
+      await RENDERERS[name](div);
+      _finishTabSwitch(name);
+    } finally {
+      // Keep the guard up for the whole async render; release only once done.
+      _switching = false;
+    }
   } else {
     const next = containers[name];
     next.style.display = "";
@@ -119,6 +123,13 @@ tabButtons.forEach((btn) => {
 window.kov = {
   setTab,
   onTabChange,
+  getTab() { return currentTab; },
+  // Re-render a tab into its own container (not the shared #view), so a renderer
+  // can refresh itself without clobbering the structure of other tabs.
+  rerender(name) {
+    const div = containers[name];
+    if (div && RENDERERS[name]) return RENDERERS[name](div);
+  },
   me: null,
   toast(msg) {
     playUISound("toast");

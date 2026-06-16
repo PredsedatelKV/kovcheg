@@ -10,8 +10,10 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.api._helpers import ensure_wallet
 from app.auth import is_admin, require_admin
 from app.db import get_db
+from app.models import now_utc
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -20,6 +22,21 @@ UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
 SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9._-]+")
+
+
+def _coerce_int(body: dict, field: str, default=None):
+    """Безопасно достаёт числовое поле из произвольного dict-body и приводит к int.
+    Возвращает default, если поля нет. Кидает 400 при неконвертируемом значении."""
+    if field not in body or body[field] is None:
+        return default
+    val = body[field]
+    if isinstance(val, bool):
+        # bool — подкласс int, но в этих полях это почти всегда ошибка
+        raise HTTPException(status_code=400, detail=f"Поле '{field}' должно быть числом")
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"Поле '{field}' должно быть числом")
 
 
 # ------- helpers -------
@@ -147,26 +164,31 @@ def update_user(user_id: int, body: schemas.AdminUserUpdate, db: Session = Depen
 @router.post("/users/{user_id}/balance", response_model=schemas.AdminUserOut)
 def adjust_balance(user_id: int, body: schemas.AdminBalanceUpdate, db: Session = Depends(get_db)) -> schemas.AdminUserOut:
     u = db.query(models.User).filter(models.User.id == user_id).one_or_none()
-    if u is None or u.wallet is None:
+    if u is None:
         raise HTTPException(status_code=404, detail="Игрок не найден")
+    wallet = ensure_wallet(db, u)
+    old_balance = wallet.balance
     if body.mode == "set":
         new_balance = body.delta
-        tx_amount = body.delta
-        tx_sender = None
-        tx_recipient = u.id
+        # Логируем фактическую дельту относительно старого баланса, а не
+        # «начисление» на всю новую сумму. Знак дельты задаёт направление.
+        change = new_balance - old_balance
+        tx_amount = abs(change)
+        tx_sender = None if change >= 0 else u.id
+        tx_recipient = u.id if change >= 0 else None
     elif body.mode == "sub":
-        new_balance = u.wallet.balance - body.delta
+        new_balance = old_balance - body.delta
         tx_amount = body.delta
         tx_sender = u.id
         tx_recipient = None
     else:
-        new_balance = u.wallet.balance + body.delta
+        new_balance = old_balance + body.delta
         tx_amount = body.delta
         tx_sender = None if body.delta >= 0 else u.id
         tx_recipient = u.id if body.delta >= 0 else None
     if new_balance < 0:
         raise HTTPException(status_code=400, detail="Баланс не может быть отрицательным")
-    u.wallet.balance = new_balance
+    wallet.balance = new_balance
     if tx_amount > 0:
         db.add(
             models.Transaction(
@@ -450,8 +472,9 @@ def approve_user_task(
         raise HTTPException(status_code=400, detail="Задание не в процессе")
     ut.status = "done"
     ut.progress = ut.task.target_progress
-    ut.finished_at = datetime.utcnow()
-    ut.user.wallet.balance += ut.task.reward
+    ut.finished_at = now_utc()
+    wallet = ensure_wallet(db, ut.user)
+    wallet.balance += ut.task.reward
     if ut.task.xp_reward:
         ut.user.xp += ut.task.xp_reward
     db.add(
@@ -480,6 +503,9 @@ def create_shop(body: schemas.AdminShopProductBody, db: Session = Depends(get_db
     item = db.query(models.Item).filter(models.Item.id == body.item_id).one_or_none()
     if item is None:
         raise HTTPException(status_code=404, detail="Предмет не найден")
+    # stock: -1 = безлимит, 0 = распродано, >0 = остаток. Меньше -1 — некорректно.
+    if body.stock < -1:
+        raise HTTPException(status_code=400, detail="Некорректный остаток (stock >= -1, где -1 = безлимит)")
     p = models.ShopProduct(item_id=body.item_id, price=body.price, is_active=body.is_active, stock=body.stock)
     db.add(p)
     db.commit()
@@ -492,6 +518,8 @@ def update_shop(product_id: int, body: schemas.AdminShopProductBody, db: Session
     p = db.query(models.ShopProduct).filter(models.ShopProduct.id == product_id).one_or_none()
     if p is None:
         raise HTTPException(status_code=404, detail="Товар не найден")
+    if body.stock < -1:
+        raise HTTPException(status_code=400, detail="Некорректный остаток (stock >= -1, где -1 = безлимит)")
     p.item_id = body.item_id
     p.price = body.price
     p.is_active = body.is_active
@@ -776,9 +804,22 @@ def admin_save_bp_season(body: dict, db: Session = Depends(get_db)):
         s = models.BattlePassSeason(name="Новый сезон")
         db.add(s)
         db.flush()
-    for field in ("name", "theme", "xp_per_level", "total_levels", "is_active"):
-        if field in body:
-            setattr(s, field, body[field])
+    if "name" in body and body["name"] is not None:
+        s.name = body["name"]
+    if "theme" in body and body["theme"] is not None:
+        s.theme = body["theme"]
+    if "xp_per_level" in body:
+        s.xp_per_level = _coerce_int(body, "xp_per_level", s.xp_per_level)
+    if "total_levels" in body:
+        s.total_levels = _coerce_int(body, "total_levels", s.total_levels)
+    if "is_active" in body:
+        s.is_active = bool(body["is_active"])
+    # Только один активный сезон: при активации деактивируем остальные.
+    if s.is_active:
+        db.query(models.BattlePassSeason).filter(
+            models.BattlePassSeason.id != s.id,
+            models.BattlePassSeason.is_active == True,
+        ).update({models.BattlePassSeason.is_active: False})
     db.commit()
     return {"ok": True, "id": s.id}
 
@@ -811,7 +852,11 @@ def admin_save_bp_reward(body: dict, db: Session = Depends(get_db)):
         r = models.BattlePassReward(season_id=season_id, track="free")
         db.add(r)
         db.flush()
-    for field in ("level", "kind", "value", "item_code", "label", "icon"):
+    if "level" in body:
+        r.level = _coerce_int(body, "level", r.level)
+    if "value" in body:
+        r.value = _coerce_int(body, "value", r.value)
+    for field in ("kind", "item_code", "label", "icon"):
         if field in body:
             setattr(r, field, body[field])
     db.commit()
@@ -831,9 +876,16 @@ def admin_delete_bp_reward(reward_id: int, db: Session = Depends(get_db)):
 @router.post("/battlepass/seed")
 def admin_seed_bp_season(body: dict, db: Session = Depends(get_db)):
     """Создать сезон с автозаполнением наград для всех уровней."""
-    levels = body.get("total_levels", 100)
-    xp_per_level = body.get("xp_per_level", 100)
-    name = body.get("name", "Новый сезон")
+    levels = _coerce_int(body, "total_levels", 100)
+    xp_per_level = _coerce_int(body, "xp_per_level", 100)
+    name = body.get("name") or "Новый сезон"
+    if levels < 1:
+        raise HTTPException(status_code=400, detail="total_levels должен быть >= 1")
+
+    # Только один активный сезон: деактивируем прочие перед активацией нового.
+    db.query(models.BattlePassSeason).filter(
+        models.BattlePassSeason.is_active == True
+    ).update({models.BattlePassSeason.is_active: False})
 
     season = models.BattlePassSeason(
         name=name, theme=body.get("theme", "summer"),
@@ -875,9 +927,9 @@ def admin_reset_bp(user_id: int, db: Session = Depends(get_db)):
 @router.post("/battlepass/reset-level")
 def admin_reset_level(body: dict, db: Session = Depends(get_db)):
     """Сбросить конкретный уровень пропуска у игрока."""
-    user_id = body.get("user_id")
-    level = body.get("level")
-    if not user_id or not level:
+    user_id = _coerce_int(body, "user_id")
+    level = _coerce_int(body, "level")
+    if user_id is None or level is None:
         raise HTTPException(400, "user_id и level обязательны")
     season = db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active == True).first()
     if not season:
@@ -900,11 +952,16 @@ def admin_reset_level(body: dict, db: Session = Depends(get_db)):
 def admin_list_lootbox_pools(db: Session = Depends(get_db)):
     """Список всех пулов лутбоксов с их записями."""
     pools = db.query(models.LootboxPool).all()
+    item_ids = {e.item_id for p in pools for e in p.entries if e.item_id is not None}
+    item_map = {}
+    if item_ids:
+        for item in db.query(models.Item).filter(models.Item.id.in_(item_ids)).all():
+            item_map[item.id] = item
     result = []
     for p in pools:
         entries = []
         for e in p.entries:
-            item = db.query(models.Item).filter(models.Item.id == e.item_id).first()
+            item = item_map.get(e.item_id)
             entries.append({
                 "id": e.id, "item_id": e.item_id, "weight": e.weight,
                 "item_name": item.name if item else "?",
@@ -944,11 +1001,13 @@ def admin_save_lootbox_entry(body: dict, db: Session = Depends(get_db)):
         pool_id = body.get("pool_id")
         if not pool_id:
             raise HTTPException(400, "pool_id обязателен")
-        e = models.LootboxPoolEntry(pool_id=pool_id)
+        e = models.LootboxPoolEntry(pool_id=_coerce_int(body, "pool_id"))
         db.add(e)
         db.flush()
-    if "item_id" in body: e.item_id = body["item_id"]
-    if "weight" in body: e.weight = body["weight"]
+    if "item_id" in body:
+        e.item_id = _coerce_int(body, "item_id", e.item_id)
+    if "weight" in body:
+        e.weight = _coerce_int(body, "weight", e.weight)
     db.commit()
     return {"ok": True, "id": e.id}
 

@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # --- LLM / Ассистент ---
     llm_provider: str = "openrouter"  # openrouter | gemini
     llm_api_key: str = ""  # ключ (OpenRouter или Gemini)
-    llm_model: str = "gemini-2.0-flash"
+    llm_model: str = "google/gemini-2.0-flash-001"
     llm_base_url: str = "https://openrouter.ai/api/v1"
     llm_max_tokens: int = 800
     llm_temperature: float = 0.7

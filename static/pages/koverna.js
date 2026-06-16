@@ -43,8 +43,15 @@ export async function renderKoverna(root) {
 }
 
 async function renderShop(root) {
-  const products = await get("/api/shop/products");
   const content = root.querySelector("#content");
+  if (content) content.innerHTML = `<div class="empty">Загрузка…</div>`;
+  let products;
+  try {
+    products = await get("/api/shop/products");
+  } catch (e) {
+    if (content) content.innerHTML = `<div class="empty">Ошибка загрузки: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
   content.innerHTML =
     products.length === 0
       ? `<div class="empty">В магазине пока пусто</div>`
@@ -62,6 +69,8 @@ async function renderShop(root) {
 
   content.querySelectorAll("[data-buy]").forEach((b) =>
     b.addEventListener("click", async () => {
+      if (b.disabled) return;
+      b.disabled = true;
       try {
         var buyResult = await post("/api/shop/buy", { product_id: Number(b.dataset.buy) });
         playUISound("win");
@@ -72,6 +81,7 @@ async function renderShop(root) {
         }
         await renderShop(root);
       } catch (e) {
+        b.disabled = false;
         window.kov.toast(e.message);
       }
     }),
@@ -89,8 +99,15 @@ async function renderMarket(root) {
   tools.querySelector("#sell-btn").addEventListener("click", openSellDialog);
   tools.querySelector("#my-listings-btn").addEventListener("click", openMyListings);
 
-  const listings = await get("/api/market/listings");
   const content = root.querySelector("#content");
+  if (content) content.innerHTML = `<div class="empty">Загрузка…</div>`;
+  let listings;
+  try {
+    listings = await get("/api/market/listings");
+  } catch (e) {
+    if (content) content.innerHTML = `<div class="empty">Ошибка загрузки: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
   content.innerHTML =
     listings.length === 0
       ? `<div class="empty">На рынке пока ничего — выставь товар, чтобы начать!</div>`
@@ -110,6 +127,8 @@ async function renderMarket(root) {
 
   content.querySelectorAll("[data-buy-listing]").forEach((b) =>
     b.addEventListener("click", async () => {
+      if (b.disabled) return;
+      b.disabled = true;
       try {
         var buyResult = await post("/api/market/buy", { listing_id: Number(b.dataset.buyListing) });
         window.kov.toast("Куплено! Предмет в инвентаре");
@@ -119,6 +138,7 @@ async function renderMarket(root) {
         }
         await renderMarket(root);
       } catch (e) {
+        b.disabled = false;
         window.kov.toast(e.message);
       }
     }),
@@ -126,7 +146,13 @@ async function renderMarket(root) {
 }
 
 async function openSellDialog() {
-  const inv = await get("/api/market/inventory");
+  let inv;
+  try {
+    inv = await get("/api/market/inventory");
+  } catch (e) {
+    window.kov.toast(e.message);
+    return;
+  }
   if (!inv.length) {
     window.kov.toast("Инвентарь пуст — нечего продавать");
     return;
@@ -153,7 +179,7 @@ async function openSellDialog() {
       await post("/api/market/list", { item_id, quantity, price });
       window.kov.toast("Выставлено!");
       window.closeModal();
-      renderKoverna(document.getElementById("view"));
+      window.kov.rerender("koverna");
     } catch (e) {
       window.kov.toast(e.message);
     }
@@ -161,7 +187,13 @@ async function openSellDialog() {
 }
 
 async function openMyListings() {
-  const mine = await get("/api/market/my");
+  let mine;
+  try {
+    mine = await get("/api/market/my");
+  } catch (e) {
+    window.kov.toast(e.message);
+    return;
+  }
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <h2>Мои объявления</h2>
@@ -191,7 +223,7 @@ async function openMyListings() {
         await post(`/api/market/unlist/${b.dataset.unlist}`);
         window.kov.toast("Снято с продажи");
         window.closeModal();
-        renderKoverna(document.getElementById("view"));
+        window.kov.rerender("koverna");
       } catch (e) {
         window.kov.toast(e.message);
       }

@@ -47,7 +47,7 @@ function animateElement(el, animation, duration) {
 }
 
 function getMaxBet() {
-  return Math.max(1, Math.floor(balance * 0.2 / 1) * 1);
+  return Math.max(1, Math.floor(balance * 0.2));
 }
 
 function betInputHTML(id) {
@@ -592,16 +592,17 @@ function gameHarvest() {
 
 
 function gameRoulette() {
+  // label — то, что видит игрок; mult — числовой множитель, который должен совпадать с подписью label.
   const sectors = [
-    { label: "x0.05", color: "#E55454", weight: 40 },
-    { label: "x0.25", color: "#D32F2F", weight: 22 },
-    { label: "x0.5", color: "#FF8A65", weight: 25 },
-    { label: "x0.75", color: "#FFB74D", weight: 18 },
-    { label: "x1", color: "#F2B33C", weight: 20 },
-    { label: "x1.5", color: "#6BD995", weight: 6 },
-    { label: "x2", color: "#6CB6FB", weight: 3 },
-    { label: "x2.5", color: "#D387E5", weight: 2 },
-    { label: "x3", color: "#AB47BC", weight: 1 },
+    { label: "x0.05", mult: 0.05, color: "#E55454", weight: 40 },
+    { label: "x0.25", mult: 0.25, color: "#D32F2F", weight: 22 },
+    { label: "x0.5", mult: 0.5, color: "#FF8A65", weight: 25 },
+    { label: "x0.75", mult: 0.75, color: "#FFB74D", weight: 18 },
+    { label: "x1", mult: 1, color: "#F2B33C", weight: 20 },
+    { label: "x1.5", mult: 1.5, color: "#6BD995", weight: 6 },
+    { label: "x2", mult: 2, color: "#6CB6FB", weight: 3 },
+    { label: "x2.5", mult: 2.5, color: "#D387E5", weight: 2 },
+    { label: "x3", mult: 3, color: "#AB47BC", weight: 1 },
   ];
   
   const modal = window.kov.showModal(`
@@ -619,18 +620,32 @@ function gameRoulette() {
 
   const wheel = modal.querySelector("#risk-wheel");
   const resultEl = modal.querySelector("#roulette-result");
-  
-  modal.querySelector("#roulette-spin-btn").addEventListener("click", () => {
+  const spinBtn = modal.querySelector("#roulette-spin-btn");
+
+  spinBtn.addEventListener("click", async () => {
+    // Защита от двойного клика: дизейблим кнопку в начале, включаем после анимации.
+    if (spinBtn.disabled) return;
     const bet = getBetValue("roulette-bet");
     if (balance < bet) {
       resultEl.innerHTML = `<div class="game-lose">Недостаточно K</div>`;
       return;
     }
-    
+
+    spinBtn.disabled = true;
+    playUISound("bet");
+
+    // Надёжное списание: ждём ответ /bet, при ошибке не крутим.
+    try {
+      await post("/api/arcade/bet", { amount: bet });
+    } catch (_) {
+      resultEl.innerHTML = `<div class="game-lose">Ошибка ставки, попробуйте ещё</div>`;
+      spinBtn.disabled = false;
+      return;
+    }
+
     balance -= bet;
     updateBalanceDisplay("roulette-balance", balance);
-    playUISound("bet");
-    post("/api/arcade/bet", { amount: bet }).catch(() => {});
+
     const totalWeight = sectors.reduce((s, sec) => s + sec.weight, 0);
     let rand = Math.random() * totalWeight;
     let chosen = sectors[0];
@@ -638,47 +653,48 @@ function gameRoulette() {
       rand -= sec.weight;
       if (rand <= 0) { chosen = sec; break; }
     }
-    
-    const mult = parseFloat(chosen.label.replace("x", ""));
+
+    const mult = chosen.mult;
     const win = Math.floor(bet * mult);
     const chosenIdx = sectors.indexOf(chosen);
-    
+
     wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("active", "highlight"));
     let currentIdx = 0;
     let spins = 0;
     const maxSpins = 20 + chosenIdx;
-    
-    const spinInterval = setInterval(() => {
+
+    const spinInterval = setInterval(async () => {
       wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("highlight"));
       wheel.children[currentIdx].classList.add("highlight");
       currentIdx = (currentIdx + 1) % sectors.length;
       spins++;
       if (spins % 2 === 0) playUISound("spin");
-      
+
       if (spins >= maxSpins) {
         clearInterval(spinInterval);
         wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("highlight"));
         wheel.children[chosenIdx].classList.add("active");
         animateElement(wheel.children[chosenIdx], "popIn", 300);
-        
+
         if (mult > 1) {
-          post("/api/arcade/win", { amount: win }).catch(() => {});
           balance += win;
           updateBalanceDisplay("roulette-balance", balance);
           resultEl.innerHTML = `<div class="game-win">${chosen.label}! Выигрыш: ${win} K</div>`;
           animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
           playUISound("win");
+          try { await post("/api/arcade/win", { amount: win }); } catch (_) { await syncBalance(); }
         } else if (mult === 1) {
-          post("/api/arcade/win", { amount: bet }).catch(() => {});
           balance += bet;
           updateBalanceDisplay("roulette-balance", balance);
           resultEl.innerHTML = `<div class="game-neutral">x1. Ставка возвращена.</div>`;
           playUISound("cashout");
+          try { await post("/api/arcade/win", { amount: bet }); } catch (_) { await syncBalance(); }
         } else {
           resultEl.innerHTML = `<div class="game-lose">${chosen.label}. Ставка потеряна.</div>`;
           playUISound("lose");
         }
-        syncBalance();
+        await syncBalance();
+        spinBtn.disabled = false;
       }
     }, 100);
   });
@@ -848,6 +864,8 @@ function gamePingPong() {
 
   function update() {
     if (!running) return;
+    // Если canvas отсоединён от DOM (модалка закрыта) — прекращаем цикл.
+    if (!canvas.isConnected) { running = false; return; }
     bx += bvx; by += bvy;
     if (bx < BS || bx > W - BS) bvx = -bvx;
     if (by < 10 + PH + BS && bx > ai && bx < ai + PW) { bvy = Math.abs(bvy); bvx += (bx - (ai + PW / 2)) * 0.1; }
@@ -864,6 +882,11 @@ function gamePingPong() {
 
   canvas.addEventListener("touchmove", e => { e.preventDefault(); px = e.touches[0].clientX - canvas.getBoundingClientRect().left - PW / 2; px = Math.max(0, Math.min(W - PW, px)); });
   canvas.addEventListener("mousemove", e => { px = e.offsetX - PW / 2; px = Math.max(0, Math.min(W - PW, px)); });
+
+  // При закрытии модалки останавливаем rAF-цикл, иначе утечка rAF и запись в отсоединённый canvas.
+  const closeBtn = modal.querySelector(".close");
+  if (closeBtn) closeBtn.addEventListener("click", () => { running = false; });
+  // Подстраховка: если canvas удалён из DOM (модалка закрыта иным способом), тоже останавливаемся.
 
   draw();
   update();
@@ -887,14 +910,21 @@ function gameSlots() {
   `);
   const resultEl = modal.querySelector("#slots-result");
   const spinBtn = modal.querySelector("#slots-spin");
-  spinBtn.addEventListener("click", () => {
+  spinBtn.addEventListener("click", async () => {
     if (spinBtn.disabled) return;
     spinBtn.disabled = true;
     const bet = getBetValue("slots-bet");
     if (balance < bet) { resultEl.innerHTML = '<div class="game-lose">Недостаточно K</div>'; spinBtn.disabled = false; return; }
+    // Надёжное списание: ждём ответ /bet, при ошибке не крутим.
+    try {
+      await post("/api/arcade/bet", { amount: bet });
+    } catch (_) {
+      resultEl.innerHTML = '<div class="game-lose">Ошибка ставки, попробуйте ещё</div>';
+      spinBtn.disabled = false;
+      return;
+    }
     balance -= bet;
     updateBalanceDisplay("slots-balance", balance);
-    post("/api/arcade/bet", { amount: bet }).catch(() => {});
     playUISound("spin");
     const r1 = symbols[Math.floor(Math.random() * symbols.length)];
     const r2 = symbols[Math.floor(Math.random() * symbols.length)];
@@ -953,13 +983,24 @@ function gameRocket() {
   const cashBtn = modal.querySelector("#rocket-cashout");
   let mult = 1, running = false, crashed = false, bet = 0, timer;
 
-  startBtn.addEventListener("click", () => {
+  startBtn.addEventListener("click", async () => {
     if (running) return;
     bet = getBetValue("rocket-bet");
     if (balance < bet) { resultEl.innerHTML = '<div class="game-lose">Недостаточно K</div>'; return; }
+    // Защита от двойного клика на время сетевого запроса.
+    if (startBtn.disabled) return;
+    startBtn.disabled = true;
+    // Надёжное списание: ждём ответ /bet, при ошибке не запускаем.
+    try {
+      await post("/api/arcade/bet", { amount: bet });
+    } catch (_) {
+      resultEl.innerHTML = '<div class="game-lose">Ошибка ставки, попробуйте ещё</div>';
+      startBtn.disabled = false;
+      return;
+    }
+    startBtn.disabled = false;
     balance -= bet;
     updateBalanceDisplay("rocket-balance", balance);
-    post("/api/arcade/bet", { amount: bet }).catch(() => {});
     mult = 1; running = true; crashed = false;
     startBtn.style.display = "none"; cashBtn.style.display = "";
     multEl.style.color = "#6cb6fb";
@@ -1034,14 +1075,21 @@ function gameDice() {
   let rolling = false;
 
   modal.querySelectorAll(".dice-pick").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       if (rolling) return;
       const bet = getBetValue("dice-bet");
       if (balance < bet) { resEl.innerHTML = '<div class="game-lose">Недостаточно K</div>'; return; }
+      rolling = true;
+      // Надёжное списание: ждём ответ /bet, при ошибке не бросаем.
+      try {
+        await post("/api/arcade/bet", { amount: bet });
+      } catch (_) {
+        resEl.innerHTML = '<div class="game-lose">Ошибка ставки, попробуйте ещё</div>';
+        rolling = false;
+        return;
+      }
       balance -= bet;
       updateBalanceDisplay("dice-balance", balance);
-      post("/api/arcade/bet", { amount: bet }).catch(() => {});
-      rolling = true;
       const roll = Math.floor(Math.random() * 6) + 1;
       let spins = 0;
       const si = setInterval(() => {
@@ -1052,11 +1100,13 @@ function gameDice() {
           diceEl.innerHTML = diceSVG[roll - 1];
           const pick = btn.dataset.pick;
           let win = 0;
-          if (pick === "odd" && roll % 2 === 1) win = Math.floor(bet * 1.7);
-          else if (pick === "even" && roll % 2 === 0) win = Math.floor(bet * 1.7);
-          else if (pick === "low" && roll <= 3) win = Math.floor(bet * 1.7);
-          else if (pick === "high" && roll >= 4) win = Math.floor(bet * 1.7);
-          else if (pick === String(roll)) win = bet * 4;
+          // Множители должны совпадать с подписями кнопок UI:
+          // чёт/нечёт/1-3/4-6 = x1.8, конкретное число = x5.
+          if (pick === "odd" && roll % 2 === 1) win = Math.floor(bet * 1.8);
+          else if (pick === "even" && roll % 2 === 0) win = Math.floor(bet * 1.8);
+          else if (pick === "low" && roll <= 3) win = Math.floor(bet * 1.8);
+          else if (pick === "high" && roll >= 4) win = Math.floor(bet * 1.8);
+          else if (pick === String(roll)) win = bet * 5;
           if (win > 0) {
             balance += win;
             updateBalanceDisplay("dice-balance", balance);

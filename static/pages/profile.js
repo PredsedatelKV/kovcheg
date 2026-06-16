@@ -12,6 +12,7 @@ const GAME_META = {
 let invitePollTimer = null;
 let _profileRoot = null;
 let _profileData = null;
+let _tabCleanupRegistered = false;
 
 function kovbaksWord(n) {
   const abs = Math.abs(n) % 100;
@@ -152,6 +153,7 @@ export async function renderProfile(root) {
   `;
 
   loadChat(root);
+  loadOnlineAvatars(root);
 
   // Event delegation — all profile clicks handled here, no re-binding on section update
   root.addEventListener("click", function(e) {
@@ -182,16 +184,38 @@ export async function renderProfile(root) {
     }
   });
   bindChatInput(root);
-  checkPendingInvites(root);
-  startInvitePoll(root);
+
+  // Stop all profile polling whenever the profile tab is hidden. Registered once;
+  // the pre-render of the profile tab on startup must NOT leave timers running
+  // before the user ever opens the tab.
+  if (!_tabCleanupRegistered && window.kov && window.kov.onTabChange) {
+    _tabCleanupRegistered = true;
+    window.kov.onTabChange("profile", function () {
+      clearInterval(invitePollTimer);
+      invitePollTimer = null;
+      if (window._gamePollTimer) {
+        clearInterval(window._gamePollTimer);
+        window._gamePollTimer = null;
+      }
+    });
+  }
+
+  // Only run invite polling when the profile tab is actually visible. During the
+  // background pre-render (window.kov.getTab() !== "profile") we skip it so the
+  // 5s timer doesn't spin before the user opens the tab.
+  const isVisible = !window.kov || !window.kov.getTab || window.kov.getTab() === "profile";
+  if (isVisible) {
+    checkPendingInvites(root);
+    startInvitePoll(root);
+  }
 }
 
 function startInvitePoll(root) {
   clearInterval(invitePollTimer);
-  invitePollTimer = setInterval(() => checkPendingInvites(root, true), 5000);
+  invitePollTimer = setInterval(() => checkPendingInvites(root), 5000);
 }
 
-async function checkPendingInvites(root, silent) {
+async function checkPendingInvites(root) {
   try {
     const data = await get("/api/game/my-invites");
     const invites = data.invites || [];
@@ -215,16 +239,30 @@ async function checkPendingInvites(root, silent) {
       modal.classList.add("invite-modal-open");
       
       modal.querySelector("#accept-invite-btn").addEventListener("click", async () => {
-        await post("/api/game/accept", { invite_id: invite.id });
-        closeModal();
-        window.kov.toast("Принято! Начинаем игру...");
-        clearInterval(invitePollTimer);
-        startGameInChat(invite.game, root);
+        let ok = false;
+        try {
+          await post("/api/game/accept", { invite_id: invite.id });
+          ok = true;
+        } catch (err) {
+          window.kov.toast(err.message);
+        } finally {
+          closeModal();
+        }
+        if (ok) {
+          window.kov.toast("Принято! Начинаем игру...");
+          clearInterval(invitePollTimer);
+          startGameInChat(invite.game, root);
+        }
       });
-      
+
       modal.querySelector("#decline-invite-btn").addEventListener("click", async () => {
-        await post("/api/game/decline", { invite_id: invite.id });
-        closeModal();
+        try {
+          await post("/api/game/decline", { invite_id: invite.id });
+        } catch (err) {
+          window.kov.toast(err.message);
+        } finally {
+          closeModal();
+        }
       });
     }
   } catch (e) {}
@@ -260,7 +298,7 @@ async function loadOnlineAvatars(root) {
         } catch (e) { window.kov.toast(e.message); }
       });
     });
-  } catch (e) { console.error("Online avatars error:", e); }
+  } catch (e) { /* non-critical: avatars stay empty */ }
 }
 
 function startGameInChat(game, root, sessionId) {
@@ -296,6 +334,7 @@ async function startMultiplayerTicTacToe(container, sessionId, root) {
   const me = window.kov.me;
   let session = null;
   let myTurn = false;
+  let moveInFlight = false;
 
   function renderBoard(board, status, currentTurn, mySymbol, opponentName) {
     const existing = container.querySelector(".mp-board");
@@ -328,10 +367,18 @@ async function startMultiplayerTicTacToe(container, sessionId, root) {
       cell.textContent = val === "_" ? "" : val;
       if (val === "_" && isMyTurn && status === "playing") {
         cell.addEventListener("click", async () => {
+          if (moveInFlight) return;
+          moveInFlight = true;
+          boardDiv.style.pointerEvents = "none";
           try {
             await post("/api/game/session/" + sessionId + "/move", { position: i });
             await refreshSession();
-          } catch (e) { window.kov.toast(e.message); }
+          } catch (e) {
+            window.kov.toast(e.message);
+            boardDiv.style.pointerEvents = "";
+          } finally {
+            moveInFlight = false;
+          }
         });
         cell.addEventListener("mouseenter", () => { cell.style.background = "rgba(76,175,80,0.1)"; cell.style.transform = "scale(1.05)"; });
         cell.addEventListener("mouseleave", () => { cell.style.background = "var(--surface-2)"; cell.style.transform = "scale(1)"; });
@@ -359,7 +406,7 @@ async function startMultiplayerTicTacToe(container, sessionId, root) {
     try {
       session = await get("/api/game/session/" + sessionId);
       renderBoard(session.board, session.status, session.current_turn, session.my_symbol, session.opponent_name);
-    } catch (e) { console.error("Poll error:", e); }
+    } catch (e) { /* transient poll failure — keep last board, retry next tick */ }
   }
 
   await refreshSession();
@@ -412,9 +459,9 @@ function bindChatInput(root) {
   async function send() {
     const text = input.value.trim();
     if (!text) return;
-    input.value = "";
     try {
       await post("/api/chat/send", { content: text, message_type: "text" });
+      input.value = "";
       loadChat(root);
     } catch (err) {
       window.kov.toast(err.message);

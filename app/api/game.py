@@ -14,12 +14,24 @@ router = APIRouter(prefix="/api/game", tags=["game"])
 MSK = timezone(timedelta(hours=3))
 
 
+ONLINE_WINDOW = timedelta(minutes=10)
+
+
 @router.get("/online")
 def get_online_players(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    players = db.query(models.User).filter(models.User.id != user.id).all()
+    cutoff = models.now_utc() - ONLINE_WINDOW
+    players = (
+        db.query(models.User)
+        .filter(
+            models.User.id != user.id,
+            models.User.last_seen.isnot(None),
+            models.User.last_seen >= cutoff,
+        )
+        .all()
+    )
     return {"online": [{"id": p.id, "first_name": p.first_name} for p in players]}
 
 
@@ -206,7 +218,9 @@ def make_move(
         raise HTTPException(400, "Не ваш ход")
     
     pos = payload.get("position")
-    if pos is None or pos < 0 or pos > 8:
+    if isinstance(pos, bool) or not isinstance(pos, int):
+        raise HTTPException(400, "Неверная позиция")
+    if pos < 0 or pos > 8:
         raise HTTPException(400, "Неверная позиция")
     
     board = list(session.board)

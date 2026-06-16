@@ -19,6 +19,10 @@ from app import models
 
 log = logging.getLogger(__name__)
 
+# Keep strong references to fire-and-forget tasks so the event loop's weak
+# bookkeeping doesn't let the GC cancel them mid-flight.
+_background_tasks: set[asyncio.Task] = set()
+
 
 def _resolve_admin_chat_ids() -> list[int]:
     settings = get_settings()
@@ -68,7 +72,9 @@ def notify_admins_bg(text: str) -> None:
         return
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(_send_to_chats(chat_ids, text))
+        task = loop.create_task(_send_to_chats(chat_ids, text))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
     except RuntimeError:
         # No running loop (e.g. unit test, sync context) — run synchronously.
         try:

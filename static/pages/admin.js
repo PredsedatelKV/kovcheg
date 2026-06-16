@@ -1210,6 +1210,12 @@ async function renderQuizzes(body) {
     btn.addEventListener("click", async () => {
       const card = btn.closest(".admin-card");
       const id = card.dataset.id;
+      // Идемпотентность: повторный клик не плодит карточки, а тогглит уже открытую.
+      const existing = card.nextElementSibling;
+      if (existing && existing.classList.contains("quiz-attempts-card") && existing.dataset.quizId === String(id)) {
+        existing.remove();
+        return;
+      }
       const quiz = rows.find((r) => r.id === Number(id));
       const attempts = await get(`/api/admin/quizzes/${id}/attempts`);
       const meta = await get("/api/admin/meta");
@@ -1221,7 +1227,12 @@ async function renderQuizzes(body) {
           <div class="admin-sub"><strong>${escapeHtml(userMap[a.user_id] || "ID:" + a.user_id)}</strong> · ${gradeLabels[a.grade] || a.grade} · ${a.score}/${a.total} · ${formatDate(a.created_at)} ${a.prize_awarded ? "· ✅ Приз выдан" : "· ❌ Без приза"}</div>
         </div>
       `).join("");
-      card.insertAdjacentHTML("afterend", `<div class="admin-card"><h3 class="admin-card-title">Попытки: ${escapeHtml(quiz?.title || "")}</h3>${html || "<div class='admin-sub'>Нет попыток</div>"}</div>`);
+      // Удаляем любую ранее открытую карточку попыток для этого теста перед вставкой свежей.
+      const prev = card.nextElementSibling;
+      if (prev && prev.classList.contains("quiz-attempts-card") && prev.dataset.quizId === String(id)) {
+        prev.remove();
+      }
+      card.insertAdjacentHTML("afterend", `<div class="admin-card quiz-attempts-card" data-quiz-id="${id}"><h3 class="admin-card-title">Попытки: ${escapeHtml(quiz?.title || "")}</h3>${html || "<div class='admin-sub'>Нет попыток</div>"}</div>`);
     });
   });
 }
@@ -1376,21 +1387,31 @@ function renderBPRewards(body, seasons) {
       if (!byLevel[r.level]) byLevel[r.level] = {};
       byLevel[r.level][r.track] = r;
     });
+    // Показываем все треки уровня. Собираем набор треков, реально встречающихся в наградах,
+    // плюс гарантируем наличие "free", чтобы для него всегда была кнопка добавления.
+    var trackSet = { free: true };
+    s.rewards.forEach(function(r) { if (r.track) trackSet[r.track] = true; });
+    var tracks = Object.keys(trackSet);
+    var trackLabels = { free: "free", premium: "prem", lootbox: "box" };
     var html = '<div style="font-size:11px;margin-top:4px;border-top:1px solid var(--border);padding-top:6px">';
     for (var lvl = 1; lvl <= s.total_levels; lvl++) {
-      var free = byLevel[lvl] ? byLevel[lvl]["free"] : null;
-      html += '<div class="bp-admin-lvl-row" data-lvl="' + lvl + '" style="display:flex;align-items:center;gap:4px;padding:2px 0;border-bottom:1px solid var(--border);">';
+      html += '<div class="bp-admin-lvl-row" data-lvl="' + lvl + '" style="display:flex;align-items:center;gap:4px;padding:2px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">';
       html += '<span style="font-weight:700;min-width:24px;color:var(--text)">' + lvl + '.</span>';
-      html += '<span style="flex:1;display:flex;align-items:center;gap:3px;min-width:0">';
-      if (free) {
-        html += '<img src="' + free.icon + '" style="width:14px;height:14px;vertical-align:middle" onerror="this.style.display=\'none\'"/> ';
-        html += '<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escapeHtml(free.kind) + ' ' + free.value + '</span>';
-        html += ' <button class="bp-reward-edit" data-id="' + free.id + '" style="background:none;border:none;color:var(--primary);cursor:pointer;font-size:10px;flex-shrink:0">✎</button>';
-      } else {
-        html += '<span style="color:#888;font-style:italic">—</span>';
-        html += ' <button class="bp-reward-add" data-lvl="' + lvl + '" data-track="free" style="background:none;border:none;color:var(--primary);cursor:pointer;font-size:10px;flex-shrink:0">+</button>';
+      for (var ti = 0; ti < tracks.length; ti++) {
+        var track = tracks[ti];
+        var rw = byLevel[lvl] ? byLevel[lvl][track] : null;
+        html += '<span style="flex:1;display:flex;align-items:center;gap:3px;min-width:90px">';
+        html += '<span style="color:var(--text-soft);font-size:9px;text-transform:uppercase">' + (trackLabels[track] || escapeHtml(track)) + '</span>';
+        if (rw) {
+          html += '<img src="' + rw.icon + '" style="width:14px;height:14px;vertical-align:middle" onerror="this.style.display=\'none\'"/> ';
+          html += '<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escapeHtml(rw.kind) + ' ' + rw.value + '</span>';
+          html += ' <button class="bp-reward-edit" data-id="' + rw.id + '" style="background:none;border:none;color:var(--primary);cursor:pointer;font-size:10px;flex-shrink:0">✎</button>';
+        } else {
+          html += '<span style="color:#888;font-style:italic">—</span>';
+          html += ' <button class="bp-reward-add" data-lvl="' + lvl + '" data-track="' + track + '" style="background:none;border:none;color:var(--primary);cursor:pointer;font-size:10px;flex-shrink:0">+</button>';
+        }
+        html += '</span>';
       }
-      html += '</span>';
       html += '</div>';
     }
     html += '</div>';
@@ -1407,7 +1428,8 @@ function renderBPRewards(body, seasons) {
     container.querySelectorAll(".bp-reward-add").forEach(function(b) {
       b.addEventListener("click", function() {
         var lvl = Number(b.dataset.lvl);
-        var dummy = { id: null, level: lvl, kind: "xp", value: 10, label: "", icon: "/static/img/item_icons/xp.svg", item_code: null };
+        var track = b.dataset.track || "free";
+        var dummy = { id: null, level: lvl, track: track, kind: "xp", value: 10, label: "", icon: "/static/img/item_icons/xp.svg", item_code: null };
         openBpRewardEditor(body, dummy, s);
       });
     });
@@ -1483,6 +1505,7 @@ function openBpRewardEditor(body, r, season) {
         id: r.id || null,
         season_id: season.id,
         level: r.level,
+        track: r.track || "free",
         kind: kind,
         value: Number(overlay.querySelector("#bpre-value").value) || 0,
         label: overlay.querySelector("#bpre-label").value.trim(),
@@ -1495,16 +1518,20 @@ function openBpRewardEditor(body, r, season) {
     } catch (e) { window.kov.toast(e.message); }
   });
 
-  overlay.querySelector("#bpre-delete").addEventListener("click", async function() {
-    confirmAction("Удалить награду?", async function() {
-      try {
-        await del("/api/admin/battlepass/reward/" + r.id);
-        window.kov.toast("Награда удалена");
-        overlay.remove();
-        renderBattlePassAdmin(body);
-      } catch (e) { window.kov.toast(e.message); }
+  // Кнопка удаления есть только у существующей награды (r.id). Для новой её нет — иначе querySelector вернёт null.
+  var deleteBtn = overlay.querySelector("#bpre-delete");
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", async function() {
+      confirmAction("Удалить награду?", async function() {
+        try {
+          await del("/api/admin/battlepass/reward/" + r.id);
+          window.kov.toast("Награда удалена");
+          overlay.remove();
+          renderBattlePassAdmin(body);
+        } catch (e) { window.kov.toast(e.message); }
+      });
     });
-  });
+  }
 }
 
 const SECTION_RENDERERS = {

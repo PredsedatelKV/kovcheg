@@ -177,8 +177,10 @@ ${bannerCarousel(data.banners)}
     var el = document.getElementById("bp-mini-card");
     if (!el) return;
     var s = bp.season;
-    var lvl = Math.min(bp.current_level, s.total_levels - 1) + 1;
-    var pct = Math.min(100, Math.round((bp.current_xp / bp.xp_for_level) * 100));
+    var lvl = Math.min(bp.current_level || 0, (s.total_levels || 1) - 1) + 1;
+    var pct = bp.xp_for_level > 0
+      ? Math.min(100, Math.round(((bp.current_xp || 0) / bp.xp_for_level) * 100))
+      : 0;
     el.innerHTML = '<div class="card bp-mini-card" onclick="window.kov.setTab(\'battlepass\')">' +
       '<div class="bp-mini-banner"></div>' +
       '<div class="bp-mini-body">' +
@@ -258,7 +260,8 @@ ${bannerCarousel(data.banners)}
 
   const ac = root.querySelector("#assistant-card");
   if (ac) ac.addEventListener("click", () => { playUISound("click"); openAssistantChat(); });
-  root.querySelector("#wheel-card").addEventListener("click", () => { playUISound("click"); openWheel(); });
+  const wheelCard = root.querySelector("#wheel-card");
+  if (wheelCard) wheelCard.addEventListener("click", () => { playUISound("click"); openWheel(); });
   const newsCard = root.querySelector("#news-card");
   if (newsCard) newsCard.addEventListener("click", () => { playUISound("click"); openAllNews(); });
   const newsVisual = root.querySelector("#news-visual");
@@ -288,7 +291,8 @@ ${bannerCarousel(data.banners)}
     });
   });
 
-  root.querySelector('[data-action="all-tasks"]').addEventListener("click", () =>
+  const allTasksBtn = root.querySelector('[data-action="all-tasks"]');
+  if (allTasksBtn) allTasksBtn.addEventListener("click", () =>
     openAllTasks(allTasksList, data.user_tasks),
   );
 
@@ -538,12 +542,18 @@ async function openWheel() {
         const finalRot = currentRot + fullSpins * 360 + (targetAngle - (currentRot % 360));
         
         playUISound("spin");
-        spinSoundInterval = setInterval(() => playUISound("spin"), 300);
-        
+        spinSoundInterval = setInterval(() => {
+          // Stop playing if the user closed the modal mid-spin.
+          if (!document.body.contains(modal)) { clearInterval(spinSoundInterval); return; }
+          playUISound("spin");
+        }, 300);
+
         svg.style.transform = `rotate(${finalRot}deg)`;
         currentRot = finalRot;
-        
+
         setTimeout(() => {
+          // Modal may have been closed during the ~4.6s spin — DOM nodes are gone.
+          if (!document.body.contains(modal)) { clearInterval(spinSoundInterval); return; }
           clearInterval(spinSoundInterval);
           playUISound("win");
           const prize = modal.querySelector("#prize");

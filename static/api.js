@@ -22,7 +22,9 @@ export async function api(path, options = {}) {
     const msg = (data && (data.detail || data.error)) || `Ошибка ${res.status}`;
     throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
   }
-  return data;
+  // On 2xx with empty/invalid body, json() above left data null. Callers expect
+  // an object so `data.field` access doesn't throw — normalize to {}.
+  return data ?? {};
 }
 
 export const get = (p) => api(p);

@@ -1,22 +1,28 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 
 
-def utcnow() -> datetime:
-    return datetime.utcnow()
+def now_utc() -> datetime:
+    """Naive UTC datetime (tz-aware -> naive) to remove the deprecated datetime.utcnow()
+    while staying consistent with the existing naive datetime columns/comparisons."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+# Backwards-compatible alias used as column default throughout the models.
+utcnow = now_utc
 
 
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    telegram_id: Mapped[int] = mapped_column(Integer, unique=True, index=True, nullable=False)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
     username: Mapped[str | None] = mapped_column(String(64), nullable=True)
     first_name: Mapped[str] = mapped_column(String(128), default="")
     last_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -67,7 +73,7 @@ class InventoryItem(Base):
     __table_args__ = (UniqueConstraint("user_id", "item_id", name="uq_user_item"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id"), nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, default=1)
 
@@ -94,7 +100,7 @@ class UserTask(Base):
     __tablename__ = "user_tasks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="in_progress")  # in_progress/done/cancelled
     progress: Mapped[int] = mapped_column(Integer, default=0)
@@ -122,12 +128,12 @@ class MarketListing(Base):
     __tablename__ = "market_listings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id"), nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    target_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    target_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     seller: Mapped[User] = relationship("User", foreign_keys=[seller_id])
@@ -139,8 +145,8 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    sender_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    recipient_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    sender_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
+    recipient_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     note: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -150,7 +156,7 @@ class WheelSpin(Base):
     __tablename__ = "wheel_spins"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     prize_kind: Mapped[str] = mapped_column(String(32), default="coins")  # coins/item/nothing
     prize_value: Mapped[int] = mapped_column(Integer, default=0)
     prize_label: Mapped[str] = mapped_column(String(128), default="")
@@ -240,8 +246,8 @@ class QuizAttempt(Base):
     __tablename__ = "quiz_attempts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    quiz_id: Mapped[int] = mapped_column(ForeignKey("quizzes.id"), nullable=False)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    quiz_id: Mapped[int] = mapped_column(ForeignKey("quizzes.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     score: Mapped[int] = mapped_column(Integer, default=0)
     total: Mapped[int] = mapped_column(Integer, default=0)
     grade: Mapped[str] = mapped_column(String(16), default="bad")  # bad | good | excellent
@@ -256,7 +262,7 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     message_type: Mapped[str] = mapped_column(String(16), default="text")  # text | sticker
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -268,8 +274,8 @@ class GameInvite(Base):
     __tablename__ = "game_invites"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    from_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    to_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    from_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    to_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     game: Mapped[str] = mapped_column(String(32), nullable=False)  # tictactoe, checkers, pingpong
     status: Mapped[str] = mapped_column(String(16), default="pending")  # pending, accepted, declined
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -284,8 +290,8 @@ class GameSession(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     invite_id: Mapped[int] = mapped_column(ForeignKey("game_invites.id"), nullable=True)
     game: Mapped[str] = mapped_column(String(32), nullable=False)
-    player_x_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    player_o_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    player_x_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    player_o_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     board: Mapped[str] = mapped_column(String(64), default="_________")  # 9 chars, _ = empty, X, O
     current_turn: Mapped[str] = mapped_column(String(1), default="X")  # X or O
     status: Mapped[str] = mapped_column(String(16), default="playing")  # playing, x_won, o_won, draw
@@ -335,7 +341,7 @@ class UserBattlePass(Base):
     __table_args__ = (UniqueConstraint("user_id", "season_id", name="uq_user_season"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     season_id: Mapped[int] = mapped_column(ForeignKey("battlepass_seasons.id"), nullable=False)
     has_premium: Mapped[bool] = mapped_column(Boolean, default=False)
     claimed_rewards: Mapped[str] = mapped_column(Text, default="[]")  # JSON [[level, track], ...]

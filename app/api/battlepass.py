@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 import random
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.api._helpers import ensure_wallet
 from app.auth import current_user, is_admin
 from app.db import get_db
+from app.models import now_utc
 
 router = APIRouter(prefix="/api/battlepass", tags=["battlepass"])
 
@@ -107,6 +107,8 @@ def claim_reward(
         raise HTTPException(404, "Нет активного сезона")
     ubp = _get_ubp(db, user.id, season)
     level, _ = _calc_level(user.xp, season.xp_per_level)
+    # Кап уровня согласован с get_battlepass (там min(level, total_levels-1)).
+    level = min(level, season.total_levels - 1)
 
     reward = db.query(models.BattlePassReward).filter(
         models.BattlePassReward.season_id == season.id,
@@ -123,25 +125,40 @@ def claim_reward(
     if reward.level in claimed:
         raise HTTPException(409, "Награда уже получена")
 
-    claimed.append(reward.level)
-    ubp.claimed_rewards = json.dumps(claimed)
+    # Сначала ВЫДАЁМ награду; claimed помечаем и коммитим ТОЛЬКО после успешной выдачи.
+    def _grant_item(item_code: str) -> None:
+        item = db.query(models.Item).filter(models.Item.code == item_code).first()
+        if not item:
+            raise HTTPException(400, "Предмет награды не найден")
+        qty = reward.value if reward.value and reward.value > 0 else 1
+        inv = db.query(models.InventoryItem).filter(
+            models.InventoryItem.user_id == user.id,
+            models.InventoryItem.item_id == item.id,
+        ).first()
+        if inv:
+            inv.quantity += qty
+        else:
+            db.add(models.InventoryItem(user_id=user.id, item_id=item.id, quantity=qty))
 
     if reward.kind == "coins" or reward.kind.startswith("coins_"):
-        user.wallet.balance += reward.value
+        wallet = ensure_wallet(db, user)
+        wallet.balance += reward.value
         db.add(models.Transaction(recipient_id=user.id, amount=reward.value, note=f"Battle Pass: {reward.label}"))
     elif reward.kind == "xp":
-        _add_xp(user, reward.value, db)
-    elif reward.kind == "item" and reward.item_code:
-        item = db.query(models.Item).filter(models.Item.code == reward.item_code).first()
-        if item:
-            inv = db.query(models.InventoryItem).filter(
-                models.InventoryItem.user_id == user.id,
-                models.InventoryItem.item_id == item.id,
-            ).first()
-            if inv:
-                inv.quantity += reward.value
-            else:
-                db.add(models.InventoryItem(user_id=user.id, item_id=item.id, quantity=reward.value))
+        user.xp += reward.value
+    elif reward.kind == "item":
+        if not reward.item_code:
+            raise HTTPException(400, "У награды не задан предмет")
+        _grant_item(reward.item_code)
+    elif reward.kind == "lootbox" or reward.kind.startswith("lootbox"):
+        if not reward.item_code:
+            raise HTTPException(400, "У награды-лутбокса не задан предмет")
+        _grant_item(reward.item_code)
+    else:
+        raise HTTPException(400, f"Неизвестный тип награды: {reward.kind}")
+
+    claimed.append(reward.level)
+    ubp.claimed_rewards = json.dumps(claimed)
 
     db.commit()
     db.refresh(user)
@@ -164,7 +181,7 @@ def award_xp(
             raise HTTPException(404, "Пользователь не найден")
 
     if body.mode == "set":
-        target.xp = body.amount
+        target.xp = max(0, body.amount)
     elif body.mode == "sub":
         target.xp = max(0, target.xp - body.amount)
     else:
@@ -197,12 +214,14 @@ def open_lootbox(
         raise HTTPException(500, "Пул ковбокса пуст")
 
     entries = pool.entries
-    total_weight = sum(e.weight for e in entries)
+    total_weight = sum(max(0, e.weight) for e in entries)
+    if total_weight <= 0:
+        raise HTTPException(400, "Некорректные веса пула ковбокса")
     roll = random.randint(1, total_weight)
     cumulative = 0
     chosen = entries[0]
     for e in entries:
-        cumulative += e.weight
+        cumulative += max(0, e.weight)
         if roll <= cumulative:
             chosen = e
             break
@@ -237,16 +256,18 @@ def award_arcade_xp(
     db: Session = Depends(get_db),
 ):
     from datetime import timedelta
-    one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+    # Учёт лимита НЕ должен искажать денежную историю: пишем amount=0 с явной
+    # пометкой "arcade_xp_limit" (баланс не меняется, в истории нет ложного "+5").
+    one_hour_ago = now_utc() - timedelta(hours=1)
     recent_xp = db.query(models.Transaction).filter(
         models.Transaction.recipient_id == user.id,
-        models.Transaction.note == "arcade_xp",
+        models.Transaction.note == "arcade_xp_limit",
         models.Transaction.created_at >= one_hour_ago,
     ).count()
     if recent_xp >= 3:
         raise HTTPException(429, "Лимит XP за аркаду: 3 раза в час")
     user.xp += 5
-    db.add(models.Transaction(recipient_id=user.id, amount=5, note="arcade_xp"))
+    db.add(models.Transaction(recipient_id=user.id, amount=0, note="arcade_xp_limit"))
     db.commit()
     return {"ok": True, "xp": user.xp}
 

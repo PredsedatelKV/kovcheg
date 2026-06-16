@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -21,9 +21,21 @@ def _to_msk(dt: datetime) -> str:
     return msk.strftime("%H:%M")
 
 
+def _message_to_out(m: models.ChatMessage) -> schemas.ChatMessageOut:
+    return schemas.ChatMessageOut(
+        id=m.id,
+        user_id=m.user_id,
+        user_name=m.user.first_name or m.user.username or "Аноним",
+        content=m.content,
+        message_type=m.message_type,
+        created_at=m.created_at,
+        created_at_msk=_to_msk(m.created_at),
+    )
+
+
 @router.get("/messages", response_model=list[schemas.ChatMessageOut])
 def list_messages(
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=200),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[schemas.ChatMessageOut]:
@@ -34,18 +46,7 @@ def list_messages(
         .all()
     )
     rows.reverse()
-    return [
-        schemas.ChatMessageOut(
-            id=m.id,
-            user_id=m.user_id,
-            user_name=m.user.first_name or m.user.username or "Аноним",
-            content=m.content,
-            message_type=m.message_type,
-            created_at=m.created_at,
-            created_at_msk=_to_msk(m.created_at),
-        )
-        for m in rows
-    ]
+    return [_message_to_out(m) for m in rows]
 
 
 @router.post("/send", response_model=schemas.ChatMessageOut)
@@ -69,12 +70,4 @@ def send_message(
     db.commit()
     db.refresh(m)
 
-    return schemas.ChatMessageOut(
-        id=m.id,
-        user_id=m.user_id,
-        user_name=user.first_name or user.username or "Аноним",
-        content=m.content,
-        message_type=m.message_type,
-        created_at=m.created_at,
-        created_at_msk=_to_msk(m.created_at),
-    )
+    return _message_to_out(m)

@@ -118,7 +118,7 @@ def current_user(
 ) -> models.User:
     settings = get_settings()
     if settings.skip_init_data_check and x_telegram_init_data == "DEV":
-        tg_user = {"id": 849162365, "username": "omarbutuev", "first_name": "Омар"}
+        tg_user = {"id": 10001, "username": "omarbutuev", "first_name": "Омар"}
     else:
         if not settings.telegram_bot_token:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="bot token not configured")
@@ -131,9 +131,13 @@ def current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Доступ только для граждан Федерации Ковчега",
         )
-    user.last_seen = models.utcnow()
-    db.commit()
-    db.refresh(user)
+    now = models.now_utc()
+    # Throttle last_seen writes: only update (and commit) if more than ~60s have
+    # elapsed since the last recorded value. This avoids a write+commit on every GET.
+    if user.last_seen is None or (now - user.last_seen).total_seconds() > 60:
+        user.last_seen = now
+        db.commit()
+        db.refresh(user)
     return user
 
 

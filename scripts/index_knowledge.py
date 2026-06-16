@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from PyPDF2 import PdfReader
 
 from app.assistant.embedder import encode_texts
-from app.assistant.store import KnowledgeStore
+from app.assistant.store import KnowledgeStore, reload_store
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 KNOWLEDGE_DIR = DATA_DIR / "knowledge"
@@ -47,15 +47,19 @@ def split_into_chunks(text: str, max_length: int = 800, overlap: int = 100) -> l
     while start < len(text):
         end = min(start + max_length, len(text))
         if end < len(text):
-            # Ищем ближайший разделитель для красивого разбиения
-            for split_point in range(end, start + max_length // 2, -1):
+            # Ищем ближайший разделитель для красивого разбиения.
+            # Начинаем с end-1, т.к. text[end] — это уже следующий за границей
+            # символ (а при end == len(text) это вообще выход за пределы строки).
+            for split_point in range(end - 1, start + max_length // 2, -1):
                 if text[split_point] in "\n\r ":
                     end = split_point
                     break
         chunk = text[start:end].strip()
         if chunk:
             chunks.append(chunk)
-        start = end - overlap
+        # Гарантируем прогресс: даже если end - overlap <= start (короткий чанк
+        # с большим overlap), сдвигаемся минимум на 1 символ, иначе зациклимся.
+        start = max(end - overlap, start + 1)
         if start >= len(text):
             break
     return chunks
@@ -77,7 +81,12 @@ def main() -> int:
         print("Создай папку data/knowledge/ и положи туда .txt, .md или .pdf файлы.")
         return 1
 
-    files = list(args.dir.glob("*.txt")) + list(args.dir.glob("*.md")) + list(args.dir.glob("*.pdf"))
+    # Регистронезависимый подбор расширений (.TXT/.PDF/.MD тоже подхватываются).
+    allowed_suffixes = {".txt", ".md", ".pdf"}
+    files = [
+        p for p in args.dir.iterdir()
+        if p.is_file() and p.suffix.lower() in allowed_suffixes
+    ]
     if not files:
         print(f"Нет файлов (.txt/.md/.pdf) в {args.dir}")
         return 1
@@ -86,7 +95,7 @@ def main() -> int:
     for file in sorted(files):
         print(f"Чтение: {file.name}")
         try:
-            if file.suffix == ".pdf":
+            if file.suffix.lower() == ".pdf":
                 text = read_pdf_file(file)
             else:
                 text = read_text_file(file)
@@ -112,8 +121,16 @@ def main() -> int:
     embeddings = encode_texts(texts)
 
     print("Сохранение в хранилище...")
-    for i, (text, source) in enumerate(all_chunks):
-        store.add_chunk(text, source, embeddings[i].tolist())
+    # Массовая запись: один _save() в конце вместо O(n²) записи файла.
+    items = [
+        (text, source, embeddings[i].tolist())
+        for i, (text, source) in enumerate(all_chunks)
+    ]
+    store.add_chunks(items)
+
+    # Инвалидируем кэшированный синглтон стора, чтобы запущенное приложение
+    # увидело свежие чанки без перезапуска.
+    reload_store()
 
     print(f"Готово! Всего фрагментов в хранилище: {len(store.get_chunks())}")
     return 0

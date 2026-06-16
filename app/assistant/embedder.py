@@ -27,12 +27,32 @@ def _get_model() -> Any:
         raise
 
 
+def warmup() -> bool:
+    """Принудительно загружает модель эмбеддингов в память.
+
+    Идемпотентна (модель кэшируется через lru_cache в _get_model). Не пробрасывает
+    ошибку — при сбое загрузки возвращает False, чтобы вызов из main.py не падал.
+    Возвращает True, если модель доступна.
+    """
+    try:
+        _get_model()
+        return True
+    except Exception as exc:
+        log.error("Embedder warmup failed: %s", exc)
+        return False
+
+
 def encode_texts(texts: list[str]) -> np.ndarray:
-    """Превращает список текстов в матрицу эмбеддингов."""
+    """Превращает список текстов в матрицу эмбеддингов (L2-нормированных)."""
     model = _get_model()
-    return model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
+    return model.encode(
+        texts,
+        convert_to_numpy=True,
+        show_progress_bar=False,
+        normalize_embeddings=True,
+    )
 
 
 def encode_single(text: str) -> np.ndarray:
-    """Превращает один текст в вектор эмбеддинга."""
+    """Превращает один текст в вектор эмбеддинга (L2-нормированный)."""
     return encode_texts([text])[0]
