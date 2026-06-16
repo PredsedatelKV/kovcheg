@@ -25,6 +25,7 @@ class PlayerOut(BaseModel):
     username: str | None = None
     first_name: str
     role: str
+    photo_url: str | None = None
     is_online: bool = False
 
 

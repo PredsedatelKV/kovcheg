@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app import models
+from app.players import PLAYER_BINDINGS
 
 
 def _get_or_create_item(
@@ -137,55 +138,47 @@ def migrate_schema(db: Session) -> None:
             db.commit()
 
 
-PLAYERS: list[dict] = [
-    {
-        "telegram_id": 10001,
-        "username": "omarbutuev",
-        "first_name": "Омар",
-        "role": "Председатель",
-    },
-    {
-        "telegram_id": 10003,
-        "username": "ibragim",
-        "first_name": "Ибрагим",
-        "role": "Гражданин",
-    },
-]
+# Старые фейковые seed-аккаунты (нереальные Telegram ID) — удаляются на старте,
+# чтобы в игре остались строго трое привязанных граждан.
+_LEGACY_FAKE_TG_IDS = (1, 10001, 10002, 10003)
+
+
+def _purge_user(db: Session, user: models.User) -> None:
+    """Удаляет пользователя и все ссылки на него (для чистки фейковых аккаунтов)."""
+    uid = user.id
+    db.query(models.ChatMessage).filter(models.ChatMessage.user_id == uid).delete(synchronize_session=False)
+    db.query(models.MarketListing).filter(
+        (models.MarketListing.seller_id == uid) | (models.MarketListing.target_user_id == uid)
+    ).delete(synchronize_session=False)
+    db.query(models.Transaction).filter(
+        (models.Transaction.sender_id == uid) | (models.Transaction.recipient_id == uid)
+    ).delete(synchronize_session=False)
+    db.query(models.WheelSpin).filter(models.WheelSpin.user_id == uid).delete(synchronize_session=False)
+    db.query(models.QuizAttempt).filter(models.QuizAttempt.user_id == uid).delete(synchronize_session=False)
+    db.query(models.GameInvite).filter(
+        (models.GameInvite.from_user_id == uid) | (models.GameInvite.to_user_id == uid)
+    ).delete(synchronize_session=False)
+    db.query(models.GameSession).filter(
+        (models.GameSession.player_x_id == uid) | (models.GameSession.player_o_id == uid)
+    ).delete(synchronize_session=False)
+    db.query(models.UserBattlePass).filter(models.UserBattlePass.user_id == uid).delete(synchronize_session=False)
+    db.delete(user)  # каскадом удалит wallet/inventory/user_tasks
+    db.flush()
 
 
 def seed_players(db: Session) -> None:
-    """Seed the fixed citizens, rename Respach → Магомет, block new users."""
-    old_magomet = db.query(models.User).filter(models.User.telegram_id == 10002).one_or_none()
-    if old_magomet is not None:
-        db.query(models.ChatMessage).filter(models.ChatMessage.user_id == old_magomet.id).delete()
-        db.query(models.MarketListing).filter(models.MarketListing.seller_id == old_magomet.id).delete()
-        db.query(models.Transaction).filter(
-            (models.Transaction.sender_id == old_magomet.id) | (models.Transaction.recipient_id == old_magomet.id)
-        ).delete()
-        db.query(models.WheelSpin).filter(models.WheelSpin.user_id == old_magomet.id).delete()
-        db.delete(old_magomet)
-        db.flush()
-    respach = db.query(models.User).filter(
-        (models.User.first_name.ilike("Respach")) | (models.User.username.ilike("Respach"))
-    ).first()
-    if respach is not None:
-        respach.first_name = "Магомет"
-        respach.role = respach.role or "Гражданин"
-    legacy_dev = db.query(models.User).filter(models.User.telegram_id == 1).one_or_none()
-    if legacy_dev is not None:
-        db.query(models.MarketListing).filter(models.MarketListing.seller_id == legacy_dev.id).delete()
-        db.query(models.Transaction).filter(
-            (models.Transaction.sender_id == legacy_dev.id) | (models.Transaction.recipient_id == legacy_dev.id)
-        ).delete()
-        db.query(models.WheelSpin).filter(models.WheelSpin.user_id == legacy_dev.id).delete()
-        db.delete(legacy_dev)
-        db.flush()
-    for spec in PLAYERS:
-        user = db.query(models.User).filter(models.User.telegram_id == spec["telegram_id"]).one_or_none()
+    """Жёсткая привязка: ровно трое граждан по Telegram ID. Удаляет старые
+    фейковые seed-аккаунты и приводит реальных игроков к привязке (роль + имя)."""
+    # 1. Чистим легаси-фейки (id 1/10001/10002/10003) — реальных TG-юзеров с такими ID нет.
+    for fake in db.query(models.User).filter(models.User.telegram_id.in_(_LEGACY_FAKE_TG_IDS)).all():
+        _purge_user(db, fake)
+    # 2. Приводим реальных игроков к привязке. Роль и каноничное имя — строго по Telegram ID.
+    for tg_id, spec in PLAYER_BINDINGS.items():
+        user = db.query(models.User).filter(models.User.telegram_id == tg_id).one_or_none()
         if user is None:
             user = models.User(
-                telegram_id=spec["telegram_id"],
-                username=spec["username"],
+                telegram_id=tg_id,
+                username=spec.get("username"),
                 first_name=spec["first_name"],
                 role=spec["role"],
             )
@@ -193,11 +186,10 @@ def seed_players(db: Session) -> None:
             db.flush()
             db.add(models.Wallet(user_id=user.id, balance=0))
         else:
-            user.username = spec["username"]
-            if not user.first_name:
-                user.first_name = spec["first_name"]
-            if not user.role or (user.role == "Гражданин" and spec["role"] != "Гражданин"):
-                user.role = spec["role"]
+            user.first_name = spec["first_name"]
+            user.role = spec["role"]
+            if spec.get("username"):
+                user.username = spec["username"]
             if user.wallet is None:
                 db.add(models.Wallet(user_id=user.id, balance=0))
 

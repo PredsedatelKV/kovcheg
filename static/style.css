@@ -621,13 +621,17 @@ html.dark .chat-message.user .chat-bubble {
 }
 .chat-input-row {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-top: 8px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
+  position: relative;
 }
 .chat-input-row .input { flex: 1; }
 .chat-input-row .btn { width: auto; padding: 10px 16px; }
+/* Профильный чат: круглая кнопка отправки не должна растягиваться правилом .btn выше */
+.chat-input-row .chat-send-btn { width: 44px; height: 44px; padding: 0; flex-shrink: 0; }
 
 /* Wheel card */
 .wheel-card {
@@ -3778,13 +3782,17 @@ html.dark .chat-message.user .chat-bubble {
 }
 .chat-input-row {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-top: 8px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
+  position: relative;
 }
 .chat-input-row .input { flex: 1; }
 .chat-input-row .btn { width: auto; padding: 10px 16px; }
+/* Профильный чат: круглая кнопка отправки не должна растягиваться правилом .btn выше */
+.chat-input-row .chat-send-btn { width: 44px; height: 44px; padding: 0; flex-shrink: 0; }
 
 /* Wheel card */
 .wheel-card {

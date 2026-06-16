@@ -48,6 +48,7 @@ def list_players(
             username=p.username,
             first_name=p.first_name,
             role=p.role,
+            photo_url=p.photo_url,
             is_online=p.last_seen is not None and p.last_seen.replace(tzinfo=timezone.utc) > threshold,
         )
         for p in rows
@@ -206,6 +207,8 @@ def get_user_profile(
         "id": target.id,
         "first_name": target.first_name or "Игрок",
         "username": target.username,
+        "photo_url": target.photo_url,
+        "role": target.role,
         "balance": target.wallet.balance if target.wallet else 0,
         "is_online": is_online,
     }

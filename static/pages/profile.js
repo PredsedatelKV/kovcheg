@@ -268,31 +268,50 @@ async function checkPendingInvites(root) {
   } catch (e) {}
 }
 
+const _AVATAR_COLORS = ["#4CAF50","#2196F3","#FF9800","#9C27B0","#E91E63","#00BCD4","#8BC34A","#FF5722"];
+
+function avatarHtml(p, size) {
+  // Аватарка из Telegram-профиля, иначе цветной кружок с инициалом.
+  if (p && p.photo_url) {
+    return `<img src="${escapeHtml(p.photo_url)}" alt="" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;display:block;flex-shrink:0"/>`;
+  }
+  const initial = ((p && p.first_name) || "?")[0].toUpperCase();
+  const color = _AVATAR_COLORS[((p && p.id) || 0) % _AVATAR_COLORS.length];
+  return `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:${Math.round(size * 0.45)}px;font-weight:700;color:#fff;flex-shrink:0">${initial}</div>`;
+}
+
+// Аватарки игроков для перехода в профиль — показываются ВСЕГДА (онлайн — первыми).
 async function loadOnlineAvatars(root) {
   try {
     const data = await get("/api/profile/players");
     const container = root.querySelector("#online-avatars");
-    if (!container || !data || data.length === 0) return;
-    const online = data.filter(p => p.is_online).slice(0, 8);
-    container.innerHTML = online.map(p => {
-      const initial = (p.first_name || "?")[0].toUpperCase();
-      const colors = ["#4CAF50","#2196F3","#FF9800","#9C27B0","#E91E63","#00BCD4","#8BC34A","#FF5722"];
-      const color = colors[p.id % colors.length];
-      return '<div style="width:24px;height:24px;border-radius:50%;background:' + color + ';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;cursor:pointer;border:2px solid var(--bg);margin-left:-4px" data-player-id="' + p.id + '" title="' + escapeHtml(p.first_name || "Игрок") + '">' + initial + '</div>';
+    if (!container) return;
+    if (!data || data.length === 0) { container.innerHTML = ""; return; }
+    const players = [...data]
+      .sort((a, b) => (a.is_online === b.is_online ? 0 : a.is_online ? -1 : 1))
+      .slice(0, 12);
+    container.innerHTML = players.map(p => {
+      const ring = p.is_online ? "#4CAF50" : "var(--border)";
+      const dot = p.is_online
+        ? '<span style="position:absolute;right:-1px;bottom:-1px;width:8px;height:8px;border-radius:50%;background:#4CAF50;border:1.5px solid var(--bg)"></span>'
+        : "";
+      return `<div data-player-id="${p.id}" title="${escapeHtml(p.first_name || "Игрок")}" style="position:relative;cursor:pointer;flex-shrink:0;margin-left:-4px;border-radius:50%;border:2px solid ${ring};line-height:0">${avatarHtml(p, 26)}${dot}</div>`;
     }).join("");
-    // Click on avatar to view profile
     container.querySelectorAll("[data-player-id]").forEach(el => {
       el.addEventListener("click", async () => {
         const pid = Number(el.dataset.playerId);
         try {
           const profile = await get("/api/profile/" + pid);
+          const online = profile.is_online;
           window.kov.showModal(`
             <button class="close" onclick="closeModal()">×</button>
             <div style="text-align:center;padding:12px">
-              <div style="width:60px;height:60px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:#fff;margin:0 auto 8px">${initial}</div>
+              <div style="margin:0 auto 8px;width:64px;height:64px">${avatarHtml(profile, 64)}</div>
               <h3 style="margin:0">${escapeHtml(profile.first_name || "Игрок")}</h3>
+              ${profile.role ? '<div style="color:var(--text-muted);font-size:13px">' + escapeHtml(profile.role) + '</div>' : ''}
               ${profile.username ? '<div style="color:var(--text-muted);font-size:13px">@' + escapeHtml(profile.username) + '</div>' : ''}
               <div style="margin-top:8px;font-size:13px">Баланс: <strong>${profile.balance || 0}</strong> К</div>
+              <div style="margin-top:4px;font-size:12px;color:${online ? '#4CAF50' : 'var(--text-muted)'}">${online ? '● онлайн' : 'не в сети'}</div>
             </div>
           `);
         } catch (e) { window.kov.toast(e.message); }

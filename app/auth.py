@@ -13,9 +13,13 @@ from sqlalchemy.orm import Session
 from app import models
 from app.config import get_settings
 from app.db import get_db
+from app.players import binding_for, is_bound_admin
 
 
 def is_admin(user: models.User) -> bool:
+    # Жёсткая привязка по Telegram ID — главный источник правды для админ-прав.
+    if is_bound_admin(user.telegram_id):
+        return True
     settings = get_settings()
     if settings.admin_id_list and user.telegram_id in settings.admin_id_list:
         return True
@@ -74,6 +78,9 @@ def _is_allowed_user(tg_user: dict[str, Any]) -> bool:
 
 
 def _is_allowed_tg_id(tg_id: int, username: str = "") -> bool:
+    # Привязанные игроки (Омар/Ибрагим/Магомет) всегда допущены.
+    if binding_for(tg_id) is not None:
+        return True
     settings = get_settings()
     if settings.admin_id_list and tg_id in settings.admin_id_list:
         return True
@@ -89,20 +96,27 @@ def upsert_user(db: Session, tg_user: dict[str, Any]) -> models.User | None:
     Admins (by telegram_id or username in config) can auto-register on first visit.
     """
     tg_id = int(tg_user["id"])
+    binding = binding_for(tg_id)
     user = db.query(models.User).filter(models.User.telegram_id == tg_id).one_or_none()
     if user is not None:
         user.username = tg_user.get("username") or user.username
-        user.first_name = tg_user.get("first_name", user.first_name)
+        user.first_name = tg_user.get("first_name") or user.first_name
         user.last_name = tg_user.get("last_name") or user.last_name
+        # Аватарка всегда из актуального Telegram-профиля.
         user.photo_url = tg_user.get("photo_url") or user.photo_url
+        if binding is not None:
+            # Жёсткая привязка: роль и каноничное имя выдаются строго по ID.
+            user.role = binding["role"]
+            user.first_name = binding["first_name"]
         return user
-    if _is_allowed_user(tg_user):
+    if binding is not None or _is_allowed_user(tg_user):
         user = models.User(
             telegram_id=tg_id,
-            username=tg_user.get("username"),
-            first_name=tg_user.get("first_name", ""),
+            username=tg_user.get("username") or (binding or {}).get("username"),
+            first_name=(binding or {}).get("first_name") or tg_user.get("first_name", ""),
             last_name=tg_user.get("last_name"),
             photo_url=tg_user.get("photo_url"),
+            role=(binding or {}).get("role", "Гражданин"),
         )
         db.add(user)
         db.flush()
@@ -118,7 +132,7 @@ def current_user(
 ) -> models.User:
     settings = get_settings()
     if settings.skip_init_data_check and x_telegram_init_data == "DEV":
-        tg_user = {"id": 10001, "username": "omarbutuev", "first_name": "Омар"}
+        tg_user = {"id": 849162365, "username": "omarbutuev", "first_name": "Омар"}
     else:
         if not settings.telegram_bot_token:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="bot token not configured")
