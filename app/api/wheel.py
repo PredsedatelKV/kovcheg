@@ -7,8 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.api._helpers import ensure_wallet
 from app.auth import current_user
 from app.db import get_db
+from app.models import now_utc
 
 router = APIRouter(prefix="/api/wheel", tags=["wheel"])
 
@@ -50,7 +52,7 @@ def status(user: models.User = Depends(current_user), db: Session = Depends(get_
     )
     can_spin = True
     next_at: datetime | None = None
-    if last is not None and (datetime.utcnow() - last.created_at) < timedelta(hours=24):
+    if last is not None and (now_utc() - last.created_at) < timedelta(hours=24):
         can_spin = False
         next_at = last.created_at + timedelta(hours=24)
     sectors = _load_sectors(db)
@@ -69,7 +71,7 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
         .order_by(models.WheelSpin.created_at.desc())
         .first()
     )
-    if last is not None and (datetime.utcnow() - last.created_at) < timedelta(hours=24):
+    if last is not None and (now_utc() - last.created_at) < timedelta(hours=24):
         raise HTTPException(status_code=429, detail="Колесо доступно раз в сутки")
 
     sectors = _load_sectors(db)
@@ -77,29 +79,50 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
         raise HTTPException(status_code=500, detail="Призы колеса не настроены")
     idx, sector = _pick_sector(sectors)
 
+    wallet = ensure_wallet(db, user)
+
+    # Нормализуем результат: невыданный/некорректный приз трактуем как «ничего».
+    result_kind = sector["kind"]
+    result_value = sector["value"]
+    result_label = sector["label"]
+
     if sector["kind"] == "coins":
-        user.wallet.balance += sector["value"]
-        db.add(
-            models.Transaction(
-                sender_id=None,
-                recipient_id=user.id,
-                amount=sector["value"],
-                note="wheel",
+        if sector["value"] > 0:
+            wallet.balance += sector["value"]
+            db.add(
+                models.Transaction(
+                    sender_id=None,
+                    recipient_id=user.id,
+                    amount=sector["value"],
+                    note="wheel",
+                )
             )
-        )
-    else:
-        item = db.query(models.Item).filter(models.Item.code == sector["item_code"]).one_or_none()
-        if item is None:
-            raise HTTPException(status_code=500, detail="prize item missing")
-        inv = (
-            db.query(models.InventoryItem)
-            .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == item.id)
-            .one_or_none()
-        )
-        if inv is None:
-            db.add(models.InventoryItem(user_id=user.id, item_id=item.id, quantity=1))
         else:
-            inv.quantity += 1
+            result_kind = "nothing"
+            result_value = 0
+    elif sector["kind"] == "item":
+        item = None
+        if sector["item_code"]:
+            item = db.query(models.Item).filter(models.Item.code == sector["item_code"]).one_or_none()
+        if item is None:
+            # Приз-предмет не настроен/не найден — не падаем 500, считаем «ничего».
+            result_kind = "nothing"
+            result_value = 0
+            result_label = "Ничего"
+        else:
+            inv = (
+                db.query(models.InventoryItem)
+                .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == item.id)
+                .one_or_none()
+            )
+            if inv is None:
+                db.add(models.InventoryItem(user_id=user.id, item_id=item.id, quantity=1))
+            else:
+                inv.quantity += 1
+    else:
+        # "nothing" или неизвестный kind — ничего не начисляем.
+        result_kind = "nothing"
+        result_value = 0
 
     db.add(
         models.WheelSpin(
@@ -114,16 +137,16 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
 
     from app.notify import notify_admins_bg
     notify_admins_bg(
-        f"🎰 <b>{user.first_name}</b> крутанул(а) колесо — выпало: <b>{sector['label']}</b>"
+        f"🎰 <b>{user.first_name}</b> крутанул(а) колесо — выпало: <b>{result_label}</b>"
     )
 
     return {
         "sector_index": idx,
         "result": schemas.SpinResult(
-            prize_kind=sector["kind"],
-            prize_value=sector["value"],
-            prize_label=sector["label"],
+            prize_kind=result_kind,
+            prize_value=result_value,
+            prize_label=result_label,
             icon=sector["icon"],
-            balance=user.wallet.balance,
+            balance=wallet.balance,
         ).model_dump(),
     }

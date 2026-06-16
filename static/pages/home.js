@@ -1,14 +1,16 @@
-import { get, post, iconHtml } from "/static/api.js?v=30";
+import { get, post, iconHtml, escapeHtml, animateElement } from "/static/api.js?v=30";
 
 import { openAssistantChat } from "/static/pages/assistant.js?v=31";
 
 import { playUISound } from "/static/pages/settings.js?v=30";
 
-const escapeHtml = (s = "") =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let newsTimer = null;
 
-const fmtDate = (iso) =>
-  new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+const fmtDate = (iso) => {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+};
 
 function bannerCarousel(banners) {
   if (!banners.length) return "";
@@ -124,7 +126,14 @@ function tasksList(tasks, userTasks) {
 
 export async function renderHome(root) {
   root.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
-  const data = await get("/api/home");
+  if (newsTimer) { clearInterval(newsTimer); newsTimer = null; }
+  let data;
+  try {
+    data = await get("/api/home");
+  } catch (e) {
+    root.innerHTML = `<div class="card"><h3>Ошибка</h3><p>${escapeHtml(e.message || "Не удалось загрузить главную")}</p></div>`;
+    return;
+  }
   const user = data.user;
   const welcome = "Добро пожаловать!";
 
@@ -249,7 +258,7 @@ export async function renderHome(root) {
   const newsTitleEl = root.querySelector("#news-card .big-square-title");
   if (newsSlides.length > 1) {
     let currentSlide = 0;
-    setInterval(() => {
+    newsTimer = setInterval(() => {
       newsSlides[currentSlide].classList.remove("active");
       currentSlide = (currentSlide + 1) % newsSlides.length;
       newsSlides[currentSlide].classList.add("active");
@@ -341,7 +350,8 @@ async function startTask(t) {
   try {
     await post(`/api/tasks/${t.id}/start`);
     window.kov.toast("Задание начато — выполняй и жди подтверждения админа");
-    window.location.reload();
+    window.closeModal();
+    if (window.kov && window.kov.rerender) window.kov.rerender("home");
   } catch (e) {
     window.kov.toast(e.message);
   }

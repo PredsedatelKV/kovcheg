@@ -1,7 +1,6 @@
-const SETTINGS_KEY = "kovcheg.settings";
+import { escapeHtml } from "/static/api.js?v=30";
 
-const escapeHtml = (s = "") =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const SETTINGS_KEY = "kovcheg.settings";
 
 const DEFAULT_SETTINGS = {
   darkMode: false,

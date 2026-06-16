@@ -3,15 +3,16 @@ from __future__ import annotations
 import re
 import time
 import uuid
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.api._helpers import ensure_wallet
 from app.auth import is_admin, require_admin
 from app.db import get_db
+from app.models import now_utc
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -54,7 +55,7 @@ def _item_out(i: models.Item) -> schemas.ItemOut:
 
 
 def _shop_product_out(p: models.ShopProduct) -> schemas.ShopProductOut:
-    return schemas.ShopProductOut(id=p.id, item=_item_out(p.item), price=p.price, stock=p.stock)
+    return schemas.ShopProductOut(id=p.id, item=_item_out(p.item), price=p.price, stock=p.stock, is_active=p.is_active)
 
 
 def _market_listing_out(l: models.MarketListing) -> schemas.MarketListingOut:
@@ -146,12 +147,13 @@ def update_user(user_id: int, body: schemas.AdminUserUpdate, db: Session = Depen
 @router.post("/users/{user_id}/balance", response_model=schemas.AdminUserOut)
 def adjust_balance(user_id: int, body: schemas.AdminBalanceUpdate, db: Session = Depends(get_db)) -> schemas.AdminUserOut:
     u = db.query(models.User).filter(models.User.id == user_id).one_or_none()
-    if u is None or u.wallet is None:
+    if u is None:
         raise HTTPException(status_code=404, detail="Игрок не найден")
-    new_balance = u.wallet.balance + body.delta
+    wallet = ensure_wallet(db, u)
+    new_balance = wallet.balance + body.delta
     if new_balance < 0:
         raise HTTPException(status_code=400, detail="Баланс не может быть отрицательным")
-    u.wallet.balance = new_balance
+    wallet.balance = new_balance
     db.add(
         models.Transaction(
             sender_id=None if body.delta >= 0 else u.id,
@@ -407,7 +409,7 @@ def delete_task(task_id: int, db: Session = Depends(get_db)) -> dict:
     t = db.query(models.Task).filter(models.Task.id == task_id).one_or_none()
     if t is None:
         raise HTTPException(status_code=404, detail="Задание не найдено")
-    db.query(models.UserTask).filter(models.UserTask.task_id == t.id).delete()
+    db.query(models.UserTask).filter(models.UserTask.task_id == t.id).delete(synchronize_session=False)
     db.delete(t)
     db.commit()
     return {"ok": True}
@@ -434,8 +436,9 @@ def approve_user_task(
         raise HTTPException(status_code=400, detail="Задание не в процессе")
     ut.status = "done"
     ut.progress = ut.task.target_progress
-    ut.finished_at = datetime.utcnow()
-    ut.user.wallet.balance += ut.task.reward
+    ut.finished_at = now_utc()
+    wallet = ensure_wallet(db, ut.user)
+    wallet.balance += ut.task.reward
     db.add(
         models.Transaction(
             sender_id=None,
@@ -503,6 +506,10 @@ def list_market(db: Session = Depends(get_db)) -> list[schemas.MarketListingOut]
 
 @router.post("/market", response_model=schemas.MarketListingOut)
 def create_market(body: schemas.AdminMarketListingBody, db: Session = Depends(get_db)) -> schemas.MarketListingOut:
+    if db.query(models.User).filter(models.User.id == body.seller_id).one_or_none() is None:
+        raise HTTPException(status_code=400, detail="Продавец не найден")
+    if db.query(models.Item).filter(models.Item.id == body.item_id).one_or_none() is None:
+        raise HTTPException(status_code=400, detail="Предмет не найден")
     l = models.MarketListing(
         seller_id=body.seller_id,
         item_id=body.item_id,
@@ -521,6 +528,10 @@ def update_market(listing_id: int, body: schemas.AdminMarketListingBody, db: Ses
     l = db.query(models.MarketListing).filter(models.MarketListing.id == listing_id).one_or_none()
     if l is None:
         raise HTTPException(status_code=404, detail="Объявление не найдено")
+    if db.query(models.User).filter(models.User.id == body.seller_id).one_or_none() is None:
+        raise HTTPException(status_code=400, detail="Продавец не найден")
+    if db.query(models.Item).filter(models.Item.id == body.item_id).one_or_none() is None:
+        raise HTTPException(status_code=400, detail="Предмет не найден")
     l.seller_id = body.seller_id
     l.item_id = body.item_id
     l.quantity = body.quantity
@@ -551,6 +562,11 @@ def list_wheel(db: Session = Depends(get_db)) -> list[schemas.WheelPrizeOut]:
 
 @router.post("/wheel", response_model=schemas.WheelPrizeOut)
 def create_wheel(body: schemas.AdminWheelPrizeBody, db: Session = Depends(get_db)) -> schemas.WheelPrizeOut:
+    if body.kind == "item":
+        if not body.item_code:
+            raise HTTPException(status_code=400, detail="Для приза-предмета нужен код предмета")
+        if db.query(models.Item).filter(models.Item.code == body.item_code).one_or_none() is None:
+            raise HTTPException(status_code=400, detail="Предмет с таким кодом не найден")
     p = models.WheelPrize(**body.model_dump())
     db.add(p)
     db.commit()
@@ -639,6 +655,11 @@ def list_quizzes(db: Session = Depends(get_db)) -> list[schemas.QuizOut]:
 
 @router.post("/quizzes", response_model=schemas.QuizOut)
 def create_quiz(body: schemas.QuizBody, db: Session = Depends(get_db)) -> schemas.QuizOut:
+    if body.prize_kind == "item":
+        if not body.prize_item_code:
+            raise HTTPException(status_code=400, detail="Для приза-предмета нужен код предмета")
+        if db.query(models.Item).filter(models.Item.code == body.prize_item_code).one_or_none() is None:
+            raise HTTPException(status_code=400, detail="Предмет с таким кодом не найден")
     q = models.Quiz(**body.model_dump())
     db.add(q)
     db.commit()

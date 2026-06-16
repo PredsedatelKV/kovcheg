@@ -19,8 +19,10 @@ from aiogram.types import (
 
 import app.assistant as assistant
 from app import models
+from app.api._helpers import ensure_wallet
 from app.config import get_settings
 from app.db import session_scope
+from app.models import now_utc
 
 log = logging.getLogger(__name__)
 
@@ -160,21 +162,25 @@ def _register_handlers(dp: Dispatcher) -> None:
             if ut.status != "in_progress":
                 await message.answer(f"Статус: {ut.status} — изменить нельзя")
                 return
-            ut.status = "done"
-            ut.progress = ut.task.target_progress
-            ut.approved_by = message.from_user.id
-            from datetime import datetime as _dt
-
-            ut.finished_at = _dt.utcnow()
-            ut.user.wallet.balance += ut.task.reward
-            db.add(
-                models.Transaction(
-                    sender_id=None,
-                    recipient_id=ut.user_id,
-                    amount=ut.task.reward,
-                    note=f"task:{ut.task.id}",
+            try:
+                ut.status = "done"
+                ut.progress = ut.task.target_progress
+                ut.approved_by = message.from_user.id
+                ut.finished_at = now_utc()
+                wallet = ensure_wallet(db, ut.user)
+                wallet.balance += ut.task.reward
+                db.add(
+                    models.Transaction(
+                        sender_id=None,
+                        recipient_id=ut.user_id,
+                        amount=ut.task.reward,
+                        note=f"task:{ut.task.id}",
+                    )
                 )
-            )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Не смог начислить награду за задание #%s: %s", user_task_id, exc)
+                await message.answer("Не удалось начислить награду (проблема с кошельком игрока).")
+                return
             notify_text = (
                 f"🎉 Задание <b>{ut.task.name}</b> подтверждено!\nНаграда: {ut.task.reward} Ковбаксов."
             )
@@ -204,9 +210,7 @@ def _register_handlers(dp: Dispatcher) -> None:
                 await message.answer("Запись задания не найдена")
                 return
             ut.status = "cancelled"
-            from datetime import datetime as _dt
-
-            ut.finished_at = _dt.utcnow()
+            ut.finished_at = now_utc()
             notify_tg_id = ut.user.telegram_id
 
         await message.answer(f"OK, задание #{user_task_id} отклонено")
@@ -272,7 +276,8 @@ def _register_handlers(dp: Dispatcher) -> None:
             if user is None:
                 await message.answer("Пользователь не найден")
                 return
-            user.wallet.balance += amount
+            wallet = ensure_wallet(db, user)
+            wallet.balance += amount
             db.add(
                 models.Transaction(
                     sender_id=None, recipient_id=user.id, amount=amount, note=f"admin:{message.from_user.id}"
@@ -292,8 +297,9 @@ def _register_handlers(dp: Dispatcher) -> None:
         """Агент Ковчега — отвечает на произвольные текстовые вопросы."""
         if not message.from_user or not message.text:
             return
-        # Пропускаем команды (они обработаны ранее фильтрами Command)
+        # Команды, не распознанные фильтрами Command выше, попадают сюда.
         if message.text.startswith("/"):
+            await message.answer("Неизвестная команда. Напиши /help, чтобы увидеть список команд.")
             return
 
         settings = get_settings()

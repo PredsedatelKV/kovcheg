@@ -36,3 +36,19 @@ def encode_texts(texts: list[str]) -> np.ndarray:
 def encode_single(text: str) -> np.ndarray:
     """Превращает один текст в вектор эмбеддинга."""
     return encode_texts([text])[0]
+
+
+def warmup() -> bool:
+    """Принудительно загружает модель эмбеддингов на старте приложения.
+
+    Идемпотентна (модель кэшируется через lru_cache на _get_model) и безопасна:
+    любое падение загрузки логируется, но не пробрасывается, чтобы не ронять
+    старт приложения. Возвращает True при успехе, False при ошибке.
+    """
+    try:
+        _get_model()
+        log.info("Embedding model warmup complete")
+        return True
+    except Exception as exc:
+        log.warning("Embedding model warmup failed (will retry lazily): %s", exc)
+        return False

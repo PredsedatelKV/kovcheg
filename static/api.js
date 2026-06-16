@@ -1,5 +1,28 @@
 const tg = window.Telegram && window.Telegram.WebApp;
 
+/** Escape HTML special characters for safe interpolation into innerHTML. */
+export const escapeHtml = (s = "") =>
+  String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/** Russian pluralization for the «Ковбакс» currency word. */
+export function kovbaksWord(n) {
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if (abs > 10 && abs < 20) return "Ковбаксов";
+  if (last === 1) return "Ковбакс";
+  if (last >= 2 && last <= 4) return "Ковбакса";
+  return "Ковбаксов";
+}
+
+/**
+ * Apply a one-shot CSS animation to an element. The named keyframes
+ * (e.g. "popIn") must already exist in the stylesheet.
+ */
+export function animateElement(el, animation, duration) {
+  if (!el) return;
+  el.style.animation = `${animation} ${duration}ms ease-out forwards`;
+}
+
 function initData() {
   const v = tg && tg.initData;
   if (v && v.length > 0) return v;

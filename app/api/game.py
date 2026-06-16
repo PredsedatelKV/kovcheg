@@ -26,6 +26,8 @@ def send_invite(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    if payload.to_user_id == user.id:
+        raise HTTPException(status_code=400, detail="Нельзя пригласить самого себя")
     to_user = db.query(models.User).filter(models.User.id == payload.to_user_id).first()
     if not to_user:
         raise HTTPException(status_code=404, detail="Игрок не найден")

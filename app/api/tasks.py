@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.api._helpers import ensure_wallet
 from app.api.profile import _user_task_to_out
 from app.auth import current_user
 from app.db import get_db
+from app.models import now_utc
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -31,6 +31,19 @@ def start_task(
     )
     if existing:
         return _user_task_to_out(existing)
+    # Анти-фарм: нельзя заново стартовать уже выполненное не-ежедневное задание
+    if not task.is_daily_plan:
+        done = (
+            db.query(models.UserTask)
+            .filter(
+                models.UserTask.user_id == user.id,
+                models.UserTask.task_id == task_id,
+                models.UserTask.status == "done",
+            )
+            .first()
+        )
+        if done is not None:
+            raise HTTPException(status_code=400, detail="Задание уже выполнено")
     ut = models.UserTask(user_id=user.id, task_id=task_id, status="in_progress", progress=0)
     db.add(ut)
     db.commit()
@@ -58,8 +71,9 @@ def complete_task(
     
     ut.status = "done"
     ut.progress = ut.task.target_progress
-    ut.finished_at = datetime.utcnow()
-    user.wallet.balance += ut.task.reward
+    ut.finished_at = now_utc()
+    wallet = ensure_wallet(db, user)
+    wallet.balance += ut.task.reward
     db.add(
         models.Transaction(
             sender_id=None,
@@ -88,8 +102,10 @@ def cancel_task(
     )
     if ut is None:
         raise HTTPException(status_code=404, detail="Запись задания не найдена")
+    if ut.status != "in_progress":
+        raise HTTPException(status_code=400, detail="Задание нельзя отменить")
     ut.status = "cancelled"
-    ut.finished_at = datetime.utcnow()
+    ut.finished_at = now_utc()
     db.commit()
     db.refresh(ut)
     from app.notify import notify_admins_bg

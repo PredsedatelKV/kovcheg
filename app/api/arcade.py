@@ -4,10 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.api._helpers import ensure_wallet
 from app.auth import current_user
 from app.db import get_db
 
 router = APIRouter(prefix="/api/arcade", tags=["arcade"])
+
+# Максимальный множитель выигрыша относительно последней ставки.
+MAX_WIN_MULTIPLIER = 3
 
 
 @router.post("/win")
@@ -16,10 +20,36 @@ def arcade_win(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> schemas.UserOut:
-    """Начислить выигрыш за мини-игру."""
+    """Начислить выигрыш за мини-игру (привязан к последней ставке, ограничен)."""
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Некорректная сумма")
-    user.wallet.balance += amount
+    wallet = ensure_wallet(db, user)
+    last_bet = (
+        db.query(models.Transaction)
+        .filter(
+            models.Transaction.sender_id == user.id,
+            models.Transaction.note == "arcade:bet",
+        )
+        .order_by(models.Transaction.created_at.desc())
+        .first()
+    )
+    if last_bet is None:
+        raise HTTPException(status_code=400, detail="Сначала сделайте ставку")
+    # Выигрыш по этой ставке ещё не начисляли:
+    already = (
+        db.query(models.Transaction)
+        .filter(
+            models.Transaction.recipient_id == user.id,
+            models.Transaction.note == "arcade:win",
+            models.Transaction.created_at >= last_bet.created_at,
+        )
+        .first()
+    )
+    if already is not None:
+        raise HTTPException(status_code=400, detail="Выигрыш по этой ставке уже начислен")
+    if amount > last_bet.amount * MAX_WIN_MULTIPLIER:
+        raise HTTPException(status_code=400, detail="Некорректная сумма выигрыша")
+    wallet.balance += amount
     db.add(
         models.Transaction(
             sender_id=None,
@@ -39,7 +69,7 @@ def arcade_win(
         photo_url=user.photo_url,
         role=user.role,
         restrictions=user.restrictions,
-        balance=user.wallet.balance,
+        balance=wallet.balance,
         is_admin=False,
     )
 
@@ -53,9 +83,10 @@ def arcade_bet(
     """Списать ставку для казино."""
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Некорректная сумма")
-    if user.wallet.balance < amount:
+    wallet = ensure_wallet(db, user)
+    if wallet.balance < amount:
         raise HTTPException(status_code=400, detail="Недостаточно K")
-    user.wallet.balance -= amount
+    wallet.balance -= amount
     db.add(
         models.Transaction(
             sender_id=user.id,
@@ -75,6 +106,6 @@ def arcade_bet(
         photo_url=user.photo_url,
         role=user.role,
         restrictions=user.restrictions,
-        balance=user.wallet.balance,
+        balance=wallet.balance,
         is_admin=False,
     )

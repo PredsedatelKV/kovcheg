@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.api._helpers import ensure_wallet
 from app.auth import current_user
 from app.db import get_db
 
@@ -76,13 +77,16 @@ def submit_quiz(
 
     questions = db.query(models.QuizQuestion).filter(models.QuizQuestion.quiz_id == payload.quiz_id).all()
     q_map = {qq.id: qq for qq in questions}
+    total = len(questions)
     score = 0
     for q_id, answer in payload.answers.items():
+        if not isinstance(answer, str) or not answer:
+            continue
         qq = q_map.get(q_id)
         if qq and qq.correct_option == answer.lower():
             score += 1
-
-    total = len(questions)
+    # Не даём счёту превысить количество вопросов
+    score = min(score, total)
     if score >= q.threshold_excellent:
         grade = "excellent"
     elif score >= q.threshold_good:
@@ -96,22 +100,26 @@ def submit_quiz(
         score=score,
         total=total,
         grade=grade,
+        prize_awarded=False,
     )
     db.add(attempt)
 
-    # Award prize if grade is good or excellent
+    # Award prize if grade is good or excellent.
+    # prize_awarded ставится True ТОЛЬКО после фактической выдачи приза.
     if grade in ("good", "excellent"):
-        prize_awarded = True
         if q.prize_kind == "coins":
-            user.wallet.balance += q.prize_value
-            db.add(
-                models.Transaction(
-                    sender_id=None,
-                    recipient_id=user.id,
-                    amount=q.prize_value,
-                    note=f"quiz:{q.id}:{grade}",
+            if q.prize_value > 0:
+                wallet = ensure_wallet(db, user)
+                wallet.balance += q.prize_value
+                db.add(
+                    models.Transaction(
+                        sender_id=None,
+                        recipient_id=user.id,
+                        amount=q.prize_value,
+                        note=f"quiz:{q.id}:{grade}",
+                    )
                 )
-            )
+                attempt.prize_awarded = True
         elif q.prize_kind == "item" and q.prize_item_code:
             item = db.query(models.Item).filter(models.Item.code == q.prize_item_code).one_or_none()
             if item:
@@ -124,9 +132,7 @@ def submit_quiz(
                     inv.quantity += 1
                 else:
                     db.add(models.InventoryItem(user_id=user.id, item_id=item.id, quantity=1))
-        attempt.prize_awarded = True
-    else:
-        prize_awarded = False
+                attempt.prize_awarded = True
 
     db.commit()
     db.refresh(attempt)
@@ -138,5 +144,5 @@ def submit_quiz(
         grade=grade,
         grade_label=grade_labels.get(grade, grade),
         prize_label=q.prize_label,
-        prize_awarded=prize_awarded,
+        prize_awarded=attempt.prize_awarded,
     )

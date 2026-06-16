@@ -155,7 +155,7 @@ def seed_players(db: Session) -> None:
             user.username = spec["username"]
             if not user.first_name:
                 user.first_name = spec["first_name"]
-            if not user.role or user.role == "Гражданин" and spec["role"] != "Гражданин":
+            if not user.role or (user.role == "Гражданин" and spec["role"] != "Гражданин"):
                 user.role = spec["role"]
             if user.wallet is None:
                 db.add(models.Wallet(user_id=user.id, balance=0))
@@ -293,7 +293,7 @@ def seed(db: Session) -> None:
         existing = (
             db.query(models.ShopProduct)
             .filter(models.ShopProduct.item_id == item.id, models.ShopProduct.is_active.is_(True))
-            .one_or_none()
+            .first()
         )
         if existing is None:
             db.add(models.ShopProduct(item_id=item.id, price=price, is_active=True))
@@ -432,6 +432,6 @@ def seed(db: Session) -> None:
         ibragim = db.query(models.User).filter(models.User.first_name == "Ибрагим").first()
         if ibragim:
             db.add(models.ChatMessage(user_id=ibragim.id, content="Привет всем!", message_type="text"))
-        db.commit()
+        # NB: no commit here — the outer session_scope() in main.py commits atomically.
 
     seed_wheel_prizes(db)

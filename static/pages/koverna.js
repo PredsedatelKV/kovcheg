@@ -1,8 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=30";
+import { get, post, iconHtml, productImg, escapeHtml } from "/static/api.js?v=30";
 
 import { playUISound } from "/static/pages/settings.js?v=30";
-const escapeHtml = (s = "") =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 let state = {
   mode: "shop", // shop | market
@@ -43,8 +41,14 @@ export async function renderKoverna(root) {
 }
 
 async function renderShop(root) {
-  const products = await get("/api/shop/products");
   const content = root.querySelector("#content");
+  let products;
+  try {
+    products = await get("/api/shop/products");
+  } catch (e) {
+    content.innerHTML = `<div class="empty">Ошибка загрузки: ${escapeHtml(e.message || "")}</div>`;
+    return;
+  }
   content.innerHTML =
     products.length === 0
       ? `<div class="empty">В магазине пока пусто</div>`
@@ -85,8 +89,14 @@ async function renderMarket(root) {
   tools.querySelector("#sell-btn").addEventListener("click", openSellDialog);
   tools.querySelector("#my-listings-btn").addEventListener("click", openMyListings);
 
-  const listings = await get("/api/market/listings");
   const content = root.querySelector("#content");
+  let listings;
+  try {
+    listings = await get("/api/market/listings");
+  } catch (e) {
+    content.innerHTML = `<div class="empty">Ошибка загрузки: ${escapeHtml(e.message || "")}</div>`;
+    return;
+  }
   content.innerHTML =
     listings.length === 0
       ? `<div class="empty">На рынке пока ничего — выставь товар, чтобы начать!</div>`
@@ -145,7 +155,7 @@ async function openSellDialog() {
       await post("/api/market/list", { item_id, quantity, price });
       window.kov.toast("Выставлено!");
       window.closeModal();
-      renderKoverna(document.getElementById("view"));
+      window.kov.rerender("koverna");
     } catch (e) {
       window.kov.toast(e.message);
     }
@@ -183,7 +193,7 @@ async function openMyListings() {
         await post(`/api/market/unlist/${b.dataset.unlist}`);
         window.kov.toast("Снято с продажи");
         window.closeModal();
-        renderKoverna(document.getElementById("view"));
+        window.kov.rerender("koverna");
       } catch (e) {
         window.kov.toast(e.message);
       }

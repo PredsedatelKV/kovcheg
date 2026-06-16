@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.api._helpers import ensure_wallet
 from app.auth import current_user, is_admin
 from app.db import get_db
 
@@ -147,12 +148,21 @@ def transfer(
     recipient = _resolve_recipient(db, payload.recipient)
     if recipient.id == user.id:
         raise HTTPException(status_code=400, detail="Нельзя перевести себе")
-    if user.wallet.balance < payload.amount:
+    sender_wallet = ensure_wallet(db, user)
+    recipient_wallet = ensure_wallet(db, recipient)
+    if sender_wallet.balance < payload.amount:
         raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
-    user.wallet.balance -= payload.amount
-    recipient.wallet.balance += payload.amount
-    db.add(models.Transaction(sender_id=user.id, recipient_id=recipient.id, amount=payload.amount))
-    db.commit()
+    try:
+        sender_wallet.balance -= payload.amount
+        recipient_wallet.balance += payload.amount
+        db.add(models.Transaction(sender_id=user.id, recipient_id=recipient.id, amount=payload.amount))
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Не удалось выполнить перевод")
     db.refresh(user)
     from app.notify import notify_admins_bg
     notify_admins_bg(
@@ -176,6 +186,7 @@ def gift_item(
         raise HTTPException(status_code=400, detail="Недостаточно предметов")
     if not inv.item.can_gift:
         raise HTTPException(status_code=400, detail="Этот предмет нельзя дарить")
+    item_name = inv.item.name
     recipient = _resolve_recipient(db, payload.recipient)
     if recipient.id == user.id:
         raise HTTPException(status_code=400, detail="Нельзя дарить себе")
@@ -189,11 +200,13 @@ def gift_item(
         db.add(models.InventoryItem(user_id=recipient.id, item_id=payload.item_id, quantity=payload.quantity))
     else:
         recipient_inv.quantity += payload.quantity
+    if inv.quantity == 0:
+        db.delete(inv)
     db.commit()
     db.refresh(user)
     from app.notify import notify_admins_bg
     notify_admins_bg(
-        f"🎁 <b>{user.first_name}</b> подарил(а) <b>{inv.item.name}</b> ×{payload.quantity} → <b>{recipient.first_name}</b>"
+        f"🎁 <b>{user.first_name}</b> подарил(а) <b>{item_name}</b> ×{payload.quantity} → <b>{recipient.first_name}</b>"
     )
     return me(user=user, db=db)
 
@@ -213,6 +226,9 @@ def sell_item(
     )
     if inv is None or inv.quantity < payload.quantity:
         raise HTTPException(status_code=400, detail="Недостаточно предметов")
+    if not inv.item.can_gift:
+        raise HTTPException(status_code=400, detail="Этот предмет нельзя передавать/продавать")
+    item_name = inv.item.name
     recipient = _resolve_recipient(db, payload.recipient)
     if recipient.id == user.id:
         raise HTTPException(status_code=400, detail="Нельзя продать себе")
@@ -226,11 +242,13 @@ def sell_item(
         target_user_id=recipient.id,
     )
     db.add(listing)
+    if inv.quantity == 0:
+        db.delete(inv)
     db.commit()
     db.refresh(user)
     from app.notify import notify_admins_bg
     notify_admins_bg(
-        f"🏷️ <b>{user.first_name}</b> выставил(а) на адресную продажу: <b>{inv.item.name}</b> ×{payload.quantity} за {payload.price} Ковбаксов → <b>{recipient.first_name}</b>"
+        f"🏷️ <b>{user.first_name}</b> выставил(а) на адресную продажу: <b>{item_name}</b> ×{payload.quantity} за {payload.price} Ковбаксов → <b>{recipient.first_name}</b>"
     )
     return me(user=user, db=db)
 
@@ -248,13 +266,17 @@ def activate_item(
     )
     if inv is None or inv.quantity < 1:
         raise HTTPException(status_code=400, detail="Нет предмета")
+    if not inv.item.can_activate:
+        raise HTTPException(status_code=400, detail="Этот предмет нельзя активировать")
+    item_name = inv.item.name
     inv.quantity -= 1
+    if inv.quantity == 0:
+        db.delete(inv)
     db.commit()
     db.refresh(user)
-    db.refresh(user.wallet)
     from app.notify import notify_admins_bg
     notify_admins_bg(
-        f"✨ <b>{user.first_name}</b> активировал(а) <b>{inv.item.name}</b>"
+        f"✨ <b>{user.first_name}</b> активировал(а) <b>{item_name}</b>"
     )
     return me(user=user, db=db)
 

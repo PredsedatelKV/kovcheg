@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -36,14 +37,24 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    # DDL migrations run (and commit) in their own scope first, so a later
+    # seed failure can't leave the schema half-migrated.
     with session_scope() as db:
         migrate_schema(db)
+    # Seed + icon migration commit atomically in a separate scope.
+    with session_scope() as db:
         seed(db)
         migrate_icons(db)
+    # Warm up the embeddings model after migrations/seed. Safe & non-throwing,
+    # but guarded here too so it can never break startup.
+    try:
+        from app.assistant.embedder import warmup
+        warmup()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("embedder warmup failed: %s", exc)
     settings = get_settings()
     if settings.public_url and settings.telegram_bot_token:
         try:
-            import asyncio
             res = await asyncio.wait_for(configure_webhook(settings.public_url, settings.telegram_webhook_secret), timeout=10)
             log.info("Telegram webhook configured: %s", res)
             await asyncio.wait_for(set_menu_button(settings.public_url), timeout=10)

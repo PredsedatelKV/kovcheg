@@ -85,7 +85,7 @@ def upsert_user(db: Session, tg_user: dict[str, Any]) -> models.User:
         db.flush()
     else:
         user.username = tg_user.get("username") or user.username
-        user.first_name = tg_user.get("first_name", user.first_name)
+        user.first_name = tg_user.get("first_name") or user.first_name
         user.last_name = tg_user.get("last_name") or user.last_name
         user.photo_url = tg_user.get("photo_url") or user.photo_url
     return user

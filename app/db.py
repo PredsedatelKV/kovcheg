@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, declarative_base, sessionmaker
 from app.config import get_settings
 
 settings = get_settings()
+settings.ensure_db_dir()  # create local ./var sqlite dir if needed (no-op for external DBs)
 
 engine = create_engine(
     settings.resolved_database_url,
@@ -23,6 +24,9 @@ def get_db() -> Iterator[Session]:
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

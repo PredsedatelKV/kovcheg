@@ -4,25 +4,16 @@ import logging
 
 from app.assistant.client import ask_llm
 from app.assistant.embedder import encode_single
-from app.assistant.prompts import SYSTEM_PROMPT
+from app.assistant.prompts import (
+    SYSTEM_PROMPT,
+    USER_PROMPT_NO_CONTEXT,
+    USER_PROMPT_WITH_CONTEXT,
+)
 from app.assistant.search import find_top_k
 from app.assistant.store import get_store
 from app.config import get_settings
 
 log = logging.getLogger(__name__)
-
-# Базовая роль Мошонки для system-сообщения (краткая, LLM поймёт)
-MOSHONKA_SYSTEM = (
-    "Ты — Мошонка, житель Ковчега. Обычный парень, живёшь в общине. "
-    "Ты общительный, отвечаешь на любые темы — наука, технологии, юмор, отношения, философия, повседневная жизнь. "
-    "Говори как нормальный человек: просто, без пафоса, без восхваления Ковчега. "
-    "Ковчег — это просто место где ты живёшь, не великое сооружение. "
-    "Не упоминай тыквы если тебя не спрашивают. "
-    "Не повторяйся, не заедай на одной теме. "
-    "2-4 предложения. Кратко и по делу. "
-    "Не ломай четвёртую стену, не говори что ты ИИ. "
-    "Поддерживай разговор: можешь задать вопрос в ответ."
-)
 
 
 async def ask(question: str, history: list[dict[str, str]] | None = None) -> dict:
@@ -49,22 +40,17 @@ async def ask(question: str, history: list[dict[str, str]] | None = None) -> dic
         log.warning("Embedding/search failed (will answer without chunks): %s", exc)
         # Продолжаем без контекста — Мошонка ответит как житель
 
-    # Формируем prompt
+    # Формируем user-промпт (роль уже в system-сообщении, тут только контекст+вопрос)
     if context:
-        prompt = SYSTEM_PROMPT.format(context=context, question=question)
+        prompt = USER_PROMPT_WITH_CONTEXT.format(context=context, question=question)
     else:
-        # Нет материалов — просто спрашиваем в роли, но с полным контекстом
-        prompt = (
-            f"Гражданин спрашивает: {question}\n\n"
-            f"Ответь как Мошонка — просто, с юмором, поддержи разговор. "
-            f"Можешь задать вопрос в ответ, чтобы продолжить беседу."
-        )
+        prompt = USER_PROMPT_NO_CONTEXT.format(question=question)
 
     # Формируем messages для LLM
     messages: list[dict[str, str]] = []
 
-    # System prompt с ролью (важно для OpenRouter и Gemini)
-    messages.append({"role": "system", "content": MOSHONKA_SYSTEM})
+    # Единый system prompt с ролью (важно для OpenRouter и Gemini)
+    messages.append({"role": "system", "content": SYSTEM_PROMPT})
 
     # История чата (последние 10 сообщений)
     if history:

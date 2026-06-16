@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.api._helpers import ensure_wallet
 from app.api.profile import _item_to_out
 from app.auth import current_user
 from app.db import get_db
@@ -30,9 +31,10 @@ def buy(
         raise HTTPException(status_code=404, detail="Товар не найден")
     if product.stock == 0:
         raise HTTPException(status_code=400, detail="Товар закончился")
-    if user.wallet.balance < product.price:
+    wallet = ensure_wallet(db, user)
+    if wallet.balance < product.price:
         raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
-    user.wallet.balance -= product.price
+    wallet.balance -= product.price
     inv = (
         db.query(models.InventoryItem)
         .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == product.item_id)

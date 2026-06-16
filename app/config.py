@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # --- LLM / Ассистент ---
     llm_provider: str = "openrouter"  # openrouter | gemini
     llm_api_key: str = ""  # ключ (OpenRouter или Gemini)
-    llm_model: str = "gemini-2.0-flash"
+    llm_model: str = "google/gemini-2.0-flash"  # valid openrouter id (vendor-prefixed)
     llm_base_url: str = "https://openrouter.ai/api/v1"
     llm_max_tokens: int = 800
     llm_temperature: float = 0.7
@@ -37,15 +37,25 @@ class Settings(BaseSettings):
     def admin_username_list(self) -> list[str]:
         return [x.strip().lower().lstrip("@") for x in self.admin_usernames.split(",") if x.strip()]
 
-    @property
-    def resolved_database_url(self) -> str:
-        if self.database_url:
-            return self.database_url
+    def _data_dir(self) -> Path:
+        """Resolve the sqlite data directory without any filesystem side-effects."""
         data_dir = Path(os.environ.get("DATA_DIR", "/data"))
         if not data_dir.exists():
             data_dir = Path(__file__).resolve().parent.parent / "var"
-            data_dir.mkdir(parents=True, exist_ok=True)
-        return f"sqlite:///{data_dir}/kovcheg.db"
+        return data_dir
+
+    @property
+    def resolved_database_url(self) -> str:
+        """Pure getter — no filesystem side-effects (call ensure_db_dir() before engine creation)."""
+        if self.database_url:
+            return self.database_url
+        return f"sqlite:///{self._data_dir()}/kovcheg.db"
+
+    def ensure_db_dir(self) -> None:
+        """Idempotently create the local sqlite data directory if we're falling back to ./var."""
+        if self.database_url:
+            return
+        self._data_dir().mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache

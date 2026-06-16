@@ -1,17 +1,6 @@
-import { post, get } from "/static/api.js?v=30";
+import { post, get, escapeHtml, kovbaksWord, animateElement } from "/static/api.js?v=30";
 
 import { playUISound } from "/static/pages/settings.js?v=30";
-const escapeHtml = (s = "") =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-
-function kovbaksWord(n) {
-  const abs = Math.abs(n) % 100;
-  const last = abs % 10;
-  if (abs > 10 && abs < 20) return "Ковбаксов";
-  if (last === 1) return "Ковбакс";
-  if (last >= 2 && last <= 4) return "Ковбакса";
-  return "Ковбаксов";
-}
 
 let balance = 0;
 
@@ -42,12 +31,8 @@ function updateBalanceDisplay(id, amount) {
   if (el) el.textContent = amount;
 }
 
-function animateElement(el, animation, duration) {
-  el.style.animation = `${animation} ${duration}ms ease-out forwards`;
-}
-
 function getMaxBet() {
-  return Math.max(1, Math.floor(balance * 0.2 / 1) * 1);
+  return Math.max(1, Math.floor(balance * 0.2));
 }
 
 function betInputHTML(id) {
@@ -472,7 +457,7 @@ function gameHarvest() {
   let spawnInterval;
   
   const modal = window.kov.showModal(`
-    <button class="close" onclick="closeModal(); clearInterval(gameInterval); clearInterval(spawnInterval)">×</button>
+    <button class="close" id="harvest-close">×</button>
     <h2>Собери урожай!</h2>
     <p class="card-sub">Кликай по тыквам!</p>
     <div class="game-stats">
@@ -489,6 +474,15 @@ function gameHarvest() {
   const field = modal.querySelector("#harvest-field");
   const countEl = modal.querySelector("#harvest-count");
   const timeEl = modal.querySelector("#harvest-time");
+
+  const closeBtn = modal.querySelector("#harvest-close");
+  if (closeBtn) {
+    closeBtn.addEventListener("click", () => {
+      clearInterval(gameInterval);
+      clearInterval(spawnInterval);
+      window.closeModal();
+    });
+  }
 
   function spawnPumpkin() {
     if (timeLeft <= 0) return;
@@ -714,6 +708,7 @@ function gameTanks() {
     keys["ArrowDown"] = false;
     keys["ArrowLeft"] = false;
     keys["ArrowRight"] = false;
+    keys[" "] = false;
   });
   canvas.addEventListener("touchmove", e => {
     e.preventDefault();
@@ -741,15 +736,15 @@ function gameTanks() {
 
 function gameRoulette() {
   const sectors = [
-    { label: "x0.05", color: "#E55454", weight: 40 },
-    { label: "x0.25", color: "#D32F2F", weight: 22 },
-    { label: "x0.5", color: "#FF8A65", weight: 25 },
-    { label: "x0.75", color: "#FFB74D", weight: 18 },
-    { label: "x1", color: "#F2B33C", weight: 20 },
-    { label: "x1.5", color: "#6BD995", weight: 6 },
-    { label: "x2", color: "#6CB6FB", weight: 3 },
-    { label: "x2.5", color: "#D387E5", weight: 2 },
-    { label: "x3", color: "#AB47BC", weight: 1 },
+    { label: "x0.05", mult: 0.05, color: "#E55454", weight: 40 },
+    { label: "x0.25", mult: 0.25, color: "#D32F2F", weight: 22 },
+    { label: "x0.5", mult: 0.5, color: "#FF8A65", weight: 25 },
+    { label: "x0.75", mult: 0.75, color: "#FFB74D", weight: 18 },
+    { label: "x1", mult: 1, color: "#F2B33C", weight: 20 },
+    { label: "x1.5", mult: 1.5, color: "#6BD995", weight: 6 },
+    { label: "x2", mult: 2, color: "#6CB6FB", weight: 3 },
+    { label: "x2.5", mult: 2.5, color: "#D387E5", weight: 2 },
+    { label: "x3", mult: 3, color: "#AB47BC", weight: 1 },
   ];
   
   const modal = window.kov.showModal(`
@@ -767,18 +762,31 @@ function gameRoulette() {
 
   const wheel = modal.querySelector("#risk-wheel");
   const resultEl = modal.querySelector("#roulette-result");
-  
-  modal.querySelector("#roulette-spin-btn").addEventListener("click", () => {
+  const spinBtn = modal.querySelector("#roulette-spin-btn");
+
+  spinBtn.addEventListener("click", async () => {
+    if (spinBtn.disabled) return;
     const bet = getBetValue("roulette-bet");
     if (balance < bet) {
       resultEl.innerHTML = `<div class="game-lose">Недостаточно K</div>`;
       return;
     }
-    
+
+    spinBtn.disabled = true;
+
+    // Confirm the bet with the server BEFORE deducting/animating.
+    try {
+      await post("/api/arcade/bet", { amount: bet });
+    } catch (e) {
+      resultEl.innerHTML = `<div class="game-lose">${escapeHtml(e.message || "Не удалось сделать ставку")}</div>`;
+      spinBtn.disabled = false;
+      return;
+    }
+
     balance -= bet;
     updateBalanceDisplay("roulette-balance", balance);
     playUISound("bet");
-    post("/api/arcade/bet", { amount: bet }).catch(() => {});
+
     const totalWeight = sectors.reduce((s, sec) => s + sec.weight, 0);
     let rand = Math.random() * totalWeight;
     let chosen = sectors[0];
@@ -786,47 +794,59 @@ function gameRoulette() {
       rand -= sec.weight;
       if (rand <= 0) { chosen = sec; break; }
     }
-    
-    const mult = parseFloat(chosen.label.replace("x", ""));
+
+    const mult = chosen.mult;
     const win = Math.floor(bet * mult);
     const chosenIdx = sectors.indexOf(chosen);
-    
+
     wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("active", "highlight"));
     let currentIdx = 0;
     let spins = 0;
     const maxSpins = 20 + chosenIdx;
-    
-    const spinInterval = setInterval(() => {
+
+    const spinInterval = setInterval(async () => {
       wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("highlight"));
       wheel.children[currentIdx].classList.add("highlight");
       currentIdx = (currentIdx + 1) % sectors.length;
       spins++;
       if (spins % 2 === 0) playUISound("spin");
-      
+
       if (spins >= maxSpins) {
         clearInterval(spinInterval);
         wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("highlight"));
         wheel.children[chosenIdx].classList.add("active");
         animateElement(wheel.children[chosenIdx], "popIn", 300);
-        
-        if (mult > 1) {
-          post("/api/arcade/win", { amount: win }).catch(() => {});
-          balance += win;
-          updateBalanceDisplay("roulette-balance", balance);
-          resultEl.innerHTML = `<div class="game-win">${chosen.label}! Выигрыш: ${win} K</div>`;
-          animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
-          playUISound("win");
-        } else if (mult === 1) {
-          post("/api/arcade/win", { amount: bet }).catch(() => {});
-          balance += bet;
-          updateBalanceDisplay("roulette-balance", balance);
-          resultEl.innerHTML = `<div class="game-neutral">x1. Ставка возвращена.</div>`;
-          playUISound("cashout");
+
+        const payout = mult >= 1 ? win : 0;
+        if (payout > 0) {
+          try {
+            await post("/api/arcade/win", { amount: payout });
+            balance += payout;
+            updateBalanceDisplay("roulette-balance", balance);
+            if (mult > 1) {
+              resultEl.innerHTML = `<div class="game-win">${chosen.label}! Выигрыш: ${win} K</div>`;
+              animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
+              playUISound("win");
+            } else {
+              resultEl.innerHTML = `<div class="game-neutral">x1. Ставка возвращена.</div>`;
+              playUISound("cashout");
+            }
+          } catch (e) {
+            // Server rejected the win — resync to the real balance and report.
+            await syncBalance();
+            updateBalanceDisplay("roulette-balance", balance);
+            resultEl.innerHTML = `<div class="game-lose">${escapeHtml(e.message || "Ошибка начисления")}</div>`;
+            playUISound("lose");
+            spinBtn.disabled = false;
+            return;
+          }
         } else {
           resultEl.innerHTML = `<div class="game-lose">${chosen.label}. Ставка потеряна.</div>`;
           playUISound("lose");
         }
-        syncBalance();
+        await syncBalance();
+        updateBalanceDisplay("roulette-balance", balance);
+        spinBtn.disabled = false;
       }
     }, 100);
   });
@@ -872,35 +892,15 @@ export async function renderArcade(root) {
         <div class="game-tile-title">Собери урожай</div>
         <div class="game-tile-desc">Собирай тыквы за время</div>
       </div>
-      <div class="game-tile" data-game="checkers">
-        <div class="game-tile-icon"><img src="/static/img/ui/checkers.svg" alt="" class="game-icon-lg"/></div>
-        <div class="game-tile-title">Шашки</div>
-        <div class="game-tile-desc">3 уровня сложности</div>
-      </div>
-      <div class="game-tile" data-game="pingpong">
-        <div class="game-tile-icon"><img src="/static/img/ui/pingpong.svg" alt="" class="game-icon-lg"/></div>
-        <div class="game-tile-title">Пинг-понг</div>
-        <div class="game-tile-desc">Игра до 5 очков</div>
+      <div class="game-tile" data-game="tanks">
+        <div class="game-tile-icon"><img src="/static/img/ui/tank.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-title">Танчики</div>
+        <div class="game-tile-desc">Уничтожь танк противника</div>
       </div>
     </div>
 
     <h2 class="section-title">Казино</h2>
     <div class="game-grid">
-      <div class="game-tile casino" data-game="slots">
-        <div class="game-tile-icon"><img src="/static/img/ui/slots.svg" alt="" class="game-icon-lg"/></div>
-        <div class="game-tile-title">Слоты</div>
-        <div class="game-tile-desc">3 одинаковых = x8</div>
-      </div>
-      <div class="game-tile casino" data-game="rocket">
-        <div class="game-tile-icon"><img src="/static/img/ui/rocket.svg" alt="" class="game-icon-lg"/></div>
-        <div class="game-tile-title">Ракетка</div>
-        <div class="game-tile-desc">Кэшаут до краха</div>
-      </div>
-      <div class="game-tile casino" data-game="dice">
-        <div class="game-tile-icon"><img src="/static/img/ui/dice.svg" alt="" class="game-icon-lg"/></div>
-        <div class="game-tile-title">Кубик</div>
-        <div class="game-tile-desc">Чёт/нечёт или число</div>
-      </div>
       <div class="game-tile casino" data-game="roulette">
         <div class="game-tile-icon"><img src="/static/img/ui/roulette.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Рулетка</div>
@@ -914,11 +914,7 @@ export async function renderArcade(root) {
     tictactoe: gameTicTacToe,
     minesweeper: gameMinesweeper,
     harvest: gameHarvest,
-    checkers: gameCheckers,
-    pingpong: gamePingPong,
-    slots: gameSlots,
-    rocket: gameRocket,
-    dice: gameDice,
+    tanks: gameTanks,
     roulette: gameRoulette,
   };
   

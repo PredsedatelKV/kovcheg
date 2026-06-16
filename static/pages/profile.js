@@ -1,25 +1,12 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=30";
+import { get, post, iconHtml, productImg, escapeHtml, kovbaksWord } from "/static/api.js?v=30";
 
 import { playUISound } from "/static/pages/settings.js?v=30";
-const escapeHtml = (s = "") =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 const GAME_META = {
   tictactoe: { name: "Крестики-нолики", icon: "/static/img/ui/tic-tac-toe.svg" },
-  checkers:  { name: "Шашки",           icon: "/static/img/ui/checkers.svg" },
-  pingpong:  { name: "Пинг-понг",       icon: "/static/img/ui/pingpong.svg" },
   tanks:     { name: "Танчики",         icon: "/static/img/ui/tank.svg" },
 };
 let invitePollTimer = null;
-
-function kovbaksWord(n) {
-  const abs = Math.abs(n) % 100;
-  const last = abs % 10;
-  if (abs > 10 && abs < 20) return "Ковбаксов";
-  if (last === 1) return "Ковбакс";
-  if (last >= 2 && last <= 4) return "Ковбакса";
-  return "Ковбаксов";
-}
 
 function invCell(row) {
   return `
@@ -43,7 +30,13 @@ function userTaskRow(ut) {
 
 export async function renderProfile(root) {
   root.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
-  const data = await get("/api/profile/me");
+  let data;
+  try {
+    data = await get("/api/profile/me");
+  } catch (e) {
+    root.innerHTML = `<div class="card"><h3>Ошибка</h3><p>${escapeHtml(e.message || "Не удалось загрузить профиль")}</p></div>`;
+    return;
+  }
   const user = data.user;
   const photoOrEmoji = user.photo_url
     ? `<img src="${escapeHtml(user.photo_url)}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:14px" />`
@@ -260,6 +253,7 @@ async function loadChat(root) {
     }
     function toMSK(iso) {
       const d = new Date(iso);
+      if (isNaN(d.getTime())) return "";
       return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
     }
     if (messages.length === 0) {
@@ -327,8 +321,6 @@ function bindChatInput(root) {
     gameInviteToggle.addEventListener("click", async () => {
       const games = [
         { id: "tictactoe", name: "Крестики-нолики", icon: "/static/img/ui/tic-tac-toe.svg" },
-        { id: "checkers", name: "Шашки", icon: "/static/img/ui/checkers.svg" },
-        { id: "pingpong", name: "Пинг-понг", icon: "/static/img/ui/pingpong.svg" },
         { id: "tanks", name: "Танчики", icon: "/static/img/ui/tank.svg" },
       ];
       
@@ -446,8 +438,7 @@ function openItemActionsDialog(row) {
       await post("/api/profile/inventory/activate", { item_id: item.id, recipient: "", quantity: 1 });
       window.kov.toast(`✨ «${item.name}» активирован`);
       window.closeModal();
-      const r = document.getElementById("view");
-      renderProfile(r);
+      window.kov.rerender("profile");
     } catch (err) {
       window.kov.toast(err.message);
     }
@@ -524,7 +515,7 @@ async function openTransferDialog(user) {
       await post("/api/profile/transfer", { recipient, amount });
       window.kov.toast("Отправлено");
       window.closeModal();
-      window.kov.setTab("profile");
+      window.kov.rerender("profile");
     } catch (err) {
       window.kov.toast(err.message);
     }
@@ -533,6 +524,7 @@ async function openTransferDialog(user) {
 
 function fmtTxnDate(iso) {
   const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
   const opts = { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" };
   return d.toLocaleString("ru-RU", opts).replace(",", "");
 }
@@ -604,7 +596,7 @@ async function openGiftDialog(item, maxQty) {
       await post("/api/profile/inventory/gift", { recipient, item_id: item.id, quantity });
       window.kov.toast(`🎁 Подарено: «${item.name}» ×${quantity}`);
       window.closeModal();
-      renderProfile(document.getElementById("view"));
+      window.kov.rerender("profile");
     } catch (err) {
       window.kov.toast(err.message);
     }
@@ -631,7 +623,7 @@ async function openSellDialog(item, maxQty) {
       await post("/api/market/list", { item_id: item.id, quantity, price });
       window.kov.toast(`🏷️ Выставлено: «${item.name}» ×${quantity} за ${price} K/шт`);
       window.closeModal();
-      renderProfile(document.getElementById("view"));
+      window.kov.rerender("profile");
     } catch (err) {
       window.kov.toast(err.message);
     }
@@ -654,7 +646,8 @@ function openUserTaskDialog(ut, root) {
       await post(`/api/tasks/${ut.id}/cancel`);
       window.kov.toast("Задание прервано");
       window.closeModal();
-      renderProfile(document.getElementById("view"));
+      if (root) renderProfile(root);
+      else window.kov.rerender("profile");
     } catch (e) {
       window.kov.toast(e.message);
     }
@@ -726,7 +719,8 @@ async function openQuiz(quizId, root) {
           <button class="btn" style="margin-top:16px" onclick="closeModal()">Закрыть</button>
         </div>
       `;
-      renderProfile(root);
+      if (root) renderProfile(root);
+      else window.kov.rerender("profile");
     } catch (err) {
       window.kov.toast(err.message);
     }

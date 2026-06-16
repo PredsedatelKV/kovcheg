@@ -8,13 +8,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-
 log = logging.getLogger(__name__)
 
 DEFAULT_STORE_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "assistant" / "knowledge_store.json"
 
 _store_lock = threading.Lock()
+
+# Кэш синглтона стора по пути.
+_store_cache: dict[str, "KnowledgeStore"] = {}
+_cache_lock = threading.Lock()
 
 
 class KnowledgeStore:
@@ -45,22 +47,48 @@ class KnowledgeStore:
                 json.dump(self._data, f, ensure_ascii=False, indent=2)
 
     def clear(self) -> None:
-        self._data["chunks"] = []
+        with _store_lock:
+            self._data["chunks"] = []
         self._save()
 
     def add_chunk(self, text: str, source: str, embedding: list[float]) -> str:
         chunk_id = str(uuid.uuid4())
-        self._data["chunks"].append(
-            {
-                "id": chunk_id,
-                "text": text,
-                "source": source,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "embedding": embedding,
-            }
-        )
+        with _store_lock:
+            self._data["chunks"].append(
+                {
+                    "id": chunk_id,
+                    "text": text,
+                    "source": source,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "embedding": embedding,
+                }
+            )
         self._save()
         return chunk_id
+
+    def add_chunks(self, items: list[tuple[str, str, list[float]]]) -> list[str]:
+        """Массовое добавление чанков с единственной сериализацией в конце.
+
+        items: список кортежей (text, source, embedding).
+        Избегает O(n^2) перезаписи файла при индексации.
+        """
+        ids: list[str] = []
+        now = datetime.now(timezone.utc).isoformat()
+        with _store_lock:
+            for text, source, embedding in items:
+                chunk_id = str(uuid.uuid4())
+                ids.append(chunk_id)
+                self._data["chunks"].append(
+                    {
+                        "id": chunk_id,
+                        "text": text,
+                        "source": source,
+                        "created_at": now,
+                        "embedding": embedding,
+                    }
+                )
+        self._save()
+        return ids
 
     def get_chunks(self) -> list[dict[str, Any]]:
         return self._data.get("chunks", [])
@@ -70,4 +98,23 @@ class KnowledgeStore:
 
 
 def get_store(path: Path | None = None) -> KnowledgeStore:
-    return KnowledgeStore(path)
+    """Возвращает кэшированный синглтон стора (читает JSON с диска один раз)."""
+    key = str(path or DEFAULT_STORE_PATH)
+    with _cache_lock:
+        store = _store_cache.get(key)
+        if store is None:
+            store = KnowledgeStore(path)
+            _store_cache[key] = store
+        return store
+
+
+def reload_store(path: Path | None = None) -> KnowledgeStore:
+    """Сбрасывает кэш и перечитывает стор с диска.
+
+    Нужно после реиндексации, чтобы рантайм увидел свежие данные.
+    """
+    key = str(path or DEFAULT_STORE_PATH)
+    with _cache_lock:
+        store = KnowledgeStore(path)
+        _store_cache[key] = store
+        return store

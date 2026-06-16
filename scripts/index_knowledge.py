@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from PyPDF2 import PdfReader
 
 from app.assistant.embedder import encode_texts
-from app.assistant.store import KnowledgeStore
+from app.assistant.store import get_store, reload_store
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 KNOWLEDGE_DIR = DATA_DIR / "knowledge"
@@ -47,15 +47,17 @@ def split_into_chunks(text: str, max_length: int = 800, overlap: int = 100) -> l
     while start < len(text):
         end = min(start + max_length, len(text))
         if end < len(text):
-            # Ищем ближайший разделитель для красивого разбиения
-            for split_point in range(end, start + max_length // 2, -1):
+            # Ищем ближайший разделитель для красивого разбиения.
+            # Начинаем с end - 1: end может быть за пределами текущего чанка.
+            for split_point in range(end - 1, start + max_length // 2, -1):
                 if text[split_point] in "\n\r ":
                     end = split_point
                     break
         chunk = text[start:end].strip()
         if chunk:
             chunks.append(chunk)
-        start = end - overlap
+        # Гарантируем продвижение вперёд, иначе на коротких сегментах возможен застой.
+        start = max(end - overlap, start + 1)
         if start >= len(text):
             break
     return chunks
@@ -67,7 +69,7 @@ def main() -> int:
     parser.add_argument("--dir", type=Path, default=KNOWLEDGE_DIR, help="Папка с материалами")
     args = parser.parse_args()
 
-    store = KnowledgeStore()
+    store = get_store()
     if args.clear:
         print("Очистка хранилища...")
         store.clear()
@@ -95,7 +97,7 @@ def main() -> int:
             continue
 
         if not text.strip():
-            print(f"  Пропуск (пустой)")
+            print("  Пропуск (пустой)")
             continue
 
         chunks = split_into_chunks(text)
@@ -112,8 +114,14 @@ def main() -> int:
     embeddings = encode_texts(texts)
 
     print("Сохранение в хранилище...")
-    for i, (text, source) in enumerate(all_chunks):
-        store.add_chunk(text, source, embeddings[i].tolist())
+    bulk = [
+        (text, source, embeddings[i].tolist())
+        for i, (text, source) in enumerate(all_chunks)
+    ]
+    store.add_chunks(bulk)
+
+    # Инвалидируем кэш стора, чтобы рантайм увидел свежие данные.
+    store = reload_store()
 
     print(f"Готово! Всего фрагментов в хранилище: {len(store.get_chunks())}")
     return 0

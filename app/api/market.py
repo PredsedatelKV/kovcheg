@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.api._helpers import ensure_wallet
 from app.api.profile import _inventory_to_out, _item_to_out, _user_to_out
 from app.auth import current_user
 from app.db import get_db
@@ -129,11 +130,13 @@ def buy_listing(
         raise HTTPException(status_code=400, detail="Нельзя купить у себя")
     if listing.target_user_id is not None and listing.target_user_id != user.id:
         raise HTTPException(status_code=403, detail="Это предложение адресовано другому игроку")
-    if user.wallet.balance < listing.price:
+    buyer_wallet = ensure_wallet(db, user)
+    if buyer_wallet.balance < listing.price:
         raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
     seller = db.query(models.User).filter(models.User.id == listing.seller_id).one()
-    user.wallet.balance -= listing.price
-    seller.wallet.balance += listing.price
+    seller_wallet = ensure_wallet(db, seller)
+    buyer_wallet.balance -= listing.price
+    seller_wallet.balance += listing.price
     inv = (
         db.query(models.InventoryItem)
         .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == listing.item_id)

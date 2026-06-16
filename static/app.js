@@ -99,6 +99,15 @@ tabButtons.forEach((btn) => {
 // Global helpers
 window.kov = {
   setTab,
+  /** Container element backing a given tab (where its content is rendered). */
+  container(name) {
+    return containers[name] || null;
+  },
+  /** Re-render a tab into its own container (NOT into #view). */
+  rerender(name) {
+    const c = containers[name];
+    if (c && RENDERERS[name]) return RENDERERS[name](c);
+  },
   toast(msg) {
     playUISound("toast");
     const el = document.createElement("div");

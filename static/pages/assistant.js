@@ -1,9 +1,6 @@
-import { get, post } from "/static/api.js?v=31";
+import { get, post, escapeHtml } from "/static/api.js?v=31";
 
 const STORAGE_KEY = "kovcheg.assistant.chat";
-
-const escapeHtml = (s = "") =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 function loadHistory() {
   try {

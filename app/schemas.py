@@ -105,6 +105,7 @@ class ShopProductOut(BaseModel):
     item: ItemOut
     price: int
     stock: int = -1  # -1 = unlimited
+    is_active: bool = True
 
 
 class MarketListingOut(BaseModel):
