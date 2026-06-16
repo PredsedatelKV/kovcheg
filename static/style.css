@@ -4934,4 +4934,28 @@ html.dark .listing-row .price, html.dark .listing-row .coins { color: var(--text
   text-align: left;
   transition: background 0.15s;
 }
-.game-answer-btn:hover { background: var(--primary
+.game-answer-btn:hover { background: var(--primary); color: #fff; }
+
+/* === Чат профиля: корректная строка ввода + круглая кнопка отправки ===
+   Перебивает дубль .btn (синий фон/радиус/width:100%) и тройной .chat-input-row.
+   min-width:0 у инпута позволяет ему сжиматься, чтобы ряд не уезжал. */
+.chat-card .chat-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  position: relative;
+}
+.chat-card .chat-input { flex: 1; min-width: 0; }
+.chat-card .chat-game-btn,
+.chat-card .chat-sticker-btn,
+.chat-card .chat-send-btn { flex-shrink: 0; }
+.chat-card .chat-send-btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+}
