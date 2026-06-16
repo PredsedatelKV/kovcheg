@@ -390,6 +390,50 @@ def pong_sync(
     return _session_view(session, user, db)
 
 
+@router.post("/session/{session_id}/rematch")
+def rematch(
+    session_id: int,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Реванш: создаём новое pending-приглашение тому же сопернику в ту же игру.
+    Соперник увидит приглашение через глобальный поллер; при accept создастся новая сессия."""
+    session = _get_session_for(session_id, user, db)
+    opponent_id = session.player_o_id if session.player_x_id == user.id else session.player_x_id
+    opponent = db.query(models.User).filter(models.User.id == opponent_id).first()
+    if not opponent:
+        raise HTTPException(404, "Соперник не найден")
+
+    # Закрываем прежние свои pending-приглашения этому игроку (как в send_invite).
+    db.query(models.GameInvite).filter(
+        models.GameInvite.from_user_id == user.id,
+        models.GameInvite.to_user_id == opponent.id,
+        models.GameInvite.status == "pending",
+    ).update({"status": "cancelled"}, synchronize_session=False)
+
+    invite = models.GameInvite(
+        from_user_id=user.id, to_user_id=opponent.id, game=session.game, status="pending"
+    )
+    db.add(invite)
+    db.commit()
+    db.refresh(invite)
+
+    game_name = GAME_NAMES.get(session.game, session.game)
+    delivered = "app"
+    if not _is_online(opponent):
+        from app.notify import notify_user_bg
+        settings = get_settings()
+        notify_user_bg(
+            opponent.telegram_id,
+            f"🔁 <b>{user.first_name}</b> зовёт на реванш в «<b>{game_name}</b>»!\n"
+            f"Откройте Ковчег, чтобы принять вызов.",
+            web_app_url=settings.public_url,
+        )
+        delivered = "telegram"
+
+    return {"id": invite.id, "status": "pending", "delivered": delivered}
+
+
 @router.get("/my-sessions")
 def get_my_sessions(
     user: models.User = Depends(current_user),

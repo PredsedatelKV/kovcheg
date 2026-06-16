@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=211";
+import { post, get } from "/static/api.js?v=212";
 
-import { playUISound } from "/static/pages/settings.js?v=211";
+import { playUISound } from "/static/pages/settings.js?v=212";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -73,28 +73,45 @@ function getBetValue(id) {
 
 function gameWhereIsMoshonka(container) {
   const isInline = !!container;
-  const CUP_COUNT = 3;
   const CUP_STEP = 72;
+  // Уровни сложности: число стаканов, длительность одной перестановки, число перестановок.
+  const LEVELS = {
+    easy:   { label: "Лёгкий",  cups: 3, dur: 700, swaps: 5, pause: 260 },
+    medium: { label: "Средний", cups: () => 3 + Math.floor(Math.random() * 2), dur: 500, swaps: 5, pause: 200 },
+    hard:   { label: "Сложный", cups: () => 4 + Math.floor(Math.random() * 2), dur: 350, swaps: 7, pause: 140 },
+  };
+  let level = null;       // выбранный объект уровня
+  let CUP_COUNT = 3;      // фактическое число стаканов в текущей партии
   let round = 1;
   let score = 0;
   let villagerPhys, canClick, gameEnded;
   let root, result, scoreEl, cupContainer;
   let logicalOrder;
 
+  function resolveCupCount() {
+    const c = level.cups;
+    return typeof c === "function" ? c() : c;
+  }
+
   function initRound() {
-    logicalOrder = [0, 1, 2];
+    CUP_COUNT = resolveCupCount();
+    logicalOrder = Array.from({ length: CUP_COUNT }, (_, i) => i);
     villagerPhys = Math.floor(Math.random() * CUP_COUNT);
     canClick = false;
     gameEnded = false;
   }
-  initRound();
+
+  function delay(ms) {
+    return new Promise(r => setTimeout(r, ms));
+  }
 
   function animateSwap(i, j) {
     return new Promise(resolve => {
       const cups = cupContainer.querySelectorAll(".game-cup");
       const dx = (j - i) * CUP_STEP;
-      cups[i].style.transition = "transform 0.3s ease";
-      cups[j].style.transition = "transform 0.3s ease";
+      const dur = level.dur;
+      cups[i].style.transition = `transform ${dur}ms cubic-bezier(0.45,0.05,0.55,0.95)`;
+      cups[j].style.transition = `transform ${dur}ms cubic-bezier(0.45,0.05,0.55,0.95)`;
       cups[i].style.transform = `translateX(${dx}px)`;
       cups[j].style.transform = `translateX(${-dx}px)`;
       setTimeout(() => {
@@ -106,17 +123,23 @@ function gameWhereIsMoshonka(container) {
         if (villagerPhys === i) villagerPhys = j;
         else if (villagerPhys === j) villagerPhys = i;
         resolve();
-      }, 350);
+      }, dur);
     });
   }
 
   async function shuffleCups() {
-    const numSwaps = 3 + Math.floor(Math.random() * 3);
+    const numSwaps = level.swaps;
+    let last = -1;
     for (let s = 0; s < numSwaps; s++) {
-      let a = Math.floor(Math.random() * CUP_COUNT);
-      let b = Math.floor(Math.random() * CUP_COUNT);
-      if (a === b) { s--; continue; }
+      // Перемешиваем соседние стаканы — плавнее и легче следить глазами.
+      let a = Math.floor(Math.random() * (CUP_COUNT - 1));
+      let b = a + 1;
+      if (a === last) { // избегаем точного повтора предыдущей пары подряд
+        a = (a + 1) % (CUP_COUNT - 1); b = a + 1;
+      }
+      last = a;
       await animateSwap(a, b);
+      await delay(level.pause);
     }
     canClick = true;
     result.innerHTML = `<div class="game-neutral">Где Мошонка?</div>`;
@@ -137,8 +160,23 @@ function gameWhereIsMoshonka(container) {
     });
   }
 
+  function renderCups() {
+    cupContainer.innerHTML = Array(CUP_COUNT).fill("").map(() => `
+      <button class="game-cup">
+        <div class="cup-front">
+          <img src="/static/img/ui/bush.svg" alt="" class="game-icon-lg"/>
+        </div>
+        <div class="cup-back" style="display:none">
+          <img src="/static/img/ui/villager.svg" alt="" class="game-icon-lg"/>
+        </div>
+      </button>
+    `).join("");
+    bindCups();
+  }
+
   function startRound() {
     initRound();
+    renderCups();
     cupContainer.querySelectorAll(".game-cup").forEach(c => {
       c.disabled = false;
       c.style.transition = "none";
@@ -152,23 +190,52 @@ function gameWhereIsMoshonka(container) {
     }, 1000);
   }
 
+  function bindCups() {
+    cupContainer.querySelectorAll(".game-cup").forEach((cup, physIdx) => {
+      cup.addEventListener("click", () => {
+        if (!canClick || gameEnded) return;
+        gameEnded = true;
+        canClick = false;
+
+        const isWin = physIdx === villagerPhys;
+
+        revealAll(true);
+
+        if (isWin) {
+          result.innerHTML = `<div class="game-win">Угадал! +${10 * round}</div>`;
+          playUISound("win");
+          score += 10 * round;
+          round++;
+          scoreEl.textContent = score;
+        } else {
+          result.innerHTML = `<div class="game-lose">Мимо</div>`;
+          playUISound("lose");
+          score = Math.max(0, score - 5);
+          scoreEl.textContent = score;
+        }
+
+        cupContainer.querySelectorAll(".game-cup").forEach(c => c.disabled = true);
+        setTimeout(startRound, 2500);
+      });
+    });
+  }
+
   const html = `
-    <div style="text-align:center;margin-bottom:6px">
-      <span style="font-size:13px;color:var(--text-soft)">Счёт: <span id="moshonka-score-val">0</span></span>
+    <div id="moshonka-level" style="text-align:center;margin-bottom:10px">
+      <div style="font-size:13px;color:var(--text-soft);margin-bottom:8px">Выбери сложность:</div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <button class="btn" data-level="easy">Лёгкий</button>
+        <button class="btn" data-level="medium">Средний</button>
+        <button class="btn" data-level="hard">Сложный</button>
+      </div>
     </div>
-    <div class="game-bushes" id="moshonka-cups">
-      ${Array(CUP_COUNT).fill("").map((_, i) => `
-        <button class="game-cup">
-          <div class="cup-front">
-            <img src="/static/img/ui/bush.svg" alt="" class="game-icon-lg"/>
-          </div>
-          <div class="cup-back" style="display:none">
-            <img src="/static/img/ui/villager.svg" alt="" class="game-icon-lg"/>
-          </div>
-        </button>
-      `).join("")}
+    <div id="moshonka-game" style="display:none">
+      <div style="text-align:center;margin-bottom:6px">
+        <span style="font-size:13px;color:var(--text-soft)">Счёт: <span id="moshonka-score-val">0</span></span>
+      </div>
+      <div class="game-bushes" id="moshonka-cups"></div>
+      <div class="game-result" id="moshonka-result" style="font-size:13px;min-height:24px"></div>
     </div>
-    <div class="game-result" id="moshonka-result" style="font-size:13px;min-height:24px"></div>
   `;
 
   if (isInline) {
@@ -187,35 +254,16 @@ function gameWhereIsMoshonka(container) {
   cupContainer = root.querySelector("#moshonka-cups");
   scoreEl = root.querySelector("#moshonka-score-val");
 
-  cupContainer.querySelectorAll(".game-cup").forEach((cup, physIdx) => {
-    cup.addEventListener("click", () => {
-      if (!canClick || gameEnded) return;
-      gameEnded = true;
-      canClick = false;
-
-      const isWin = physIdx === villagerPhys;
-
-      revealAll(true);
-
-      if (isWin) {
-        result.innerHTML = `<div class="game-win">Угадал! +${10 * round}</div>`;
-        playUISound("win");
-        score += 10 * round;
-        round++;
-        scoreEl.textContent = score;
-      } else {
-        result.innerHTML = `<div class="game-lose">Мимо</div>`;
-        playUISound("lose");
-        score = Math.max(0, score - 5);
-        scoreEl.textContent = score;
-      }
-
-      cupContainer.querySelectorAll(".game-cup").forEach(c => c.disabled = true);
-      setTimeout(startRound, 2500);
+  const levelPicker = root.querySelector("#moshonka-level");
+  const gameArea = root.querySelector("#moshonka-game");
+  levelPicker.querySelectorAll("button[data-level]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      level = LEVELS[btn.dataset.level];
+      levelPicker.style.display = "none";
+      gameArea.style.display = "";
+      startRound();
     });
   });
-
-  startRound();
 }
 
 function gameTicTacToe(container) {
@@ -797,23 +845,115 @@ function gameCheckers() {
     render();
   }
 
-  function aiMove() {
-    const pieces = [];
-    for (let i = 0; i < 64; i++) {
-      if (state[i] && state[i].color === "black") {
-        const moves = getMoves(i);
-        moves.forEach(m => pieces.push({ from: i, to: m }));
+  // --- ИИ: минимакс с alpha-beta ---
+
+  // Ходы для произвольного состояния (не привязано к глобальному state).
+  function movesFor(st, idx) {
+    const p = st[idx];
+    if (!p) return { moves: [], jumps: [] };
+    const row = Math.floor(idx / 8), col = idx % 8;
+    const dirs = p.king ? [[-1,-1],[-1,1],[1,-1],[1,1]] : (p.color === "white" ? [[-1,-1],[-1,1]] : [[1,-1],[1,1]]);
+    const moves = [], jumps = [];
+    for (const [dr, dc] of dirs) {
+      const r1 = row + dr, c1 = col + dc;
+      if (r1 < 0 || r1 >= 8 || c1 < 0 || c1 >= 8) continue;
+      const ni = r1 * 8 + c1;
+      if (!st[ni]) { moves.push({ from: idx, to: ni, cap: null }); }
+      else if (st[ni].color !== p.color) {
+        const r2 = r1 + dr, c2 = c1 + dc;
+        if (r2 >= 0 && r2 < 8 && c2 >= 0 && c2 < 8) {
+          const ni2 = r2 * 8 + c2;
+          if (!st[ni2]) jumps.push({ from: idx, to: ni2, cap: ni });
+        }
       }
     }
-    if (pieces.length === 0) { resultEl.innerHTML = '<div class="game-win">Ты победил!</div>'; return; }
-    const move = pieces[Math.floor(Math.random() * pieces.length)];
+    return { moves, jumps };
+  }
+
+  // Все легальные ходы цвета. Если есть взятия — обязаны бить.
+  function allMoves(st, color) {
+    const all = [], allJumps = [];
+    for (let i = 0; i < 64; i++) {
+      if (st[i] && st[i].color === color) {
+        const { moves, jumps } = movesFor(st, i);
+        all.push(...moves);
+        allJumps.push(...jumps);
+      }
+    }
+    return allJumps.length ? allJumps : all;
+  }
+
+  // Применяет ход к копии состояния, возвращает новую копию.
+  function applyMove(st, mv) {
+    const ns = st.map(c => c ? { color: c.color, king: c.king } : null);
+    ns[mv.to] = ns[mv.from];
+    ns[mv.from] = null;
+    if (mv.cap !== null) ns[mv.cap] = null;
+    const tr = Math.floor(mv.to / 8);
+    if (ns[mv.to].color === "white" && tr === 0) ns[mv.to].king = true;
+    if (ns[mv.to].color === "black" && tr === 7) ns[mv.to].king = true;
+    return ns;
+  }
+
+  // Эвристика с точки зрения чёрных (ИИ): больше — лучше для чёрных.
+  function evaluate(st) {
+    let sc = 0;
+    for (let i = 0; i < 64; i++) {
+      const p = st[i];
+      if (!p) continue;
+      const row = Math.floor(i / 8);
+      let v = p.king ? 5 : 3;
+      // Продвижение к дамке: чёрные идут вниз, белые — вверх.
+      if (!p.king) v += p.color === "black" ? row * 0.12 : (7 - row) * 0.12;
+      sc += p.color === "black" ? v : -v;
+    }
+    return sc;
+  }
+
+  function minimax(st, depth, alpha, beta, maximizing) {
+    const color = maximizing ? "black" : "white";
+    const moves = allMoves(st, color);
+    if (depth === 0 || moves.length === 0) {
+      let val = evaluate(st);
+      if (moves.length === 0) val += maximizing ? -1000 : 1000; // нет ходов = проигрыш стороны
+      return val;
+    }
+    if (maximizing) {
+      let best = -Infinity;
+      for (const mv of moves) {
+        const v = minimax(applyMove(st, mv), depth - 1, alpha, beta, false);
+        if (v > best) best = v;
+        if (best > alpha) alpha = best;
+        if (beta <= alpha) break;
+      }
+      return best;
+    } else {
+      let best = Infinity;
+      for (const mv of moves) {
+        const v = minimax(applyMove(st, mv), depth - 1, alpha, beta, true);
+        if (v < best) best = v;
+        if (best < beta) beta = best;
+        if (beta <= alpha) break;
+      }
+      return best;
+    }
+  }
+
+  function aiMove() {
+    const moves = allMoves(state, "black");
+    if (moves.length === 0) { turn = "white"; render(); checkWin(); return; }
+
+    const DEPTH = 5;
+    let bestMove = null, bestVal = -Infinity;
+    for (const mv of moves) {
+      const v = minimax(applyMove(state, mv), DEPTH - 1, -Infinity, Infinity, false);
+      if (v > bestVal) { bestVal = v; bestMove = mv; }
+    }
+    const move = bestMove || moves[0];
+
     state[move.to] = state[move.from];
     state[move.from] = null;
-    const sr = Math.floor(move.from / 8), sc = move.from % 8;
-    const dr = Math.floor(move.to / 8), dc = move.to % 8;
-    if (Math.abs(dr - sr) === 2) {
-      state[((sr + dr) / 2) * 8 + ((sc + dc) / 2)] = null;
-    }
+    if (move.cap !== null) state[move.cap] = null;
     if (Math.floor(move.to / 8) === 7) state[move.to].king = true;
     turn = "white";
     render();

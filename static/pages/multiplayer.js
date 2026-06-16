@@ -1,7 +1,8 @@
 // Сетевой мультиплеер: глобальный поллер приглашений/сессий + игры в модалке.
 // Запускается у обоих игроков без перезагрузки страницы. Поддержка:
 // крестики-нолики, шашки, пинг-понг.
-import { get, post } from "/static/api.js?v=211";
+import { get, post } from "/static/api.js?v=212";
+import { playUISound } from "/static/pages/settings.js?v=212";
 
 const esc = (s = "") =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -28,9 +29,24 @@ async function pollState() {
   } catch (e) { /* транзиентная ошибка поллинга */ }
 }
 
+// Один раз вставляем keyframes для анимации появления приглашения.
+function ensureInviteAnim() {
+  if (document.getElementById("mp-invite-anim")) return;
+  const st = document.createElement("style");
+  st.id = "mp-invite-anim";
+  st.textContent = `@keyframes mpInvitePop {
+    0% { transform: scale(0.8); opacity: 0; }
+    60% { transform: scale(1.04); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .mp-invite-pop { animation: mpInvitePop .32s cubic-bezier(.2,.9,.3,1.2) both; }`;
+  document.head.appendChild(st);
+}
+
 function showInvite(inv) {
+  ensureInviteAnim();
   const modal = window.kov.showModal(`
-    <div class="mp-modal">
+    <div class="mp-modal mp-invite-pop">
       <button class="close" id="mp-x">×</button>
       <h2 style="margin-top:0">⚔️ Вызов на бой</h2>
       <p class="card-sub"><b>${esc(inv.from_user_name)}</b> приглашает в «${esc(inv.game_name)}»</p>
@@ -39,6 +55,7 @@ function showInvite(inv) {
         <button class="btn btn-outline" id="mp-decline" style="flex:1">Отклонить</button>
       </div>
     </div>`);
+  try { playUISound("win"); } catch (e) {}
   const decline = async () => {
     _dismissed.add(inv.id);
     try { await post("/api/game/decline", { invite_id: inv.id }); } catch (e) {}
@@ -110,7 +127,18 @@ function endBar(root, sessionId, s, me) {
   const txt = resultText(s, me);
   if (!txt) return "";
   return `<div style="margin-top:14px"><div style="font-weight:800;font-size:18px;margin-bottom:10px">${esc(txt)}</div>
-    <button class="btn" id="mp-finish">Закрыть</button></div>`;
+    <div style="display:flex;gap:10px;justify-content:center">
+      <button class="btn" id="mp-finish">Закрыть</button>
+      <button class="btn btn-outline" id="mp-rematch">Ещё раз</button>
+    </div></div>`;
+}
+
+// Навешивает обработчики на кнопки «Закрыть» / «Ещё раз» из endBar.
+function wireEndButtons(root, sessionId) {
+  const fin = root.querySelector("#mp-finish");
+  if (fin) fin.addEventListener("click", () => { leaveSession(sessionId); closeModal(); });
+  const rem = root.querySelector("#mp-rematch");
+  if (rem) rem.addEventListener("click", () => sendRematch(sessionId, rem));
 }
 
 // ============ Крестики-нолики ============
@@ -143,8 +171,7 @@ function renderTicTacToe(root, sessionId) {
         catch (e) { window.kov.toast(e.message); } finally { busy = false; }
       });
     });
-    const fin = root.querySelector("#mp-finish");
-    if (fin) fin.addEventListener("click", () => { leaveSession(sessionId); closeModal(); });
+    wireEndButtons(root, sessionId);
   };
   pollSession(root, sessionId, 1200, draw);
 }
@@ -188,8 +215,7 @@ function renderCheckers(root, sessionId) {
     if (myTurn) root.querySelectorAll("[data-i]").forEach((cell) => {
       cell.addEventListener("click", () => onCell(+cell.dataset.i, cell.dataset.mine === "true"));
     });
-    const fin = root.querySelector("#mp-finish");
-    if (fin) fin.addEventListener("click", () => { leaveSession(sessionId); closeModal(); });
+    wireEndButtons(root, sessionId);
   };
   async function onCell(i, mine) {
     if (busy || !last || last.current_turn !== last.my_symbol) return;
@@ -215,6 +241,30 @@ function renderPong(root, sessionId) {
   let myPaddle = 0.5;               // моя ракетка (управляемая)
   let raf = null, sendTimer = null, finished = false;
 
+  const SYNC_MS = 100;             // период синка с сервером
+
+  // --- Интерполяция: для значений, приходящих по сети, храним prev/target + время.
+  // dispX — то, что реально рисуем; плавно движется к target за ~SYNC_MS.
+  // Гость интерполирует мяч (x,y) и ракетку хоста (px). Хост — ракетку гостя (po).
+  const interp = {
+    px: { prev: 0.5, target: 0.5, disp: 0.5, t0: 0 },
+    po: { prev: 0.5, target: 0.5, disp: 0.5, t0: 0 },
+    bx: { prev: 0.5, target: 0.5, disp: 0.5, t0: 0 },
+    by: { prev: 0.5, target: 0.5, disp: 0.5, t0: 0 },
+  };
+  function setTarget(key, value) {
+    const c = interp[key];
+    c.prev = c.disp;          // начинаем со текущей отрисованной точки — без скачка
+    c.target = value;
+    c.t0 = performance.now();
+  }
+  function stepInterp(key, now) {
+    const c = interp[key];
+    const k = c.t0 ? Math.min(1, (now - c.t0) / SYNC_MS) : 1;
+    c.disp = c.prev + (c.target - c.prev) * k;
+    return c.disp;
+  }
+
   root.innerHTML = `<div style="font-weight:800;font-size:17px;margin-bottom:6px">Пинг-понг</div>
     <div id="pong-score" style="font-weight:700;margin-bottom:8px">0 : 0</div>
     <canvas id="pong-cv" width="300" height="420" style="background:#101418;border-radius:10px;max-width:92vw;touch-action:none"></canvas>
@@ -231,32 +281,39 @@ function renderPong(root, sessionId) {
   cv.addEventListener("touchmove", (e) => { e.preventDefault(); if (e.touches[0]) setPaddle(e.touches[0].clientX); }, { passive: false });
   cv.addEventListener("click", (e) => setPaddle(e.clientX));
 
-  function render() {
+  function render(now) {
     const W = cv.width, H = cv.height;
     ctx.clearRect(0, 0, W, H);
-    // моя ракетка снизу, соперник сверху; мяч переворачиваем для гостя
-    const myX = host ? px : po;
-    const oppX = host ? po : px;
-    const by = host ? ball.y : (1 - ball.y);
+    // Ракетка соперника (вверху) и координаты мяча — интерполированные.
+    let oppX, ballX, ballY;
+    if (host) {
+      oppX = stepInterp("po", now);          // ракетка гостя плавно
+      ballX = ball.x; ballY = ball.y;        // хост — авторитет физики
+    } else {
+      oppX = stepInterp("px", now);          // ракетка хоста плавно
+      ballX = stepInterp("bx", now);
+      ballY = 1 - stepInterp("by", now);     // гость видит поле перевёрнутым
+    }
     ctx.fillStyle = "#4caf50";
     ctx.fillRect(myPaddle * W - 32, H - 16, 64, 9);
     ctx.fillStyle = "#e91e63";
     ctx.fillRect(oppX * W - 32, 8, 64, 9);
     ctx.beginPath();
     ctx.fillStyle = "#fff";
-    ctx.arc(ball.x * W, by * H, 7, 0, 7);
+    ctx.arc(ballX * W, ballY * H, 7, 0, 7);
     ctx.fill();
     root.querySelector("#pong-score").textContent = (host ? sx : so) + " : " + (host ? so : sx);
   }
 
   function hostStep() {
-    // px — это моя (хоста) ракетка снизу; po — ракетка гостя сверху
+    // px — это моя (хоста) ракетка снизу; po — ракетка гостя сверху (интерполируется в render)
     px = myPaddle;
+    const poX = interp.po.disp;            // используем сглаженную позицию гостя для коллизий
     ball.x += ball.vx; ball.y += ball.vy;
     if (ball.x < 0.02 || ball.x > 0.98) ball.vx *= -1;
     // верх (соперник, po)
     if (ball.y < 0.05) {
-      if (Math.abs(ball.x - po) < 0.16) { ball.vy = Math.abs(ball.vy); ball.vx += (ball.x - po) * 0.02; }
+      if (Math.abs(ball.x - poX) < 0.16) { ball.vy = Math.abs(ball.vy); ball.vx += (ball.x - poX) * 0.02; }
       else { sx += 1; resetBall(-1); }
     }
     // низ (хост, px)
@@ -273,8 +330,8 @@ function renderPong(root, sessionId) {
   function loop() {
     if (!document.body.contains(root)) { stop(); leaveSession(sessionId); return; }
     if (!finished) {
-      if (host) hostStep(); else po = myPaddle;
-      render();
+      if (host) hostStep();
+      render(performance.now());
     }
     raf = requestAnimationFrame(loop);
   }
@@ -292,8 +349,13 @@ function renderPong(root, sessionId) {
   function applyRemote(s) {
     if (!s || !s.state) { maybeFinish(s); return; }
     const st = s.state;
-    if (host) { po = st.po ?? po; }
-    else { ball = st.ball || ball; px = st.px ?? px; sx = st.sx ?? sx; so = st.so ?? so; }
+    if (host) {
+      if (st.po != null) setTarget("po", st.po);  // ракетка гостя — плавно
+    } else {
+      if (st.px != null) setTarget("px", st.px);  // ракетка хоста — плавно
+      if (st.ball) { setTarget("bx", st.ball.x); setTarget("by", st.ball.y); }
+      sx = st.sx ?? sx; so = st.so ?? so;          // счёт — мгновенно
+    }
     maybeFinish(s);
   }
   function maybeFinish(s) {
@@ -301,9 +363,15 @@ function renderPong(root, sessionId) {
       finished = true;
       const txt = resultText(s, me) || s.status;
       const end = root.querySelector("#pong-end");
-      if (end) end.innerHTML = `<div style="margin-top:12px;font-weight:800;font-size:18px">${esc(txt)}</div><button class="btn" id="pong-finish" style="margin-top:10px">Закрыть</button>`;
+      if (end) end.innerHTML = `<div style="margin-top:12px;font-weight:800;font-size:18px">${esc(txt)}</div>
+        <div style="display:flex;gap:10px;justify-content:center;margin-top:10px">
+          <button class="btn" id="pong-finish">Закрыть</button>
+          <button class="btn btn-outline" id="pong-rematch">Ещё раз</button>
+        </div>`;
       const fb = root.querySelector("#pong-finish");
       if (fb) fb.addEventListener("click", () => { leaveSession(sessionId); closeModal(); });
+      const rb = root.querySelector("#pong-rematch");
+      if (rb) rb.addEventListener("click", () => sendRematch(sessionId, rb));
     }
   }
 
@@ -313,8 +381,31 @@ function renderPong(root, sessionId) {
   // Инициализация: узнаём, кто хост
   get("/api/game/session/" + sessionId).then((s) => {
     s0 = s; host = s.my_symbol === "X";
-    if (s.state) { ball = s.state.ball || ball; px = s.state.px ?? 0.5; po = s.state.po ?? 0.5; sx = s.state.sx || 0; so = s.state.so || 0; }
-    sendTimer = setInterval(syncTick, 110);
+    if (s.state) {
+      ball = s.state.ball || ball;
+      px = s.state.px ?? 0.5; po = s.state.po ?? 0.5;
+      sx = s.state.sx || 0; so = s.state.so || 0;
+    }
+    // Засеваем интерполяторы текущими значениями (без скачка на первом апдейте).
+    interp.px.prev = interp.px.target = interp.px.disp = px;
+    interp.po.prev = interp.po.target = interp.po.disp = po;
+    interp.bx.prev = interp.bx.target = interp.bx.disp = ball.x;
+    interp.by.prev = interp.by.target = interp.by.disp = ball.y;
+    sendTimer = setInterval(syncTick, SYNC_MS);
     loop();
   }).catch(() => {});
+}
+
+// Реванш: создаём новое приглашение тому же сопернику в ту же игру.
+async function sendRematch(sessionId, btn) {
+  if (btn) { btn.disabled = true; }
+  try {
+    await post("/api/game/session/" + sessionId + "/rematch", {});
+    window.kov.toast("Реванш отправлен");
+    leaveSession(sessionId);
+    closeModal();
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    window.kov.toast(e.message || "Ошибка");
+  }
 }

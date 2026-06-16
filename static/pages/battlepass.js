@@ -1,4 +1,4 @@
-import { get, post } from "/static/api.js?v=211";
+import { get, post } from "/static/api.js?v=212";
 
 var _bpRoot = null;
 var _bpData = null;

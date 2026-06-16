@@ -1,6 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="currentColor">
-<path d="M16 3L2 15h3v12a2 2 0 002 2h5v-8h4v8h5a2 2 0 002-2V15h3L16 3z" opacity="0.9"/>
-<path d="M20 5l-1.5 2H13L12 5l4-2.5L20 5z" opacity="0.5"/>
-<rect x="13" y="14" width="3" height="3" rx="0.5" fill="white" opacity="0.6"/>
-<rect x="18" y="17" width="2.5" height="2.5" rx="0.4" fill="white" opacity="0.4"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2.6 1.5 11.2a1 1 0 0 0 .63 1.78H4v7.4a1 1 0 0 0 1 1h4.2v-5.3h5.6v5.3H19a1 1 0 0 0 1-1v-7.4h1.87a1 1 0 0 0 .63-1.78L12 2.6z"/></svg>

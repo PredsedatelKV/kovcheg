@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=211";
+import { get, post, iconHtml } from "/static/api.js?v=212";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=211";
+import { openAssistantChat } from "/static/pages/assistant.js?v=212";
 
-import { playUISound } from "/static/pages/settings.js?v=211";
+import { playUISound } from "/static/pages/settings.js?v=212";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -12,23 +12,36 @@ const fmtDate = (iso) =>
 
 function bannerCarousel(banners) {
   if (!banners.length) return "";
+  // Single banner: just show it, no carousel machinery.
   if (banners.length === 1) return `
-    <div class="carousel narrow">
-      <div class="banner solo" style="background-image:url('${escapeHtml(banners[0].image_url)}')"></div>
+    <div class="kc-carousel" id="bn-carousel" style="margin-bottom:14px">
+      <div class="kc-viewport" style="overflow:hidden">
+        <div class="kc-track" style="display:flex">
+          <div class="kc-slide" style="flex:0 0 100%;box-sizing:border-box;padding:0 4px">
+            <div class="banner" style="background-image:url('${escapeHtml(banners[0].image_url)}');width:100%;aspect-ratio:16/9;background-size:cover;background-position:center;border-radius:var(--radius-lg,16px)"></div>
+          </div>
+        </div>
+      </div>
     </div>`;
+
   const n = banners.length;
-  const all = [banners[n - 1], ...banners, banners[0]];
+  // For infinite looping we clone the last slide before the first and the
+  // first slide after the last, then jump (without transition) when we hit
+  // a clone. data-real holds the logical banner index for dot syncing.
+  const seq = [banners[n - 1], ...banners, banners[0]];
+  const slideHtml = (b, realIdx, clone) => `
+    <div class="kc-slide" data-real="${realIdx}"${clone ? ' data-clone="1"' : ''}
+         style="flex:0 0 80%;box-sizing:border-box;padding:0 6px">
+      <div class="banner" style="background-image:url('${escapeHtml(b.image_url)}');width:100%;aspect-ratio:16/9;background-size:cover;background-position:center;border-radius:var(--radius,12px);box-shadow:0 6px 18px rgba(24,39,75,.10)"></div>
+    </div>`;
+  const slides = seq.map((b, i) => slideHtml(b, ((i - 1 + n) % n), i === 0 || i === seq.length - 1)).join("");
+  const dots = banners.map(() => '<span class="dot" style="width:6px;height:6px;border-radius:50%;background:#D2D8E3;transition:all .25s ease"></span>').join("");
   return `
-    <div class="carousel narrow" id="bn-carousel">
-      <div class="carousel-track" id="bn-track">
-        ${all.map((b, i) => {
-          const isClone = i === 0 || i === all.length - 1;
-          return `<div class="slide" data-banner-idx="${(i - 1 + n) % n}"${isClone ? ' data-clone="true"' : ''}><div class="banner" style="background-image:url('${escapeHtml(b.image_url)}')"></div></div>`;
-        }).join("")}
+    <div class="kc-carousel" id="bn-carousel" style="margin-bottom:14px;touch-action:pan-y">
+      <div class="kc-viewport" style="overflow:hidden">
+        <div class="kc-track" id="bn-track" style="display:flex;will-change:transform">${slides}</div>
       </div>
-      <div class="dots" id="bn-dots">
-        ${banners.map(function() { return '<span class="dot"></span>'; }).join("")}
-      </div>
+      <div class="dots" id="bn-dots" style="display:flex;justify-content:center;gap:6px;padding:8px 0 2px">${dots}</div>
     </div>`;
 }
 
@@ -192,51 +205,88 @@ ${bannerCarousel(data.banners)}
   }).catch(function() {});
 
   const carousel = root.querySelector("#bn-carousel");
-  if (carousel) {
-    const track = carousel.querySelector("#bn-track");
-    const dots = carousel.querySelectorAll("#bn-dots .dot");
-    const total = dots.length;
-    if (total > 1) {
-      let currentIdx = 0;
+  const bnTrack = carousel && carousel.querySelector("#bn-track");
+  const bnDots = carousel ? Array.from(carousel.querySelectorAll("#bn-dots .dot")) : [];
+  if (bnTrack && bnDots.length > 1) {
+    const n = bnDots.length;            // logical banner count
+    const slides = Array.from(bnTrack.children); // n + 2 (with clones at ends)
+    let pos = 1;                        // index in `slides` (1 == first real banner)
+    const EASE = "transform .5s cubic-bezier(.22,.61,.36,1)";
 
-      const updateDots = () => {
-        dots.forEach((d, i) => d.classList.toggle("active", i === currentIdx));
-      };
-
-      const each = 290;
-      let scrollTimer;
-
-      track.addEventListener("scroll", () => {
-        const sl = track.scrollLeft;
-
-        const raw = Math.round(sl / each) - 1;
-        currentIdx = ((raw % total) + total) % total;
-        updateDots();
-
-        clearTimeout(scrollTimer);
-        scrollTimer = setTimeout(() => {
-          if (sl < each * 0.5) {
-            track.style.scrollBehavior = "auto";
-            track.scrollLeft = total * each;
-            track.style.scrollBehavior = "smooth";
-          } else if (sl > (total + 0.5) * each) {
-            track.style.scrollBehavior = "auto";
-            track.scrollLeft = each;
-            track.style.scrollBehavior = "smooth";
-          }
-        }, 80);
+    const slideWidth = () => slides[0].getBoundingClientRect().width;
+    // Center the active slide: viewport shows ~80% slide, so peek = (100-80)/2 on each side.
+    const offsetFor = (i) => {
+      const w = slideWidth();
+      const vw = bnTrack.parentElement.getBoundingClientRect().width;
+      return -(i * w) + (vw - w) / 2;
+    };
+    const applyTransform = (animate) => {
+      bnTrack.style.transition = animate ? EASE : "none";
+      bnTrack.style.transform = `translateX(${offsetFor(pos)}px)`;
+    };
+    const syncDots = () => {
+      const real = ((pos - 1) % n + n) % n;
+      bnDots.forEach((d, i) => {
+        const on = i === real;
+        d.classList.toggle("active", on);
+        d.style.background = on ? "var(--primary,#4D96FF)" : "#D2D8E3";
+        d.style.width = on ? "18px" : "6px";
+        d.style.borderRadius = on ? "6px" : "50%";
       });
+    };
 
-      var realSlides = track.querySelectorAll('.slide[data-clone="false"]');
-      if (realSlides.length > 1) {
-        requestAnimationFrame(function() {
-          track.style.scrollSnapType = "none";
-          track.scrollLeft = realSlides[0].offsetLeft - 8;
-          setTimeout(function() { track.style.scrollSnapType = "x mandatory"; }, 200);
-        });
+    // After a transition into a clone, jump silently to the matching real slide.
+    bnTrack.addEventListener("transitionend", () => {
+      if (slides[pos].dataset.clone) {
+        pos = pos === 0 ? n : 1;
+        applyTransform(false);
       }
-      currentIdx = 0;
-      updateDots();
+    });
+
+    const go = (delta) => { pos += delta; applyTransform(true); syncDots(); };
+
+    // --- autoplay (smooth, single timer, reuses cleanup pattern below) ---
+    let bnTimer = null;
+    const startAuto = () => { stopAuto(); bnTimer = setInterval(() => go(1), 4500); };
+    function stopAuto() { if (bnTimer) { clearInterval(bnTimer); bnTimer = null; } }
+
+    // --- drag / swipe ---
+    let dragging = false, startX = 0, startTf = 0;
+    const onDown = (x) => {
+      dragging = true; startX = x;
+      stopAuto();
+      const m = /translateX\(([-0-9.]+)px\)/.exec(bnTrack.style.transform);
+      startTf = m ? parseFloat(m[1]) : offsetFor(pos);
+      bnTrack.style.transition = "none";
+    };
+    const onMove = (x) => {
+      if (!dragging) return;
+      bnTrack.style.transform = `translateX(${startTf + (x - startX)}px)`;
+    };
+    const onUp = (x) => {
+      if (!dragging) return;
+      dragging = false;
+      const dx = x - startX;
+      const threshold = slideWidth() * 0.18;
+      if (dx <= -threshold) go(1);
+      else if (dx >= threshold) go(-1);
+      else applyTransform(true);
+      startAuto();
+    };
+    bnTrack.addEventListener("touchstart", (e) => onDown(e.touches[0].clientX), { passive: true });
+    bnTrack.addEventListener("touchmove", (e) => onMove(e.touches[0].clientX), { passive: true });
+    bnTrack.addEventListener("touchend", (e) => onUp((e.changedTouches[0] || {}).clientX || startX));
+    bnTrack.addEventListener("mousedown", (e) => { e.preventDefault(); onDown(e.clientX); });
+    window.addEventListener("mousemove", (e) => onMove(e.clientX));
+    window.addEventListener("mouseup", (e) => onUp(e.clientX));
+
+    // Keep centering correct on resize / orientation change.
+    window.addEventListener("resize", () => applyTransform(false));
+
+    requestAnimationFrame(() => { applyTransform(false); syncDots(); startAuto(); });
+
+    if (window.kov && window.kov.onTabChange) {
+      window.kov.onTabChange("home", () => stopAuto());
     }
   }
 
@@ -302,7 +352,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=211").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=212").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {
@@ -414,13 +464,39 @@ async function openLegal(slug) {
   }
 }
 
+function _fmtCountdown(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `Доступно через ${h}ч ${m}м`;
+  if (m > 0) return `Доступно через ${m}м`;
+  return `Доступно через ${s}с`;
+}
+
+function shadeColor(color, percent) {
+  const num = parseInt(color.replace("#", ""), 16);
+  const amt = Math.round(2.55 * percent);
+  const R = Math.min(255, Math.max(0, (num >> 16) + amt));
+  const G = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amt));
+  const B = Math.min(255, Math.max(0, (num & 0x0000FF) + amt));
+  return `#${(1 << 24 | R << 16 | G << 8 | B).toString(16).slice(1)}`;
+}
+
 async function openWheel() {
   try {
     const status = await get("/api/wheel/status");
     const sectors = status.sectors;
     const N = sectors.length;
+    if (!N) { window.kov.toast("Призы колеса не настроены"); return; }
     const seg = 360 / N;
-    const cx = 190, cy = 190, innerR = 170, contentR = 110;
+
+    // Square viewBox; everything is laid out around an exact centre so the
+    // wheel stays perfectly round and never clips inside the modal.
+    const VB = 360, C = VB / 2;        // centre 180,180
+    const rimR = 176;                  // outer golden rim
+    const innerR = 160;                // coloured slices
+    const contentR = N <= 3 ? 88 : 100; // radius where labels sit
+    const labelChars = N >= 8 ? 7 : N >= 6 ? 9 : 12;
 
     const palette = [
       "#FF6B6B", "#FF8E53", "#FFD93D", "#6BCB77",
@@ -429,121 +505,123 @@ async function openWheel() {
       "#EE5A24", "#F9CA24", "#6AB04C", "#4834D4",
     ];
 
+    const sectorLabel = (s) => {
+      if (s.label && String(s.label).trim()) return String(s.label);
+      if (s.kind === "coins") return `${s.value} K`;
+      return "Приз";
+    };
+    const clip = (txt) => (txt.length > labelChars ? txt.slice(0, labelChars - 1) + "…" : txt);
+
     const arcPath = (start, end, r) => {
       const s = ((start - 90) * Math.PI) / 180;
       const e = ((end - 90) * Math.PI) / 180;
       const large = end - start > 180 ? 1 : 0;
-      return `M${cx},${cy} L${cx + r * Math.cos(s)},${cy + r * Math.sin(s)} A${r},${r} 0 ${large} 1 ${cx + r * Math.cos(e)},${cy + r * Math.sin(e)} Z`;
+      return `M${C},${C} L${C + r * Math.cos(s)},${C + r * Math.sin(s)} A${r},${r} 0 ${large} 1 ${C + r * Math.cos(e)},${C + r * Math.sin(e)} Z`;
     };
 
     const slices = sectors.map((s, i) => {
       const start = i * seg, end = (i + 1) * seg, mid = start + seg / 2;
       const rad = ((mid - 90) * Math.PI) / 180;
-      const baseColor = palette[i % palette.length];
-      const c1 = baseColor;
-      const c2 = shadeColor(baseColor, -20);
-      const c3 = shadeColor(baseColor, 15);
+      const base = palette[i % palette.length];
+      const cx2 = C + contentR * Math.cos(rad);
+      const cy2 = C + contentR * Math.sin(rad);
 
-      const cx2 = cx + contentR * Math.cos(rad);
-      const cy2 = cy + contentR * Math.sin(rad);
-
-      let content;
-      if (s.kind === "coins") {
-        const val = s.value;
-        content = `
-          <text x="${cx2}" y="${cy2 - 10}" text-anchor="middle" font-size="20" font-weight="800" fill="#fff" transform="rotate(${mid},${cx2},${cy2})" style="text-shadow:0 2px 4px rgba(0,0,0,.5)">${val}</text>
-          <image href="/static/img/ui/coin.svg" x="${cx2 - 12}" y="${cy2 + 2}" width="24" height="24" transform="rotate(${mid},${cx2},${cy2})"/>`;
-      } else {
-        content = `<image href="${s.icon}" x="${cx2 - 20}" y="${cy2 - 20}" width="40" height="40" transform="rotate(${mid},${cx2},${cy2})"/>`;
-      }
+      const label = clip(sectorLabel(s));
+      // Rotate label so it reads radially (outward) and sits centred in slice.
+      const content = `
+        <g transform="rotate(${mid},${cx2},${cy2})">
+          ${s.icon ? `<image href="${s.icon}" x="${cx2 - 14}" y="${cy2 - 30}" width="28" height="28"/>` : ""}
+          <text x="${cx2}" y="${cy2 + (s.icon ? 8 : 4)}" text-anchor="middle"
+                font-size="13" font-weight="800" fill="#fff"
+                style="text-shadow:0 1px 3px rgba(0,0,0,.55)">${escapeHtml(label)}</text>
+        </g>`;
 
       return `
         <defs>
-          <linearGradient id="sg${i}" x1="0.5" y1="0" x2="0.5" y2="1"><stop offset="0%" stop-color="${c3}"/><stop offset="50%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient>
+          <linearGradient id="sg${i}" x1="0.5" y1="0" x2="0.5" y2="1"><stop offset="0%" stop-color="${shadeColor(base, 15)}"/><stop offset="50%" stop-color="${base}"/><stop offset="100%" stop-color="${shadeColor(base, -20)}"/></linearGradient>
           <linearGradient id="sg${i}hl" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="rgba(255,255,255,0.25)"/><stop offset="50%" stop-color="rgba(255,255,255,0)"/><stop offset="100%" stop-color="rgba(0,0,0,0.15)"/></linearGradient>
         </defs>
-        <path d="${arcPath(start, end, innerR)}" fill="url(#sg${i})" stroke="#fff" stroke-width="1.5" stroke-opacity="0.3"/>
+        <path d="${arcPath(start, end, innerR)}" fill="url(#sg${i})" stroke="#fff" stroke-width="1.5" stroke-opacity="0.35"/>
         <path d="${arcPath(start, end, innerR)}" fill="url(#sg${i}hl)"/>
-        ${content}
-      `;
-    }).join("");
-
-    const tickMarks = Array.from({ length: N * 4 }, (_, i) => {
-      const a = ((i * seg / 4 - 90) * Math.PI) / 180;
-      const r1 = 176, r2 = 184;
-      const isMajor = i % 5 === 0;
-      return `<line x1="${cx + r1 * Math.cos(a)}" y1="${cy + r1 * Math.sin(a)}" x2="${cx + r2 * Math.cos(a)}" y2="${cy + r2 * Math.sin(a)}" stroke="${isMajor ? "#FFD700" : "rgba(255,255,255,0.6)"}" stroke-width="${isMajor ? 3 : 1.5}" stroke-linecap="round"/>`;
+        ${content}`;
     }).join("");
 
     const rimDots = Array.from({ length: N * 2 }, (_, i) => {
       const a = ((i * seg / 2 - 90) * Math.PI) / 180;
-      const r = 190;
-      return `<circle cx="${cx + r * Math.cos(a)}" cy="${cy + r * Math.sin(a)}" r="2.5" fill="#FFD700" opacity="0.8"/>`;
+      const r = 170;
+      return `<circle cx="${C + r * Math.cos(a)}" cy="${C + r * Math.sin(a)}" r="2.5" fill="#FFD700" opacity="0.85"/>`;
     }).join("");
+
+    const btnLabel = status.can_spin ? "Крутить!" : _fmtCountdown(status.next_spin_seconds || 0);
 
     const modal = window.kov.showModal(`
       <button class="close" onclick="closeModal()">×</button>
       <h2 style="text-align:center;margin-top:0;margin-bottom:4px">Колесо фортуны</h2>
       <p style="text-align:center;color:var(--text-soft);margin:0 0 10px;font-size:13px">Крути и выигрывай K и призы!</p>
-      <div class="wheel-stage">
-        <div class="wheel-wrap">
-          <div class="wheel-pointer"></div>
-          <svg class="wheel-svg" id="wheel-svg" viewBox="0 0 361 361">
+      <div class="wheel-stage" style="display:flex;flex-direction:column;align-items:center;gap:16px;padding-top:6px">
+        <div class="wheel-wrap" style="position:relative;width:min(82vw,320px);aspect-ratio:1;margin:0 auto">
+          <div class="wheel-pointer" style="position:absolute;top:-4px;left:50%;transform:translateX(-50%);z-index:10;width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-top:22px solid #FFD700;filter:drop-shadow(0 2px 6px rgba(0,0,0,.35))"></div>
+          <svg class="wheel-svg" id="wheel-svg" viewBox="0 0 ${VB} ${VB}" style="width:100%;height:100%;display:block;transform:rotate(0deg);transition:transform 4.5s cubic-bezier(.16,.84,.36,1);filter:drop-shadow(0 4px 20px rgba(0,0,0,.22))">
             <defs>
               <radialGradient id="rimGrad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#FFF8DC"/><stop offset="30%" stop-color="#FFD700"/><stop offset="70%" stop-color="#DAA520"/><stop offset="100%" stop-color="#8B6914"/></radialGradient>
               <radialGradient id="hubGrad" cx="40%" cy="35%" r="60%"><stop offset="0%" stop-color="#FFF8DC"/><stop offset="50%" stop-color="#FFD700"/><stop offset="100%" stop-color="#B8860B"/></radialGradient>
               <radialGradient id="hubInner" cx="40%" cy="35%" r="60%"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#FFE4B5"/></radialGradient>
-              <filter id="dropGlow"><feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity=".35"/></filter>
-              <filter id="innerShadow"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity=".2"/></filter>
+              <filter id="dropGlow"><feDropShadow dx="0" dy="3" stdDeviation="6" flood-opacity=".3"/></filter>
             </defs>
-            <circle cx="${cx}" cy="${cy}" r="197" fill="rgba(0,0,0,0.15)" filter="url(#dropGlow)"/>
-            <circle cx="${cx}" cy="${cy}" r="194" fill="url(#rimGrad)" stroke="#8B6914" stroke-width="1.5"/>
-            <circle cx="${cx}" cy="${cy}" r="188" fill="none" stroke="rgba(139,105,20,.3)" stroke-width="1.5"/>
-            <circle cx="${cx}" cy="${cy}" r="174" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="1"/>
+            <circle cx="${C}" cy="${C}" r="${rimR}" fill="url(#rimGrad)" stroke="#8B6914" stroke-width="1.5"/>
+            <circle cx="${C}" cy="${C}" r="${rimR - 6}" fill="none" stroke="rgba(139,105,20,.3)" stroke-width="1.5"/>
             ${rimDots}
-            ${tickMarks}
             <g filter="url(#dropGlow)">${slices}</g>
-            <circle cx="${cx}" cy="${cy}" r="32" fill="url(#hubGrad)" stroke="#8B6914" stroke-width="1.5" filter="url(#innerShadow)"/>
-            <circle cx="${cx}" cy="${cy}" r="26" fill="url(#hubInner)" stroke="#DAA520" stroke-width="1"/>
-            <circle cx="${cx}" cy="${cy}" r="20" fill="#FFD700" stroke="#B8860B" stroke-width="1.5"/>
+            <circle cx="${C}" cy="${C}" r="30" fill="url(#hubGrad)" stroke="#8B6914" stroke-width="1.5"/>
+            <circle cx="${C}" cy="${C}" r="24" fill="url(#hubInner)" stroke="#DAA520" stroke-width="1"/>
+            <circle cx="${C}" cy="${C}" r="18" fill="#FFD700" stroke="#B8860B" stroke-width="1.5"/>
           </svg>
         </div>
-        <button class="btn" id="spin-btn" ${status.can_spin ? "" : "disabled"}>
-          ${status.can_spin ? "Крутить!" : "Доступно завтра"}
-        </button>
-        <div class="wheel-prize" id="prize">
-          <div class="ic" id="prize-ic">${iconHtml("/static/img/ui/coin.svg", "lg", "")}</div>
-          <div class="lbl" id="prize-lbl"></div>
+        <button class="btn" id="spin-btn" ${status.can_spin ? "" : "disabled"}>${escapeHtml(btnLabel)}</button>
+        <div class="wheel-prize" id="prize" style="text-align:center;background:var(--surface-2,#f2f4f8);border-radius:14px;padding:14px;display:none;width:100%">
+          <div class="ic" id="prize-ic" style="font-size:38px">${iconHtml("/static/img/ui/coin.svg", "lg", "")}</div>
+          <div class="lbl" id="prize-lbl" style="font-weight:700;margin-top:4px"></div>
         </div>
       </div>
     `);
 
-    function shadeColor(color, percent) {
-      const num = parseInt(color.replace("#", ""), 16);
-      const amt = Math.round(2.55 * percent);
-      const R = Math.min(255, Math.max(0, (num >> 16) + amt));
-      const G = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amt));
-      const B = Math.min(255, Math.max(0, (num & 0x0000FF) + amt));
-      return `#${(1 << 24 | R << 16 | G << 8 | B).toString(16).slice(1)}`;
+    // Live countdown that ticks down while the modal is open.
+    const spinBtn = modal.querySelector("#spin-btn");
+    let cdTimer = null;
+    if (!status.can_spin) {
+      let remaining = status.next_spin_seconds || 0;
+      cdTimer = setInterval(() => {
+        if (!document.body.contains(modal)) { clearInterval(cdTimer); return; }
+        remaining -= 1;
+        if (remaining <= 0) {
+          clearInterval(cdTimer);
+          spinBtn.disabled = false;
+          spinBtn.textContent = "Крутить!";
+        } else {
+          spinBtn.textContent = _fmtCountdown(remaining);
+        }
+      }, 1000);
     }
 
     const svg = modal.querySelector("#wheel-svg");
-    const spinBtn = modal.querySelector("#spin-btn");
     let currentRot = 0;
     let spinSoundInterval = null;
 
     spinBtn.addEventListener("click", async () => {
+      if (spinBtn.disabled) return;
       spinBtn.disabled = true;
+      if (cdTimer) clearInterval(cdTimer);
       try {
         const result = await post("/api/wheel/spin");
         const idx = result.sector_index;
+        // Pointer is at top (angle 0). Sector i spans [i*seg,(i+1)*seg] measured
+        // clockwise from top, so its centre must rotate to 0 → negative offset.
         const targetAngle = -(idx * seg + seg / 2);
         const fullSpins = 5 + Math.floor(Math.random() * 2);
         const finalRot = currentRot + fullSpins * 360 + (targetAngle - (currentRot % 360));
-        
+
         playUISound("spin");
         spinSoundInterval = setInterval(() => {
-          // Stop playing if the user closed the modal mid-spin.
           if (!document.body.contains(modal)) { clearInterval(spinSoundInterval); return; }
           playUISound("spin");
         }, 300);
@@ -552,13 +630,13 @@ async function openWheel() {
         currentRot = finalRot;
 
         setTimeout(() => {
-          // Modal may have been closed during the ~4.6s spin — DOM nodes are gone.
           if (!document.body.contains(modal)) { clearInterval(spinSoundInterval); return; }
           clearInterval(spinSoundInterval);
           playUISound("win");
           const prize = modal.querySelector("#prize");
           modal.querySelector("#prize-ic").innerHTML = iconHtml(result.result.icon, "lg", "");
           modal.querySelector("#prize-lbl").textContent = result.result.prize_label;
+          prize.style.display = "block";
           prize.classList.add("show");
           prize.style.animation = "popIn 400ms ease-out forwards";
         }, 4600);
@@ -566,6 +644,7 @@ async function openWheel() {
         clearInterval(spinSoundInterval);
         window.kov.toast(e.message);
         spinBtn.disabled = false;
+        spinBtn.textContent = "Крутить!";
       }
     });
   } catch (e) {

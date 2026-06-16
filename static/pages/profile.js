@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=211";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=212";
 
-import { playUISound } from "/static/pages/settings.js?v=211";
+import { playUISound } from "/static/pages/settings.js?v=212";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -254,7 +254,9 @@ async function loadChat(root) {
       return "#6CB6FB";
     }
     function toMSK(iso) {
-      const d = new Date(iso);
+      // created_at — наивный UTC ("...T..."), без Z трактуется как локальное время.
+      // Принудительно считаем как UTC и переводим в МСК.
+      const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z");
       return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
     }
     if (messages.length === 0) {
@@ -262,7 +264,7 @@ async function loadChat(root) {
       return;
     }
     container.innerHTML = messages.map((m) => {
-      const time = toMSK(m.created_at);
+      const time = m.created_at_msk || toMSK(m.created_at);
       const isMine = me && m.user_id === me.id;
       if (m.message_type === "sticker") {
         return `<div class="chat-msg ${isMine ? 'chat-msg-mine' : 'chat-msg-other'}"><div class="chat-msg-header"><span class="chat-msg-name" style="color:${isMine ? 'var(--primary)' : nameColor(m.user_name)}">${escapeHtml(m.user_name)}</span><span class="chat-msg-time">${time}</span></div><img src="/static/img/stickers/${escapeHtml(m.content)}.svg" alt="" class="chat-msg-sticker"/></div>`;

@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=211";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=212";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -1299,139 +1299,112 @@ function openQuestionEditor(body, quizId, existing) {
 }
 
 // ---------- BATTLE PASS ADMIN ----------
+// Один активный сезон уже существует — админ редактирует только его призы по уровням.
+var BP_TRACKS = ["free", "premium"];
+var BP_TRACK_LABELS = { free: "Free", premium: "Premium" };
+var BP_KIND_ICONS = {
+  xp: "/static/img/item_icons/xp.svg",
+  coins: "/static/img/ui/coin.svg",
+  none: "",
+};
+
 async function renderBattlePassAdmin(body) {
   var seasons = [];
   try { seasons = await get("/api/admin/battlepass/seasons"); } catch (e) { seasons = []; }
 
-  var activeSeason = seasons.find(function(s) { return s.is_active; });
-  var currentSeasonId = activeSeason ? activeSeason.id : (seasons.length > 0 ? seasons[0].id : null);
+  var season = seasons.find(function(s) { return s.is_active; }) || (seasons.length ? seasons[0] : null);
 
-  var html = cardBlock("Сезоны", seasons.map(function(s) {
-    return '<div class="admin-card" data-id="' + s.id + '">' +
-      '<h3 class="admin-card-title">' + escapeHtml(s.name) + (s.is_active ? ' <span class="admin-badge">активен</span>' : '') + '</h3>' +
-      '<div class="admin-sub">Уровней: ' + s.total_levels + ' · XP/ур: ' + s.xp_per_level + '</div>' +
-      '<div class="row gap" style="margin-top:8px">' +
-        '<button class="btn btn-sm" data-action="edit-season" data-id="' + s.id + '">Редактировать</button>' +
-        '<button class="btn btn-sm' + (s.is_active ? ' btn-danger' : '') + '" data-action="delete-season" data-id="' + s.id + '">Удалить</button>' +
-      '</div>' +
-      '<div class="bp-admin-rewards" data-season-id="' + s.id + '" style="margin-top:10px"></div>' +
-    '</div>';
-  }).join("") +
-  '<button class="btn btn-sm" id="bp-create-season" style="margin-top:12px">+ Создать сезон</button>' +
-  '<button class="btn btn-sm" id="bp-seed-season" style="margin-top:8px">⚡ Заполнить демо-сезон</button>');
+  if (!season) {
+    body.innerHTML = cardBlock("Боевой пропуск",
+      '<div class="admin-sub">Активный сезон не найден. Создайте его через миграцию/бэкенд.</div>');
+    return;
+  }
 
-  html += '<div id="bp-admin-reward-editor"></div>';
+  var html = '<div class="admin-card">' +
+    '<h3 class="admin-card-title">Сезон: ' + escapeHtml(season.name) +
+      (season.is_active ? ' <span class="admin-badge">активен</span>' : '') + '</h3>' +
+    '<div class="admin-sub">Уровней: ' + season.total_levels + ' · XP за уровень: ' + season.xp_per_level + '</div>' +
+    '<div class="row gap" style="margin-top:8px">' +
+      '<button class="btn btn-sm btn-secondary" id="bp-edit-season">Настройки сезона</button>' +
+    '</div>' +
+  '</div>';
+
+  html += '<div class="admin-card">' +
+    '<h3 class="admin-card-title">Призы по уровням</h3>' +
+    '<div class="admin-sub" style="margin-bottom:8px">Нажмите на ячейку, чтобы добавить или изменить награду на уровне. Прокрутка ниже.</div>' +
+    '<div id="bp-rewards-scroll" style="max-height:60vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px"></div>' +
+  '</div>';
 
   body.innerHTML = html;
 
-  // Load rewards for active/current season
-  if (currentSeasonId != null) renderBPRewards(body, seasons);
-
-  body.querySelector("#bp-create-season").addEventListener("click", async function() {
-    try {
-      var r = await post("/api/admin/battlepass/season", {
-        name: "Новый сезон",
-        theme: "summer", xp_per_level: 100, total_levels: 100,
-        is_active: false,
-      });
-      window.kov.toast("Сезон создан");
-      renderBattlePassAdmin(body);
-    } catch (e) { window.kov.toast(e.message); }
+  body.querySelector("#bp-edit-season").addEventListener("click", function() {
+    openBpSeasonEditor(body, season);
   });
 
-  body.querySelector("#bp-seed-season").addEventListener("click", async function() {
-    try {
-      var r = await post("/api/admin/battlepass/seed", {
-        name: "Сезон: Лето", theme: "summer",
-        total_levels: 100, xp_per_level: 100,
-      });
-      window.kov.toast("Сезон создан со 100 уровнями");
-      renderBattlePassAdmin(body);
-    } catch (e) { window.kov.toast(e.message); }
-  });
-
-  body.querySelectorAll('[data-action="delete-season"]').forEach(function(btn) {
-    btn.addEventListener("click", async function() {
-      var id = btn.dataset.id;
-      confirmAction("Удалить сезон?", async function() {
-        try {
-          await del("/api/admin/battlepass/season/" + id);
-          window.kov.toast("Сезон удалён");
-          renderBattlePassAdmin(body);
-        } catch (e) { window.kov.toast(e.message); }
-      });
-    });
-  });
-
-  body.querySelectorAll('[data-action="edit-season"]').forEach(function(btn) {
-    btn.addEventListener("click", function() {
-      var id = Number(btn.dataset.id);
-      var s = seasons.find(function(x) { return x.id === id; });
-      if (!s) return;
-      openBpSeasonEditor(body, s);
-    });
-  });
+  renderBPRewards(body, season);
 }
 
-function renderBPRewards(body, seasons) {
-  seasons.forEach(function(s) {
-    var container = body.querySelector('.bp-admin-rewards[data-season-id="' + s.id + '"]');
-    if (!container) return;
-    if (s.rewards.length === 0) {
-      container.innerHTML = '<div class="admin-sub">Нет наград</div>';
-      return;
-    }
-    // Group rewards by level
-    var byLevel = {};
-    s.rewards.forEach(function(r) {
-      if (!byLevel[r.level]) byLevel[r.level] = {};
-      byLevel[r.level][r.track] = r;
-    });
-    // Показываем все треки уровня. Собираем набор треков, реально встречающихся в наградах,
-    // плюс гарантируем наличие "free", чтобы для него всегда была кнопка добавления.
-    var trackSet = { free: true };
-    s.rewards.forEach(function(r) { if (r.track) trackSet[r.track] = true; });
-    var tracks = Object.keys(trackSet);
-    var trackLabels = { free: "free", premium: "prem", lootbox: "box" };
-    var html = '<div style="font-size:11px;margin-top:4px;border-top:1px solid var(--border);padding-top:6px">';
-    for (var lvl = 1; lvl <= s.total_levels; lvl++) {
-      html += '<div class="bp-admin-lvl-row" data-lvl="' + lvl + '" style="display:flex;align-items:center;gap:4px;padding:2px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">';
-      html += '<span style="font-weight:700;min-width:24px;color:var(--text)">' + lvl + '.</span>';
-      for (var ti = 0; ti < tracks.length; ti++) {
-        var track = tracks[ti];
-        var rw = byLevel[lvl] ? byLevel[lvl][track] : null;
-        html += '<span style="flex:1;display:flex;align-items:center;gap:3px;min-width:90px">';
-        html += '<span style="color:var(--text-soft);font-size:9px;text-transform:uppercase">' + (trackLabels[track] || escapeHtml(track)) + '</span>';
-        if (rw) {
-          html += '<img src="' + rw.icon + '" style="width:14px;height:14px;vertical-align:middle" onerror="this.style.display=\'none\'"/> ';
-          html += '<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escapeHtml(rw.kind) + ' ' + rw.value + '</span>';
-          html += ' <button class="bp-reward-edit" data-id="' + rw.id + '" style="background:none;border:none;color:var(--primary);cursor:pointer;font-size:10px;flex-shrink:0">✎</button>';
-        } else {
-          html += '<span style="color:#888;font-style:italic">—</span>';
-          html += ' <button class="bp-reward-add" data-lvl="' + lvl + '" data-track="' + track + '" style="background:none;border:none;color:var(--primary);cursor:pointer;font-size:10px;flex-shrink:0">+</button>';
-        }
-        html += '</span>';
+function renderBPRewards(body, season) {
+  var container = body.querySelector("#bp-rewards-scroll");
+  if (!container) return;
+
+  // Группируем награды: byLevel[level][track] = reward
+  var byLevel = {};
+  (season.rewards || []).forEach(function(r) {
+    if (!byLevel[r.level]) byLevel[r.level] = {};
+    byLevel[r.level][r.track || "free"] = r;
+  });
+
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+  html += '<thead><tr style="position:sticky;top:0;background:var(--bg);z-index:1">' +
+    '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);width:48px">Ур.</th>';
+  BP_TRACKS.forEach(function(track) {
+    html += '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border)">' + BP_TRACK_LABELS[track] + '</th>';
+  });
+  html += '</tr></thead><tbody>';
+
+  for (var lvl = 1; lvl <= season.total_levels; lvl++) {
+    html += '<tr style="border-bottom:1px solid var(--border)">';
+    html += '<td style="padding:5px 8px;font-weight:700;color:var(--text);vertical-align:top">' + lvl + '</td>';
+    for (var ti = 0; ti < BP_TRACKS.length; ti++) {
+      var track = BP_TRACKS[ti];
+      var rw = byLevel[lvl] ? byLevel[lvl][track] : null;
+      html += '<td style="padding:4px 8px;vertical-align:top">';
+      if (rw) {
+        html += '<button class="bp-reward-cell" data-id="' + rw.id + '" type="button" ' +
+          'style="display:flex;align-items:center;gap:6px;width:100%;text-align:left;background:var(--card,rgba(255,255,255,0.04));border:1px solid var(--border);border-radius:6px;padding:5px 8px;cursor:pointer;color:var(--text)">' +
+          (rw.icon ? '<img src="' + escapeHtml(rw.icon) + '" style="width:18px;height:18px;flex-shrink:0" onerror="this.style.display=\'none\'"/>' : '') +
+          '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+          escapeHtml(rw.label || (rw.kind + " " + rw.value)) +
+          '</span>' +
+          '<span style="font-size:9px;color:var(--text-soft);text-transform:uppercase;flex-shrink:0">' + escapeHtml(rw.kind) + '</span>' +
+          '</button>';
+      } else {
+        html += '<button class="bp-reward-cell" data-lvl="' + lvl + '" data-track="' + track + '" type="button" ' +
+          'style="width:100%;text-align:left;background:none;border:1px dashed var(--border);border-radius:6px;padding:5px 8px;cursor:pointer;color:var(--text-soft)">+ добавить</button>';
       }
-      html += '</div>';
+      html += '</td>';
     }
-    html += '</div>';
-    container.innerHTML = html;
-    // Bind edit buttons
-    container.querySelectorAll(".bp-reward-edit").forEach(function(b) {
-      b.addEventListener("click", function() {
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  container.innerHTML = html;
+
+  // Один обработчик на ячейку: и для существующей награды (edit), и для пустой (add).
+  container.querySelectorAll(".bp-reward-cell").forEach(function(b) {
+    b.addEventListener("click", function() {
+      if (b.dataset.id) {
         var rid = Number(b.dataset.id);
-        var rw = s.rewards.find(function(x) { return x.id === rid; });
-        if (rw) openBpRewardEditor(body, rw, s);
-      });
-    });
-    // Bind add buttons
-    container.querySelectorAll(".bp-reward-add").forEach(function(b) {
-      b.addEventListener("click", function() {
+        var rw = (season.rewards || []).find(function(x) { return x.id === rid; });
+        if (rw) openBpRewardEditor(body, rw, season);
+      } else {
         var lvl = Number(b.dataset.lvl);
         var track = b.dataset.track || "free";
-        var dummy = { id: null, level: lvl, track: track, kind: "xp", value: 10, label: "", icon: "/static/img/item_icons/xp.svg", item_code: null };
-        openBpRewardEditor(body, dummy, s);
-      });
+        openBpRewardEditor(body, {
+          id: null, level: lvl, track: track, kind: "xp", value: 10,
+          label: "", icon: BP_KIND_ICONS.xp, item_code: null,
+        }, season);
+      }
     });
   });
 }
@@ -1470,47 +1443,70 @@ function openBpSeasonEditor(body, s) {
 function openBpRewardEditor(body, r, season) {
   var overlay = document.createElement("div");
   overlay.className = "modal-overlay";
-  var kinds = ["xp", "coins", "item", "none"];
+
+  var levelOpts = "";
+  for (var lvl = 1; lvl <= season.total_levels; lvl++) {
+    levelOpts += '<option value="' + lvl + '"' + (r.level === lvl ? ' selected' : '') + '>' + lvl + '</option>';
+  }
+
+  var curTrack = r.track || "free";
+  var trackOpts = BP_TRACKS.map(function(t) {
+    return '<option value="' + t + '"' + (curTrack === t ? ' selected' : '') + '>' + BP_TRACK_LABELS[t] + '</option>';
+  }).join("");
+
+  var kinds = ["xp", "coins", "item", "lootbox", "none"];
   var kindOpts = kinds.map(function(k) {
     return '<option value="' + k + '"' + (r.kind === k ? ' selected' : '') + '>' + k + '</option>';
   }).join("");
+
   overlay.innerHTML = '<div class="modal"><button class="close" onclick="this.closest(\'.modal-overlay\').remove()">×</button>' +
-    '<h3>Награда: ур.' + r.level + '</h3>' +
+    '<h3>' + (r.id ? "Награда" : "Новая награда") + '</h3>' +
     formGrid(
+      field("Уровень", '<select class="input" id="bpre-level">' + levelOpts + '</select>'),
+      field("Трек", '<select class="input" id="bpre-track">' + trackOpts + '</select>'),
       field("Тип", '<select class="input" id="bpre-kind">' + kindOpts + '</select>'),
       field("Значение", '<input class="input" id="bpre-value" type="number" value="' + r.value + '"/>'),
-      field("Подпись", '<input class="input" id="bpre-label" value="' + escapeHtml(r.label) + '"/>'),
-      field("Иконка (URL)", '<input class="input" id="bpre-icon" value="' + escapeHtml(r.icon) + '"/>'),
+      field("Подпись", '<input class="input" id="bpre-label" value="' + escapeHtml(r.label || "") + '"/>'),
+      field("Иконка (URL)", '<input class="input" id="bpre-icon" value="' + escapeHtml(r.icon || "") + '"/>'),
       field("Код предмета", '<input class="input" id="bpre-item" value="' + escapeHtml(r.item_code || "") + '"/>'),
     ) +
     '<div class="row gap"><button class="btn btn-sm" id="bpre-save">Сохранить</button>' + (r.id ? '<button class="btn btn-sm btn-danger" id="bpre-delete">Удалить</button>' : '') + '<button class="btn btn-sm btn-secondary" onclick="this.closest(\'.modal-overlay\').remove()">Отмена</button></div>' +
     '</div>';
   document.body.appendChild(overlay);
 
-  // Auto-fill icon based on kind
+  var itemField = overlay.querySelector("#bpre-item").closest(".admin-field") || overlay.querySelector("#bpre-item").parentElement;
+  function syncItemVisibility() {
+    var kind = overlay.querySelector("#bpre-kind").value;
+    var needsItem = (kind === "item" || kind === "lootbox");
+    if (itemField) itemField.style.display = needsItem ? "" : "none";
+  }
+  syncItemVisibility();
+
+  // Auto-fill icon based on kind (только для известных простых типов).
   overlay.querySelector("#bpre-kind").addEventListener("change", function() {
-    var iconMap = {
-      xp: "/static/img/item_icons/xp.svg",
-      coins: "/static/img/ui/coin.svg",
-      none: "",
-    };
-    var icon = iconMap[this.value];
-    if (icon) overlay.querySelector("#bpre-icon").value = icon;
+    var icon = BP_KIND_ICONS[this.value];
+    if (icon !== undefined && icon) overlay.querySelector("#bpre-icon").value = icon;
+    syncItemVisibility();
   });
 
   overlay.querySelector("#bpre-save").addEventListener("click", async function() {
     try {
       var kind = overlay.querySelector("#bpre-kind").value;
+      var itemCode = overlay.querySelector("#bpre-item").value.trim() || null;
+      if ((kind === "item" || kind === "lootbox") && !itemCode) {
+        window.kov.toast("Укажите код предмета");
+        return;
+      }
       await post("/api/admin/battlepass/reward", {
         id: r.id || null,
         season_id: season.id,
-        level: r.level,
-        track: r.track || "free",
+        level: Number(overlay.querySelector("#bpre-level").value) || r.level,
+        track: overlay.querySelector("#bpre-track").value || "free",
         kind: kind,
         value: Number(overlay.querySelector("#bpre-value").value) || 0,
         label: overlay.querySelector("#bpre-label").value.trim(),
         icon: overlay.querySelector("#bpre-icon").value.trim(),
-        item_code: overlay.querySelector("#bpre-item").value.trim() || null,
+        item_code: itemCode,
       });
       window.kov.toast("Награда сохранена");
       overlay.remove();

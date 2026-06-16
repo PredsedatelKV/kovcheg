@@ -51,14 +51,20 @@ def status(user: models.User = Depends(current_user), db: Session = Depends(get_
     )
     can_spin = True
     next_at: datetime | None = None
+    next_spin_seconds = 0
     if last is not None and (datetime.utcnow() - last.created_at) < timedelta(hours=24):
         can_spin = False
         next_at = last.created_at + timedelta(hours=24)
+        next_spin_seconds = max(0, int((next_at - datetime.utcnow()).total_seconds()))
     sectors = _load_sectors(db)
     return {
         "can_spin": can_spin,
         "next_spin_at": next_at.isoformat() if next_at else None,
-        "sectors": [{"label": s["label"], "icon": s["icon"], "kind": s["kind"]} for s in sectors],
+        "next_spin_seconds": next_spin_seconds,
+        "sectors": [
+            {"label": s["label"], "icon": s["icon"], "kind": s["kind"], "value": s["value"]}
+            for s in sectors
+        ],
     }
 
 

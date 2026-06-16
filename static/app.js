@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=211";
-import { renderProfile } from "/static/pages/profile.js?v=211";
-import { renderKoverna } from "/static/pages/koverna.js?v=211";
-import { renderArcade } from "/static/pages/arcade.js?v=211";
-import { renderAdmin } from "/static/pages/admin.js?v=211";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=211";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=211";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=211";
-import { get } from "/static/api.js?v=211";
+import { renderHome } from "/static/pages/home.js?v=212";
+import { renderProfile } from "/static/pages/profile.js?v=212";
+import { renderKoverna } from "/static/pages/koverna.js?v=212";
+import { renderArcade } from "/static/pages/arcade.js?v=212";
+import { renderAdmin } from "/static/pages/admin.js?v=212";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=212";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=212";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=212";
+import { get } from "/static/api.js?v=212";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -190,7 +190,7 @@ window.closeModal = function () {
     document.getElementById('view').innerHTML = '<div class="card"><p style="padding:20px;text-align:center">Откройте «Ковчег» через Telegram — нажмите кнопку меню (🎮) у бота. Прямая ссылка в браузере не работает.</p></div>';
     return;
   }
-  const initial = localStorage.getItem("kovcheg.tab") || "home";
+  const initial = "home"; // при входе всегда открывается «Главная»
   try {
     await setTab(initial);
   } catch (e) {
