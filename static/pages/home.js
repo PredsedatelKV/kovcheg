@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=214";
+import { get, post, iconHtml } from "/static/api.js?v=215";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=214";
+import { openAssistantChat } from "/static/pages/assistant.js?v=215";
 
-import { playUISound } from "/static/pages/settings.js?v=214";
+import { playUISound } from "/static/pages/settings.js?v=215";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -31,7 +31,7 @@ function bannerCarousel(banners) {
   const seq = [banners[n - 1], ...banners, banners[0]];
   const slideHtml = (b, realIdx, clone) => `
     <div class="kc-slide" data-real="${realIdx}"${clone ? ' data-clone="1"' : ''}
-         style="flex:0 0 80%;box-sizing:border-box;padding:0 6px">
+         style="flex:0 0 82%;box-sizing:border-box;padding:0">
       <div class="banner" style="background-image:url('${escapeHtml(b.image_url)}');width:100%;aspect-ratio:16/9;background-size:cover;background-position:center;border-radius:var(--radius,12px);box-shadow:0 6px 18px rgba(24,39,75,.10)"></div>
     </div>`;
   const slides = seq.map((b, i) => slideHtml(b, ((i - 1 + n) % n), i === 0 || i === seq.length - 1)).join("");
@@ -352,7 +352,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=214").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=215").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {

@@ -1,8 +1,8 @@
 // Сетевой мультиплеер: глобальный поллер приглашений/сессий + игры в модалке.
 // Запускается у обоих игроков без перезагрузки страницы. Поддержка:
 // крестики-нолики, шашки, пинг-понг.
-import { get, post } from "/static/api.js?v=214";
-import { playUISound } from "/static/pages/settings.js?v=214";
+import { get, post } from "/static/api.js?v=215";
+import { playUISound } from "/static/pages/settings.js?v=215";
 
 const esc = (s = "") =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -190,10 +190,16 @@ function renderCheckers(root, sessionId) {
   const me = window.kov.me?.id;
   let sel = null, busy = false, last = null;
   const idx = (r, c) => r * 8 + c;
+  // Карта допустимых ходов от сервера: {клетка_фигуры: [конечные клетки]}.
+  const legalFor = (s) => (s && s.legal) || {};
+  const movesFrom = (s, i) => legalFor(s)[String(i)] || [];
   const draw = (s) => {
     last = s;
     const flip = s.my_symbol === "O"; // O видит себя снизу
     const myTurn = s.status === "playing" && s.current_turn === s.my_symbol;
+    // сброс выбора, если шашка больше не может ходить (например, после хода соперника)
+    if (sel != null && (!myTurn || movesFrom(s, sel).length === 0)) sel = null;
+    const targets = sel != null ? movesFrom(s, sel) : [];
     const head = s.status === "playing"
       ? (myTurn ? "Твой ход" : `Ход ${esc(s.opponent_name)}`)
       : (resultText(s, me) || s.status);
@@ -208,15 +214,20 @@ function renderCheckers(root, sessionId) {
         const dark = (r + c) % 2 === 1;
         const p = s.board[i];
         const mine = (s.my_symbol === "X" && (p === "x" || p === "X")) || (s.my_symbol === "O" && (p === "o" || p === "O"));
+        const movable = myTurn && mine && movesFrom(s, i).length > 0;
         const isSel = sel === i;
+        const isTarget = targets.indexOf(i) !== -1;
         const pieceCol = (p === "x" || p === "X") ? "#f5f5f5" : "#3a2a1a";
         const pieceBorder = (p === "x" || p === "X") ? "#bbb" : "#000";
         const king = p === "X" || p === "O";
         const piece = p !== "_"
           ? `<div style="width:74%;height:74%;border-radius:50%;background:${pieceCol};border:2px solid ${pieceBorder};display:flex;align-items:center;justify-content:center;font-size:12px;color:#d4a017">${king ? "♛" : ""}</div>`
           : "";
-        const bg = isSel ? "#6cb6fb" : dark ? "#7a8a5a" : "#e8e4cf";
-        html += `<div data-i="${i}" data-mine="${mine}" style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:${bg};cursor:${myTurn ? "pointer" : "default"}">${piece}</div>`;
+        let bg = isSel ? "#6cb6fb" : isTarget ? "#3fb950" : dark ? "#7a8a5a" : "#e8e4cf";
+        // заметная подсветка: рамка у клеток-целей и у шашек, которыми можно ходить
+        const ring = isTarget ? "box-shadow:inset 0 0 0 3px #1f6f30;" : (movable && !isSel ? "box-shadow:inset 0 0 0 2px #6cb6fb;" : "");
+        const clickable = isTarget || (myTurn && mine);
+        html += `<div data-i="${i}" data-mine="${mine}" data-target="${isTarget}" data-movable="${movable}" style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:${bg};${ring}cursor:${clickable ? "pointer" : "default"}">${piece}</div>`;
       }
     }
     html += `</div>` + endBar(root, sessionId, s, me);
@@ -228,14 +239,22 @@ function renderCheckers(root, sessionId) {
   };
   async function onCell(i, mine) {
     if (busy || !last || last.current_turn !== last.my_symbol) return;
-    if (mine) { sel = (sel === i ? null : i); draw(last); return; }
-    if (sel == null) return;
-    busy = true;
-    const from = sel;
-    try {
-      const r = await post("/api/game/session/" + sessionId + "/checkers-move", { from, to: i });
-      sel = r.more ? i : null; // продолжаем бой той же шашкой
-    } catch (e) { window.kov.toast(e.message); } finally { busy = false; }
+    // клик по подсвеченной целевой клетке — отправляем ход выбранной шашкой
+    if (sel != null && movesFrom(last, sel).indexOf(i) !== -1) {
+      busy = true;
+      const from = sel;
+      try {
+        await post("/api/game/session/" + sessionId + "/checkers-move", { from, to: i });
+        sel = null; // весь бой за один ход — ход передан сопернику
+      } catch (e) { window.kov.toast(e.message); } finally { busy = false; }
+      return;
+    }
+    // клик по своей шашке — выбор/смена выбора (только если у неё есть ходы)
+    if (mine) {
+      if (movesFrom(last, i).length === 0) return;
+      sel = (sel === i ? null : i);
+      draw(last);
+    }
   }
   pollSession(root, sessionId, 1200, draw);
 }

@@ -45,7 +45,7 @@ def _session_view(session: models.GameSession, user: models.User, db: Session) -
     my_symbol = "X" if session.player_x_id == user.id else "O" if session.player_o_id == user.id else None
     opponent_id = session.player_o_id if my_symbol == "X" else session.player_x_id
     opponent = db.query(models.User).filter(models.User.id == opponent_id).first()
-    return {
+    view = {
         "id": session.id,
         "game": session.game,
         "board": session.board,
@@ -59,6 +59,11 @@ def _session_view(session: models.GameSession, user: models.User, db: Session) -
         "opponent_id": opponent_id,
         "state": json.loads(session.state) if session.state else None,
     }
+    if session.game == "checkers" and session.status == "playing":
+        side = "x" if session.current_turn == "X" else "o"
+        # ключи делаем строками — так корректно сериализуется в JSON-объект
+        view["legal"] = {str(k): v for k, v in checkers.legal_moves(session.board, side).items()}
+    return view
 
 
 # ----------------------------- Приглашения -----------------------------

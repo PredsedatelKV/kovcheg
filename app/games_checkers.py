@@ -9,7 +9,9 @@
   * Дамки («летучие») ходят и бьют на любое расстояние по диагонали.
   * Простые шашки ходят вперёд на 1, но бьют в любом направлении (вперёд и назад).
   * Бой обязателен: если есть взятие — простой ход запрещён.
-  * Многоходовое взятие: пока та же шашка может бить дальше — ход не передаётся (more=True).
+  * Многоходовое взятие: бьём НЕСКОЛЬКО шашек за один ход. Игрок выбирает шашку и
+    кликает КОНЕЧНУЮ клетку — сервер находит полную цепочку боя (DFS) и снимает все
+    побитые фигуры. После полного боя ход передаётся сопернику (more всегда False).
   * Превращение в дамку — на последнем ряду. Если при бое шашка приземляется на
     дамочное поле и бой продолжается — она становится дамкой и продолжает бой уже как дамка.
 """
@@ -162,13 +164,107 @@ def _maybe_promote(board: list[str], i: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Полные цепочки боя (DFS).
+#
+# Каждая цепочка описывается как (end, captured, board_after):
+#   end          — клетка, на которой фигура остановилась пройдя весь путь боя;
+#   captured     — frozenset индексов снятых вражеских фигур;
+#   board_after  — итоговая доска (строка) после снятия всех фигур.
+# Цепочка терминальна, если из end дальше бить нельзя (с учётом уже снятых).
+# ---------------------------------------------------------------------------
+
+def _capture_steps(board: list[str], i: int, captured: frozenset[int]) -> list[tuple[int, int]]:
+    """Доступные взятия фигурой на клетке i при уже снятых (но ещё стоящих на доске)
+    фигурах captured. Возвращает (mid, landing). Дважды одну фигуру не бьём, и
+    приземление не должно попадать на уже снятую (она физически ещё на доске).
+    """
+    piece = board[i]
+    side = owner(piece)
+    if side is None:
+        return []
+    r, c = _rc(i)
+    opp = _opponent(side)
+    res: list[tuple[int, int]] = []
+
+    if _is_king(piece):
+        for dr, dc in DIAG:
+            nr, nc = r + dr, c + dc
+            # пропускаем пустые и уже снятые (они «прозрачны») клетки
+            while 0 <= nr < 8 and 0 <= nc < 8 and (
+                board[_idx(nr, nc)] == "_" or _idx(nr, nc) in captured
+            ):
+                nr, nc = nr + dr, nc + dc
+            if not (0 <= nr < 8 and 0 <= nc < 8):
+                continue
+            mid = _idx(nr, nc)
+            if owner(board[mid]) != opp or mid in captured:
+                continue  # своя фигура, ничего, или уже снятая — бить нельзя
+            lr, lc = nr + dr, nc + dc
+            while 0 <= lr < 8 and 0 <= lc < 8 and (
+                board[_idx(lr, lc)] == "_" or _idx(lr, lc) in captured
+            ):
+                res.append((mid, _idx(lr, lc)))
+                lr, lc = lr + dr, lc + dc
+    else:
+        for dr, dc in DIAG:
+            mr, mc = r + dr, c + dc
+            tr, tc = r + 2 * dr, c + 2 * dc
+            if 0 <= tr < 8 and 0 <= tc < 8:
+                mid = _idx(mr, mc)
+                land = _idx(tr, tc)
+                if (
+                    owner(board[mid]) == opp and mid not in captured
+                    and (board[land] == "_" or land in captured)
+                ):
+                    res.append((mid, land))
+    return res
+
+
+def _capture_chains(board: str, frm: int) -> list[tuple[int, frozenset[int]]]:
+    """Все терминальные цепочки боя из клетки frm. Возвращает список (end, captured).
+
+    Снятые фигуры остаются на доске в процессе поиска (нельзя приземляться на них
+    и нельзя проходить дамкой так, будто их нет — они «прозрачны», но не убираются,
+    чтобы корректно работало правило «нельзя бить одну фигуру дважды»).
+    """
+    results: list[tuple[int, frozenset[int]]] = []
+
+    def dfs(b: list[str], pos: int, piece: str, captured: frozenset[int], progressed: bool) -> None:
+        steps = _capture_steps(b, pos, captured)
+        if not steps:
+            if progressed:
+                results.append((pos, captured))
+            return
+        for mid, landing in steps:
+            nb = list(b)
+            nb[pos] = "_"
+            nb[landing] = piece
+            new_piece = piece
+            # превращение посреди боя: дальше бьём уже дамкой
+            if not _is_king(piece):
+                lr, _lc = _rc(landing)
+                if lr == _king_row(owner(piece)):
+                    new_piece = "X" if owner(piece) == "x" else "O"
+                    nb[landing] = new_piece
+            dfs(nb, landing, new_piece, captured | {mid}, True)
+
+    dfs(list(board), frm, board[frm], frozenset(), False)
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Применение хода.
 # ---------------------------------------------------------------------------
 
 def apply_move(board: str, side: str, frm: int, to: int) -> dict:
     """Применяет ход side ('x'/'o') frm->to. Возвращает {board, more, status}.
 
-    more=True — есть продолжение боя той же шашкой (ход не передаётся).
+    Если у стороны есть обязательный бой, ход frm->to валиден только если есть полная
+    цепочка боя, заканчивающаяся ровно на `to`; снимаются ВСЕ побитые фигуры. Если
+    таких цепочек несколько — выбирается с максимальным числом взятий. Ход после
+    полного боя всегда передаётся сопернику (more=False).
+
+    Если боя нет — обычный ход. more всегда False.
     status: 'playing' | 'x_won' | 'o_won'. Бросает ValueError при недопустимом ходе.
     """
     if not (0 <= frm < 64 and 0 <= to < 64):
@@ -179,42 +275,36 @@ def apply_move(board: str, side: str, frm: int, to: int) -> dict:
     if board[to] != "_":
         raise ValueError("Клетка занята")
 
+    must_capture = _side_has_capture(board, side)
+
+    if must_capture:
+        # ---- ОБЯЗАТЕЛЬНЫЙ БОЙ: ищем полную цепочку, заканчивающуюся на `to` ----
+        chains = [ch for ch in _capture_chains(board, frm) if ch[0] == to]
+        if not chains:
+            # либо этой шашкой бить нельзя, либо `to` не является концом цепочки боя
+            raise ValueError("Обязательно бить")
+        # из нескольких — с максимальным числом взятий
+        end, captured = max(chains, key=lambda ch: len(ch[1]))
+        b = list(board)
+        new_piece = piece
+        if not _is_king(piece):
+            tr, _tc = _rc(to)
+            if tr == _king_row(side):
+                new_piece = "X" if side == "x" else "O"
+        b[frm] = "_"
+        for mid in captured:
+            b[mid] = "_"
+        b[to] = new_piece
+        return _finish("".join(b), side)
+
+    # ---- НЕ взятие: обычный ход ----
     fr, fc = _rc(frm)
     tr, tc = _rc(to)
     dr, dc = tr - fr, tc - fc
     if dr == 0 or abs(dr) != abs(dc):
         raise ValueError("Ход не по диагонали")
 
-    must_capture = _side_has_capture(board, side)
-    captures = _captures_from(board, frm)
-
-    # Является ли запрошенный ход одним из доступных взятий этой шашкой?
-    chosen_capture = None
-    for mid, landing in captures:
-        if landing == to:
-            chosen_capture = mid
-            break
-
     b = list(board)
-
-    if chosen_capture is not None:
-        # ---- ВЗЯТИЕ ----
-        b[chosen_capture] = "_"
-        b[to], b[frm] = piece, "_"
-        # превращение при приземлении (русские правила: продолжаем бой уже дамкой)
-        _maybe_promote(b, to)
-        new_board = "".join(b)
-        # продолжение боя той же шашкой
-        more = bool(_captures_from(new_board, to))
-        if more:
-            return {"board": new_board, "more": True, "status": "playing"}
-        return _finish(new_board, side)
-
-    # ---- НЕ взятие ----
-    if must_capture:
-        raise ValueError("Обязательно бить")
-
-    # простой ход
     step = (1 if dr > 0 else -1, 1 if dc > 0 else -1)
     if _is_king(piece):
         # дамка: вся диагональ между frm и to должна быть пустой
@@ -233,6 +323,28 @@ def apply_move(board: str, side: str, frm: int, to: int) -> dict:
 
     new_board = "".join(b)
     return _finish(new_board, side)
+
+
+def legal_moves(board: str, side: str) -> dict[int, list[int]]:
+    """Карта допустимых ходов для стороны side: {клетка_фигуры: [конечные клетки]}.
+
+    При наличии боя — только конечные клетки полных цепочек боя; иначе — простые ходы.
+    Используется для подсветки на фронте.
+    """
+    must_capture = _side_has_capture(board, side)
+    res: dict[int, list[int]] = {}
+    for i, p in enumerate(board):
+        if owner(p) != side:
+            continue
+        if must_capture:
+            ends = sorted({end for end, _cap in _capture_chains(board, i)})
+            if ends:
+                res[i] = ends
+        else:
+            moves = sorted(_simple_moves_from(board, i))
+            if moves:
+                res[i] = moves
+    return res
 
 
 def _finish(new_board: str, side: str) -> dict:
