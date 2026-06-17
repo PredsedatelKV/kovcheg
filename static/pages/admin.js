@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=217";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=218";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -66,6 +66,13 @@ export async function renderAdmin(root) {
 
     <div id="admin-body"></div>
   `;
+
+  // Возврат на «Главную» одним нажатием по иконке справа сверху.
+  const heroArt = root.querySelector(".hero-art");
+  if (heroArt) {
+    heroArt.style.cursor = "pointer";
+    heroArt.addEventListener("click", () => window.kov.setTab("home"));
+  }
 
   const body = root.querySelector("#admin-body");
   root.querySelectorAll(".admin-tab").forEach((btn) => {

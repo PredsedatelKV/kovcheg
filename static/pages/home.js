@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=217";
+import { get, post, iconHtml } from "/static/api.js?v=218";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=217";
+import { openAssistantChat } from "/static/pages/assistant.js?v=218";
 
-import { playUISound } from "/static/pages/settings.js?v=217";
+import { playUISound } from "/static/pages/settings.js?v=218";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -204,6 +204,21 @@ ${bannerCarousel(data.banners)}
     '</div>';
   }).catch(function() {});
 
+  // Секретный вход в админку: тройное нажатие по иконке справа сверху (только для админа).
+  const heroArt = root.querySelector(".hero-art");
+  if (heroArt) {
+    let taps = 0, tapTimer = null;
+    heroArt.addEventListener("click", () => {
+      taps += 1;
+      clearTimeout(tapTimer);
+      tapTimer = setTimeout(() => { taps = 0; }, 600);
+      if (taps >= 3) {
+        taps = 0; clearTimeout(tapTimer);
+        if (window.kov.me && window.kov.me.is_admin) window.kov.setTab("admin", true);
+      }
+    });
+  }
+
   const carousel = root.querySelector("#bn-carousel");
   const bnTrack = carousel && carousel.querySelector("#bn-track");
   const bnDots = carousel ? Array.from(carousel.querySelectorAll("#bn-dots .dot")) : [];
@@ -235,18 +250,28 @@ ${bannerCarousel(data.banners)}
       });
     };
 
-    let animating = false;
-    // After a transition into a clone, jump silently to the matching real slide.
-    bnTrack.addEventListener("transitionend", (e) => {
-      if (e.propertyName && e.propertyName !== "transform") return;
+    let animating = false, animTimer = null;
+    // Завершение шага: снять блок и, если встали на клон, бесшумно прыгнуть на реальный слайд.
+    const settle = () => {
       animating = false;
       const cur = slides[pos];
       if (!cur) { pos = 1; applyTransform(false); return; } // защита от выхода за пределы
       if (cur.dataset.clone) { pos = pos === 0 ? n : 1; applyTransform(false); }
+    };
+    bnTrack.addEventListener("transitionend", (e) => {
+      if (e.propertyName && e.propertyName !== "transform") return;
+      if (animTimer) { clearTimeout(animTimer); animTimer = null; }
+      settle();
     });
 
-    // Блокируем новый шаг, пока идёт анимация — иначе pos может уйти за пределы массива.
-    const go = (delta) => { if (animating) return; pos += delta; animating = true; applyTransform(true); syncDots(); };
+    // Блокируем новый шаг, пока идёт анимация. Fallback-таймер снимает блок, даже если
+    // transitionend не сработал (например transform не изменился) — карусель не зависает.
+    const go = (delta) => {
+      if (animating) return;
+      pos += delta; animating = true; applyTransform(true); syncDots();
+      if (animTimer) clearTimeout(animTimer);
+      animTimer = setTimeout(() => { animTimer = null; settle(); }, 650);
+    };
 
     // --- autoplay (smooth, single timer, reuses cleanup pattern below) ---
     let bnTimer = null;
@@ -302,6 +327,12 @@ ${bannerCarousel(data.banners)}
 
     // Keep centering correct on resize / orientation change.
     window.addEventListener("resize", () => applyTransform(false));
+    // Карусель пре-рендерится в скрытой вкладке (ширина 0). Пересчитываем центрирование,
+    // как только вьюпорт получает реальные размеры (становится видимым).
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver(() => { if (!dragging) applyTransform(false); });
+      ro.observe(bnTrack.parentElement);
+    }
 
     requestAnimationFrame(() => { applyTransform(false); syncDots(); startAuto(); });
 
@@ -372,7 +403,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=217").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=218").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {

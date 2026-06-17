@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=217";
-import { renderProfile } from "/static/pages/profile.js?v=217";
-import { renderKoverna } from "/static/pages/koverna.js?v=217";
-import { renderArcade } from "/static/pages/arcade.js?v=217";
-import { renderAdmin } from "/static/pages/admin.js?v=217";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=217";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=217";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=217";
-import { get } from "/static/api.js?v=217";
+import { renderHome } from "/static/pages/home.js?v=218";
+import { renderProfile } from "/static/pages/profile.js?v=218";
+import { renderKoverna } from "/static/pages/koverna.js?v=218";
+import { renderArcade } from "/static/pages/arcade.js?v=218";
+import { renderAdmin } from "/static/pages/admin.js?v=218";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=218";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=218";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=218";
+import { get } from "/static/api.js?v=218";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -49,11 +49,12 @@ function notifyTabHidden(name) {
 
 let _switching = false;
 
-async function setTab(name) {
+async function setTab(name, force) {
   if (_switching) return;
   if (!RENDERERS[name]) name = "home";
   const btn = document.querySelector(`.tabbtn[data-tab="${name}"]`);
-  if (btn && btn.hidden) name = "home";
+  // Скрытую вкладку (админка) можно открыть только принудительно (секретный жест).
+  if (!force && btn && btn.hidden) name = "home";
 
   if (name === currentTab) return;
 
@@ -179,9 +180,8 @@ window.closeModal = function () {
   try {
     const me = await get("/api/profile/me");
     window.kov.me = me.user;
-    if (me.user && me.user.is_admin && me.user.username === "omarbutuev") {
-      document.querySelectorAll(".admin-only").forEach((el) => el.removeAttribute("hidden"));
-    }
+    // Админка спрятана: в нижнюю навигацию НЕ выводится. Вход — тройным нажатием
+    // по иконке справа сверху на «Главной» (см. home.js).
     // Глобальный поллер мультиплеера: приглашения и сессии приходят без перезагрузки.
     if (window.kov.me) initMultiplayer();
   } catch (err) {

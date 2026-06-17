@@ -852,23 +852,38 @@ def admin_save_bp_reward(body: dict, db: Session = Depends(get_db)):
     if kind == "item" and not item_code:
         raise HTTPException(400, "Для предмета укажите item_code")
 
+    level = _coerce_int(body, "level", None)
+
     if reward_id:
         r = db.query(models.BattlePassReward).filter(models.BattlePassReward.id == reward_id).first()
         if not r:
             raise HTTPException(404, "Награда не найдена")
     else:
-        r = models.BattlePassReward(season_id=season_id, track="free", kind="xp")
-        db.add(r)
-        db.flush()
+        # Upsert по (season_id, level, free): не плодим дубли на занятом уровне
+        # — иначе UniqueConstraint(season_id, level, track) даёт 500.
+        r = None
+        if level is not None:
+            r = db.query(models.BattlePassReward).filter(
+                models.BattlePassReward.season_id == season_id,
+                models.BattlePassReward.level == level,
+                models.BattlePassReward.track == "free",
+            ).first()
+        if r is None:
+            r = models.BattlePassReward(season_id=season_id, track="free", kind="xp", level=level or 1, value=0)
+            db.add(r)
     r.track = "free"
-    if "level" in body:
-        r.level = _coerce_int(body, "level", r.level)
+    if level is not None:
+        r.level = level
     if "value" in body:
         r.value = _coerce_int(body, "value", r.value)
     for field in ("kind", "item_code", "label", "icon"):
         if field in body:
             setattr(r, field, body[field])
-    db.commit()
+    try:
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        raise HTTPException(400, "Не удалось сохранить награду (проверьте уровень/значения)") from exc
     return {"ok": True, "id": r.id}
 
 
