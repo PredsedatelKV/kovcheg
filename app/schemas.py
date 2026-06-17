@@ -66,6 +66,7 @@ class UserTaskOut(BaseModel):
     progress: int
     started_at: datetime
     finished_at: datetime | None = None
+    xp_to_coins: int = 0
 
 
 class AdminUserTaskOut(BaseModel):
@@ -390,6 +391,7 @@ class QuizResultOut(BaseModel):
     grade_label: str
     prize_label: str
     prize_awarded: bool
+    xp_to_coins: int = 0
 
 
 class ChatMessageOut(BaseModel):

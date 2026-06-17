@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api._helpers import ensure_wallet
+from app.api._helpers import award_xp, ensure_wallet
 from app.auth import current_user, is_admin
 from app.db import get_db
 from app.models import now_utc
@@ -34,11 +34,6 @@ def _calc_level(xp: int, xp_per_level: int) -> tuple[int, int]:
     level = xp // xp_per_level
     current_xp = xp % xp_per_level
     return level, current_xp
-
-
-def _add_xp(user: models.User, amount: int, db: Session) -> None:
-    user.xp += amount
-    db.commit()
 
 
 def _normalize_claimed(claimed):
@@ -140,12 +135,13 @@ def claim_reward(
         else:
             db.add(models.InventoryItem(user_id=user.id, item_id=item.id, quantity=qty))
 
+    xp_to_coins = 0
     if reward.kind == "coins" or reward.kind.startswith("coins_"):
         wallet = ensure_wallet(db, user)
         wallet.balance += reward.value
         db.add(models.Transaction(recipient_id=user.id, amount=reward.value, note=f"Battle Pass: {reward.label}"))
     elif reward.kind == "xp":
-        user.xp += reward.value
+        xp_to_coins = award_xp(db, user, reward.value)["coins"]
     elif reward.kind == "item":
         if not reward.item_code:
             raise HTTPException(400, "У награды не задан предмет")
@@ -162,7 +158,7 @@ def claim_reward(
 
     db.commit()
     db.refresh(user)
-    return {"ok": True, "balance": user.wallet.balance if user.wallet else 0}
+    return {"ok": True, "balance": user.wallet.balance if user.wallet else 0, "xp_to_coins": xp_to_coins}
 
 
 @router.post("/award-xp")
@@ -180,16 +176,16 @@ def award_xp(
         if not target:
             raise HTTPException(404, "Пользователь не найден")
 
+    xp_to_coins = 0
     if body.mode == "set":
         target.xp = max(0, body.amount)
     elif body.mode == "sub":
         target.xp = max(0, target.xp - body.amount)
     else:
-        _add_xp(target, body.amount, db)
+        xp_to_coins = award_xp(db, target, body.amount)["coins"]
 
-    if body.mode != "add":
-        db.commit()
-    return {"ok": True, "xp": target.xp}
+    db.commit()
+    return {"ok": True, "xp": target.xp, "xp_to_coins": xp_to_coins}
 
 
 @router.post("/open-lootbox", response_model=schemas.LootboxOpenResult)
@@ -266,10 +262,10 @@ def award_arcade_xp(
     ).count()
     if recent_xp >= 3:
         raise HTTPException(429, "Лимит XP за аркаду: 3 раза в час")
-    user.xp += 5
+    xp_to_coins = award_xp(db, user, 5)["coins"]
     db.add(models.Transaction(recipient_id=user.id, amount=0, note="arcade_xp_limit"))
     db.commit()
-    return {"ok": True, "xp": user.xp}
+    return {"ok": True, "xp": user.xp, "xp_to_coins": xp_to_coins}
 
 
 @router.get("/lootbox-pools")

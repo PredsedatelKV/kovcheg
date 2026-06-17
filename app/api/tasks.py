@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api._helpers import ensure_wallet
+from app.api._helpers import award_xp, ensure_wallet
 from app.api.profile import _user_task_to_out
 from app.auth import current_user
 from app.db import get_db
@@ -73,8 +73,9 @@ def complete_task(
     ut.finished_at = now_utc()
     wallet = ensure_wallet(db, user)
     wallet.balance += ut.task.reward
+    xp_to_coins = 0
     if ut.task.xp_reward and ut.task.xp_reward > 0:
-        user.xp += ut.task.xp_reward
+        xp_to_coins = award_xp(db, user, ut.task.xp_reward)["coins"]
     db.add(
         models.Transaction(
             sender_id=None,
@@ -89,7 +90,9 @@ def complete_task(
     notify_admins_bg(
         f"✅ <b>{user.first_name}</b> выполнил(а) задание «<b>{ut.task.name}</b>» — награда {ut.task.reward}"
     )
-    return _user_task_to_out(ut)
+    out = _user_task_to_out(ut)
+    out.xp_to_coins = xp_to_coins
+    return out
 
 
 @router.post("/{user_task_id}/cancel", response_model=schemas.UserTaskOut)

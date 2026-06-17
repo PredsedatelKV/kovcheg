@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=215";
+import { get, post, iconHtml } from "/static/api.js?v=216";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=215";
+import { openAssistantChat } from "/static/pages/assistant.js?v=216";
 
-import { playUISound } from "/static/pages/settings.js?v=215";
+import { playUISound } from "/static/pages/settings.js?v=216";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -31,7 +31,7 @@ function bannerCarousel(banners) {
   const seq = [banners[n - 1], ...banners, banners[0]];
   const slideHtml = (b, realIdx, clone) => `
     <div class="kc-slide" data-real="${realIdx}"${clone ? ' data-clone="1"' : ''}
-         style="flex:0 0 82%;box-sizing:border-box;padding:0">
+         style="flex:0 0 80%;box-sizing:border-box;padding:0 6px">
       <div class="banner" style="background-image:url('${escapeHtml(b.image_url)}');width:100%;aspect-ratio:16/9;background-size:cover;background-position:center;border-radius:var(--radius,12px);box-shadow:0 6px 18px rgba(24,39,75,.10)"></div>
     </div>`;
   const slides = seq.map((b, i) => slideHtml(b, ((i - 1 + n) % n), i === 0 || i === seq.length - 1)).join("");
@@ -235,15 +235,18 @@ ${bannerCarousel(data.banners)}
       });
     };
 
+    let animating = false;
     // After a transition into a clone, jump silently to the matching real slide.
-    bnTrack.addEventListener("transitionend", () => {
-      if (slides[pos].dataset.clone) {
-        pos = pos === 0 ? n : 1;
-        applyTransform(false);
-      }
+    bnTrack.addEventListener("transitionend", (e) => {
+      if (e.propertyName && e.propertyName !== "transform") return;
+      animating = false;
+      const cur = slides[pos];
+      if (!cur) { pos = 1; applyTransform(false); return; } // защита от выхода за пределы
+      if (cur.dataset.clone) { pos = pos === 0 ? n : 1; applyTransform(false); }
     });
 
-    const go = (delta) => { pos += delta; applyTransform(true); syncDots(); };
+    // Блокируем новый шаг, пока идёт анимация — иначе pos может уйти за пределы массива.
+    const go = (delta) => { if (animating) return; pos += delta; animating = true; applyTransform(true); syncDots(); };
 
     // --- autoplay (smooth, single timer, reuses cleanup pattern below) ---
     let bnTimer = null;
@@ -352,7 +355,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=215").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=216").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {
@@ -613,6 +616,9 @@ async function openWheel() {
       if (cdTimer) clearInterval(cdTimer);
       try {
         const result = await post("/api/wheel/spin");
+        if (result && result.xp_to_coins > 0) {
+          window.kov.toast("Достигнут максимум XP — излишек перешёл в " + result.xp_to_coins + " ковбаксов");
+        }
         const idx = result.sector_index;
         // Pointer is at top (angle 0). Sector i spans [i*seg,(i+1)*seg] measured
         // clockwise from top, so its centre must rotate to 0 → negative offset.
@@ -731,6 +737,9 @@ async function openQuiz(quizId) {
     }
     try {
       const result = await post("/api/quiz/submit", { quiz_id: quizId, answers });
+      if (result && result.xp_to_coins > 0) {
+        window.kov.toast("Достигнут максимум XP — излишек перешёл в " + result.xp_to_coins + " ковбаксов");
+      }
       window.closeModal();
       const gradeLabels = { bad: "Не сдан", good: "Хорошо", excellent: "Отлично" };
       window.kov.showModal(`

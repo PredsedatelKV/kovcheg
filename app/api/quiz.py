@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api._helpers import ensure_wallet
+from app.api._helpers import award_xp, ensure_wallet
 from app.auth import current_user
 from app.db import get_db
 
@@ -126,8 +126,9 @@ def submit_quiz(
 
     # Award prize if grade is good or excellent
     prize_awarded = False
+    xp_to_coins = 0
     if grade in ("good", "excellent"):
-        user.xp += 25 if grade == "excellent" else 10
+        xp_to_coins = award_xp(db, user, 25 if grade == "excellent" else 10)["coins"]
         if q.prize_kind == "coins":
             wallet = ensure_wallet(db, user)
             wallet.balance += q.prize_value
@@ -166,4 +167,5 @@ def submit_quiz(
         grade_label=grade_labels.get(grade, grade),
         prize_label=q.prize_label,
         prize_awarded=prize_awarded,
+        xp_to_coins=xp_to_coins,
     )

@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=215";
+import { post, get } from "/static/api.js?v=216";
 
-import { playUISound } from "/static/pages/settings.js?v=215";
+import { playUISound } from "/static/pages/settings.js?v=216";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -69,6 +69,58 @@ function getBetValue(id) {
   return val;
 }
 
+// ============ ОБЩАЯ ОЧИСТКА / БЛОКИРОВКА ЗАКРЫТИЯ ============
+// Реестр очистки активной игры: при закрытии модалки или потере видимости
+// вкладки гарантированно глушим все интервалы / rAF / звуки игры.
+let _activeGameCleanup = null;
+// Флаг "идёт раунд казино" — пока true, модалку нельзя закрывать/сворачивать.
+let _casinoRoundLocked = false;
+
+function registerGameCleanup(fn) {
+  // Если предыдущая игра не была очищена (закрыли иным путём) — чистим её сейчас.
+  if (_activeGameCleanup) {
+    try { _activeGameCleanup(); } catch (_) {}
+  }
+  _activeGameCleanup = fn;
+  _casinoRoundLocked = false;
+}
+
+function runGameCleanup() {
+  if (_activeGameCleanup) {
+    const fn = _activeGameCleanup;
+    _activeGameCleanup = null;
+    _casinoRoundLocked = false;
+    try { fn(); } catch (_) {}
+  }
+}
+
+function setCasinoRoundLocked(locked) {
+  _casinoRoundLocked = locked;
+  // Визуально гасим стандартный крестик во время активного раунда.
+  const closeBtn = document.querySelector("#modal-root .modal .close");
+  if (closeBtn) {
+    closeBtn.style.opacity = locked ? "0.35" : "";
+    closeBtn.style.pointerEvents = locked ? "none" : "";
+  }
+}
+
+// Однократно патчим глобальный closeModal: блокируем закрытие во время раунда
+// казино и прогоняем очистку активной игры при штатном закрытии.
+if (!window.__arcadeClosePatched) {
+  window.__arcadeClosePatched = true;
+  const _origCloseModal = window.closeModal;
+  window.closeModal = function () {
+    if (_casinoRoundLocked) return; // нельзя закрывать посреди раунда
+    runGameCleanup();
+    if (typeof _origCloseModal === "function") _origCloseModal();
+    else document.getElementById("modal-root").innerHTML = "";
+  };
+  // При сворачивании вкладки / потере видимости — глушим циклы и звуки игры.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) runGameCleanup();
+  });
+}
+
 // ============ МИНИ-ИГРЫ ============
 
 function gameWhereIsMoshonka(container) {
@@ -76,9 +128,10 @@ function gameWhereIsMoshonka(container) {
   const CUP_STEP = 72;
   // Уровни сложности: число стаканов, длительность одной перестановки, число перестановок.
   const LEVELS = {
-    easy:   { label: "Лёгкий",  cups: 3, dur: 700, swaps: 5, pause: 260 },
-    medium: { label: "Средний", cups: () => 3 + Math.floor(Math.random() * 2), dur: 500, swaps: 5, pause: 200 },
-    hard:   { label: "Сложный", cups: () => 4 + Math.floor(Math.random() * 2), dur: 350, swaps: 7, pause: 140 },
+    // Длительности ускорены ~в 1.7-1.8 раза от прежних, относительная разница уровней сохранена.
+    easy:   { label: "Лёгкий",  cups: 3, dur: 400, swaps: 5, pause: 150 },
+    medium: { label: "Средний", cups: () => 3 + Math.floor(Math.random() * 2), dur: 290, swaps: 5, pause: 115 },
+    hard:   { label: "Сложный", cups: () => 4 + Math.floor(Math.random() * 2), dur: 200, swaps: 7, pause: 80 },
   };
   let level = null;       // выбранный объект уровня
   let CUP_COUNT = 3;      // фактическое число стаканов в текущей партии
@@ -87,6 +140,21 @@ function gameWhereIsMoshonka(container) {
   let villagerPhys, canClick, gameEnded;
   let root, result, scoreEl, cupContainer;
   let logicalOrder;
+  // Очистка: помечаем игру разрушенной и гасим все таймеры при закрытии модалки.
+  let destroyed = false;
+  const timers = new Set();
+  const trackTimeout = (fn, ms) => {
+    const id = setTimeout(() => { timers.delete(id); if (!destroyed) fn(); }, ms);
+    timers.add(id);
+    return id;
+  };
+  if (!isInline) {
+    registerGameCleanup(() => {
+      destroyed = true;
+      timers.forEach(clearTimeout);
+      timers.clear();
+    });
+  }
 
   function resolveCupCount() {
     const c = level.cups;
@@ -102,7 +170,7 @@ function gameWhereIsMoshonka(container) {
   }
 
   function delay(ms) {
-    return new Promise(r => setTimeout(r, ms));
+    return new Promise(r => trackTimeout(r, ms));
   }
 
   function animateSwap(i, j) {
@@ -114,7 +182,7 @@ function gameWhereIsMoshonka(container) {
       cups[j].style.transition = `transform ${dur}ms cubic-bezier(0.45,0.05,0.55,0.95)`;
       cups[i].style.transform = `translateX(${dx}px)`;
       cups[j].style.transform = `translateX(${-dx}px)`;
-      setTimeout(() => {
+      trackTimeout(() => {
         cups[i].style.transition = "none";
         cups[j].style.transition = "none";
         cups[i].style.transform = "";
@@ -131,6 +199,7 @@ function gameWhereIsMoshonka(container) {
     const numSwaps = level.swaps;
     let last = -1;
     for (let s = 0; s < numSwaps; s++) {
+      if (destroyed) return;
       // Перемешиваем соседние стаканы — плавнее и легче следить глазами.
       let a = Math.floor(Math.random() * (CUP_COUNT - 1));
       let b = a + 1;
@@ -141,6 +210,7 @@ function gameWhereIsMoshonka(container) {
       await animateSwap(a, b);
       await delay(level.pause);
     }
+    if (destroyed) return;
     canClick = true;
     result.innerHTML = `<div class="game-neutral">Где Мошонка?</div>`;
   }
@@ -184,7 +254,7 @@ function gameWhereIsMoshonka(container) {
     });
     result.innerHTML = "";
     revealAll(true);
-    setTimeout(() => {
+    trackTimeout(() => {
       revealAll(false);
       shuffleCups();
     }, 1000);
@@ -215,7 +285,7 @@ function gameWhereIsMoshonka(container) {
         }
 
         cupContainer.querySelectorAll(".game-cup").forEach(c => c.disabled = true);
-        setTimeout(startRound, 2500);
+        trackTimeout(startRound, 2500);
       });
     });
   }
@@ -303,6 +373,12 @@ function gameTicTacToe(container) {
   const cells = root.querySelectorAll(".ttt-cell");
   const resultEl = root.querySelector("#ttt-result");
 
+  // Очистка: при закрытии модалки прекращаем ход ИИ и звуки.
+  let destroyed = false;
+  if (!isInline) {
+    registerGameCleanup(() => { destroyed = true; gameActive = false; });
+  }
+
   function checkWinner(b) {
     const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
     for (const [a, c, d] of lines) {
@@ -378,6 +454,7 @@ function gameTicTacToe(container) {
       }
       
       setTimeout(() => {
+        if (destroyed || !gameActive) { playerTurn = true; return; }
         const move = moshonkaMove();
         if (move !== undefined) {
           board[move] = "O";
@@ -454,17 +531,22 @@ function gameMinesweeper() {
     <button class="close" onclick="closeModal()">×</button>
     <h2>Сапёр</h2>
     <p class="card-sub">Найди все безопасные клетки! 10 мин среди ${cellCount}.</p>
-    <div class="game-mine-board" id="mine-board">
+    <div class="game-mine-board" id="mine-board" style="width:300px;max-width:300px;margin:20px auto">
       ${Array(cellCount).fill("").map((_, i) => `<button class="mine-cell" data-idx="${i}"></button>`).join("")}
     </div>
-    <div class="game-result" id="mine-result"></div>
-    <div class="game-play-again" id="mine-again" style="display:none">
+    <!-- Резервируем место под сообщение результата и кнопку заранее, чтобы при окончании
+         игры раскладка не «прыгала»: высота фиксирована, кнопка скрыта через visibility. -->
+    <div class="game-result" id="mine-result" style="min-height:24px"></div>
+    <div class="game-play-again" id="mine-again" style="visibility:hidden">
       <button class="btn" id="play-again-btn">Играть заново</button>
     </div>
   `);
 
   const cells = modal.querySelectorAll(".mine-cell");
   const resultEl = modal.querySelector("#mine-result");
+
+  // Очистка: останавливаем игровую логику при закрытии (звуки тут только по клику).
+  registerGameCleanup(() => { gameActive = false; });
 
   function revealCell(idx) {
     if (revealed[idx] || flagged[idx] || !gameActive) return;
@@ -485,7 +567,7 @@ function gameMinesweeper() {
         }
       });
       resultEl.innerHTML = `<div class="game-lose">Бум! Мошонка поставил мину.</div>`;
-      modal.querySelector("#mine-again").style.display = "block";
+      modal.querySelector("#mine-again").style.visibility = "visible";
       return;
     }
     
@@ -511,7 +593,7 @@ function gameMinesweeper() {
       resultEl.innerHTML = `<div class="game-win">Все безопасные клетки найдены!</div>`;
       animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
       playUISound("win");
-      modal.querySelector("#mine-again").style.display = "block";
+      modal.querySelector("#mine-again").style.visibility = "visible";
     }
   }
 
@@ -576,6 +658,12 @@ function gameHarvest() {
   const countEl = modal.querySelector("#harvest-count");
   const timeEl = modal.querySelector("#harvest-time");
 
+  // Общая очистка: гасим оба интервала при любом закрытии/сворачивании.
+  registerGameCleanup(() => {
+    clearInterval(gameInterval);
+    clearInterval(spawnInterval);
+  });
+
   const closeBtn = modal.querySelector("#harvest-close-btn");
   if (closeBtn) {
     closeBtn.addEventListener("click", () => {
@@ -601,16 +689,17 @@ function gameHarvest() {
       setTimeout(() => pumpkin.remove(), 150);
     });
     field.appendChild(pumpkin);
+    // Темп игры увеличен ~на 25%: тыквы живут меньше и спавнятся чаще.
     setTimeout(() => {
       if (pumpkin.parentNode) {
         pumpkin.style.opacity = "0";
         pumpkin.style.transform = "scale(0.5)";
         setTimeout(() => pumpkin.remove(), 200);
       }
-    }, 800);
+    }, 600);
   }
 
-  spawnInterval = setInterval(spawnPumpkin, 400);
+  spawnInterval = setInterval(spawnPumpkin, 300);
   
   gameInterval = setInterval(() => {
     timeLeft--;
@@ -641,16 +730,17 @@ function gameHarvest() {
 
 function gameRoulette() {
   // label — то, что видит игрок; mult — числовой множитель, который должен совпадать с подписью label.
+  // Целевой RTP ~92.8% (домовое преимущество ~7%): EV = Σ(mult*weight)/Σweight.
   const sectors = [
-    { label: "x0.05", mult: 0.05, color: "#E55454", weight: 40 },
-    { label: "x0.25", mult: 0.25, color: "#D32F2F", weight: 22 },
-    { label: "x0.5", mult: 0.5, color: "#FF8A65", weight: 25 },
-    { label: "x0.75", mult: 0.75, color: "#FFB74D", weight: 18 },
-    { label: "x1", mult: 1, color: "#F2B33C", weight: 20 },
-    { label: "x1.5", mult: 1.5, color: "#6BD995", weight: 6 },
-    { label: "x2", mult: 2, color: "#6CB6FB", weight: 3 },
-    { label: "x2.5", mult: 2.5, color: "#D387E5", weight: 2 },
-    { label: "x3", mult: 3, color: "#AB47BC", weight: 1 },
+    { label: "x0.05", mult: 0.05, color: "#E55454", weight: 16 },
+    { label: "x0.25", mult: 0.25, color: "#D32F2F", weight: 11 },
+    { label: "x0.5", mult: 0.5, color: "#FF8A65", weight: 15 },
+    { label: "x0.75", mult: 0.75, color: "#FFB74D", weight: 15 },
+    { label: "x1", mult: 1, color: "#F2B33C", weight: 15 },
+    { label: "x1.5", mult: 1.5, color: "#6BD995", weight: 12 },
+    { label: "x2", mult: 2, color: "#6CB6FB", weight: 8 },
+    { label: "x2.5", mult: 2.5, color: "#D387E5", weight: 5 },
+    { label: "x3", mult: 3, color: "#AB47BC", weight: 3 },
   ];
   
   const modal = window.kov.showModal(`
@@ -669,6 +759,10 @@ function gameRoulette() {
   const wheel = modal.querySelector("#risk-wheel");
   const resultEl = modal.querySelector("#roulette-result");
   const spinBtn = modal.querySelector("#roulette-spin-btn");
+
+  let spinInterval = null;
+  // Очистка: при закрытии/сворачивании останавливаем анимацию вращения.
+  registerGameCleanup(() => { if (spinInterval) clearInterval(spinInterval); });
 
   spinBtn.addEventListener("click", async () => {
     // Защита от двойного клика: дизейблим кнопку в начале, включаем после анимации.
@@ -691,6 +785,9 @@ function gameRoulette() {
       return;
     }
 
+    // Раунд пошёл — блокируем закрытие модалки до его завершения.
+    setCasinoRoundLocked(true);
+
     balance -= bet;
     updateBalanceDisplay("roulette-balance", balance);
 
@@ -711,7 +808,7 @@ function gameRoulette() {
     let spins = 0;
     const maxSpins = 20 + chosenIdx;
 
-    const spinInterval = setInterval(async () => {
+    spinInterval = setInterval(async () => {
       wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("highlight"));
       wheel.children[currentIdx].classList.add("highlight");
       currentIdx = (currentIdx + 1) % sectors.length;
@@ -720,6 +817,7 @@ function gameRoulette() {
 
       if (spins >= maxSpins) {
         clearInterval(spinInterval);
+        spinInterval = null;
         wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("highlight"));
         wheel.children[chosenIdx].classList.add("active");
         animateElement(wheel.children[chosenIdx], "popIn", 300);
@@ -743,6 +841,8 @@ function gameRoulette() {
         }
         await syncBalance();
         spinBtn.disabled = false;
+        // Раунд завершён — снова можно закрывать модалку.
+        setCasinoRoundLocked(false);
       }
     }, 100);
   });
@@ -763,6 +863,9 @@ function gameCheckers() {
   let state = [];
   let selected = null;
   let turn = "white";
+  let destroyed = false;
+  // Очистка: при закрытии модалки отменяем отложенный ход ИИ.
+  registerGameCleanup(() => { destroyed = true; });
 
   function initBoard() {
     state = Array(64).fill(null);
@@ -940,6 +1043,7 @@ function gameCheckers() {
   }
 
   function aiMove() {
+    if (destroyed) return;
     const moves = allMoves(state, "black");
     if (moves.length === 0) { turn = "white"; render(); checkWin(); return; }
 
@@ -992,6 +1096,9 @@ function gamePingPong() {
   let bx = W / 2, by = H - 30, bvx = 3, bvy = -3;
   let ps = 0, as = 0, running = true;
 
+  // Очистка: при закрытии/сворачивании останавливаем rAF-цикл.
+  registerGameCleanup(() => { running = false; });
+
   function draw() {
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = "#6cb6fb";
@@ -1037,7 +1144,7 @@ function gameSlots() {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <h2>Слоты</h2>
-    <p class="card-sub">3 одинаковых = x200</p>
+    <p class="card-sub">3 одинаковых = x27</p>
     <div class="game-balance">Баланс: <strong id="slots-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
     <div id="slots-reels" style="display:flex;gap:8px;justify-content:center;margin:16px 0;font-size:36px;min-height:50px">
       <span id="s1" style="background:rgba(255,255,255,0.05);padding:8px 16px;border-radius:8px;min-width:50px;text-align:center">?</span>
@@ -1050,6 +1157,9 @@ function gameSlots() {
   `);
   const resultEl = modal.querySelector("#slots-result");
   const spinBtn = modal.querySelector("#slots-spin");
+  let si = null;
+  // Очистка: при закрытии/сворачивании останавливаем прокрутку барабанов.
+  registerGameCleanup(() => { if (si) clearInterval(si); });
   spinBtn.addEventListener("click", async () => {
     if (spinBtn.disabled) return;
     spinBtn.disabled = true;
@@ -1063,6 +1173,8 @@ function gameSlots() {
       spinBtn.disabled = false;
       return;
     }
+    // Раунд пошёл — блокируем закрытие модалки до результата.
+    setCasinoRoundLocked(true);
     balance -= bet;
     updateBalanceDisplay("slots-balance", balance);
     playUISound("spin");
@@ -1070,36 +1182,41 @@ function gameSlots() {
     const r2 = symbols[Math.floor(Math.random() * symbols.length)];
     const r3 = symbols[Math.floor(Math.random() * symbols.length)];
     let spins = 0;
-    const si = setInterval(() => {
+    si = setInterval(() => {
       modal.querySelector("#s1").textContent = symbols[Math.floor(Math.random() * symbols.length)];
       modal.querySelector("#s2").textContent = symbols[Math.floor(Math.random() * symbols.length)];
       modal.querySelector("#s3").textContent = symbols[Math.floor(Math.random() * symbols.length)];
       spins++;
       if (spins > 15) {
         clearInterval(si);
+        si = null;
         modal.querySelector("#s1").textContent = r1;
         modal.querySelector("#s2").textContent = r2;
         modal.querySelector("#s3").textContent = r3;
         spinBtn.disabled = false;
+        // Целевой RTP ~91.8% (домовое преимущество ~8%): джекпот x27 при p=7/343,
+        // пара x1 (возврат ставки) при p=126/343.
         if (r1 === r2 && r2 === r3) {
-          const win = Math.floor(bet * 200);
+          const win = Math.floor(bet * 27);
           balance += win;
           updateBalanceDisplay("slots-balance", balance);
           post("/api/arcade/win", { amount: win }).catch(() => {});
           resultEl.innerHTML = '<div class="game-win">ДЖЕКПОТ! +' + win + ' K</div>';
           playUISound("win");
         } else if (r1 === r2 || r2 === r3 || r1 === r3) {
-          const win = Math.floor(bet * 2);
+          const win = Math.floor(bet * 1);
           balance += win;
           updateBalanceDisplay("slots-balance", balance);
           post("/api/arcade/win", { amount: win }).catch(() => {});
-          resultEl.innerHTML = '<div class="game-win">Пара! +' + win + ' K</div>';
+          resultEl.innerHTML = '<div class="game-neutral">Пара! Ставка возвращена.</div>';
           playUISound("cashout");
         } else {
           resultEl.innerHTML = '<div class="game-lose">Мимо</div>';
           playUISound("lose");
         }
         syncBalance();
+        // Раунд завершён — закрытие снова доступно.
+        setCasinoRoundLocked(false);
       }
     }, 80);
   });
@@ -1322,7 +1439,7 @@ export async function renderArcade(root) {
       <div class="game-tile casino" data-game="slots">
         <div class="game-tile-icon"><img src="/static/img/ui/slots.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Слоты</div>
-        <div class="game-tile-desc">3 одинаковых = x200</div>
+        <div class="game-tile-desc">3 одинаковых = x27</div>
       </div>
       <div class="game-tile casino" data-game="rocket">
         <div class="game-tile-icon"><img src="/static/img/ui/rocket.svg" alt="" class="game-icon-lg"/></div>

@@ -1,4 +1,4 @@
-import { get, post } from "/static/api.js?v=215";
+import { get, post } from "/static/api.js?v=216";
 
 var _bpRoot = null;
 var _bpData = null;
@@ -190,6 +190,9 @@ function _renderBP(data) {
     try {
       var result = await post("/api/battlepass/claim", { level: lvl });
       _bpData.claimed_rewards.push(lvl);
+      if (result && result.xp_to_coins > 0 && window.kov && window.kov.toast) {
+        window.kov.toast("Достигнут максимум XP — излишек перешёл в " + result.xp_to_coins + " ковбаксов");
+      }
       if (result && result.balance != null && window.kov && window.kov.me) {
         window.kov.me.balance = result.balance;
         if (window.kov.emit) window.kov.emit("balance:update", { balance: result.balance });

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api._helpers import ensure_wallet
+from app.api._helpers import award_xp, ensure_wallet
 from app.auth import current_user
 from app.db import get_db
 
@@ -85,6 +85,7 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
     idx, sector = _pick_sector(sectors)
 
     wallet = ensure_wallet(db, user)
+    xp_to_coins = 0
     if sector["kind"] == "coins":
         wallet.balance += sector["value"]
         db.add(
@@ -96,7 +97,7 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
             )
         )
     elif sector["kind"] == "xp":
-        user.xp += sector["value"]
+        xp_to_coins += award_xp(db, user, sector["value"])["coins"]
     elif sector["kind"] == "nothing":
         pass
     else:
@@ -113,7 +114,7 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
         else:
             inv.quantity += 1
 
-    user.xp += 2
+    xp_to_coins += award_xp(db, user, 2)["coins"]
     db.add(
         models.WheelSpin(
             user_id=user.id,
@@ -132,6 +133,7 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
 
     return {
         "sector_index": idx,
+        "xp_to_coins": xp_to_coins,
         "result": schemas.SpinResult(
             prize_kind=sector["kind"],
             prize_value=sector["value"],
