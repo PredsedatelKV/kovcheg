@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=218";
-import { renderProfile } from "/static/pages/profile.js?v=218";
-import { renderKoverna } from "/static/pages/koverna.js?v=218";
-import { renderArcade } from "/static/pages/arcade.js?v=218";
-import { renderAdmin } from "/static/pages/admin.js?v=218";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=218";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=218";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=218";
-import { get } from "/static/api.js?v=218";
+import { renderHome } from "/static/pages/home.js?v=219";
+import { renderProfile } from "/static/pages/profile.js?v=219";
+import { renderKoverna } from "/static/pages/koverna.js?v=219";
+import { renderArcade } from "/static/pages/arcade.js?v=219";
+import { renderAdmin } from "/static/pages/admin.js?v=219";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=219";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=219";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=219";
+import { get } from "/static/api.js?v=219";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -71,7 +71,9 @@ async function setTab(name, force) {
     containers[prevTab].style.display = "none";
   }
 
-  const needsRender = !containers[name] || name === "admin";
+  // Профиль/Коверна/Пропуск перерисовываем при каждом открытии — чтобы инвентарь,
+  // баланс и рынок были всегда свежими после покупок/продаж/подарков (без перезагрузки).
+  const needsRender = !containers[name] || name === "admin" || name === "profile" || name === "koverna" || name === "battlepass";
 
   if (needsRender) {
     if (containers[name]) containers[name].remove();

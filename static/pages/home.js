@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=218";
+import { get, post, iconHtml } from "/static/api.js?v=219";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=218";
+import { openAssistantChat } from "/static/pages/assistant.js?v=219";
 
-import { playUISound } from "/static/pages/settings.js?v=218";
+import { playUISound } from "/static/pages/settings.js?v=219";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -25,16 +25,16 @@ function bannerCarousel(banners) {
     </div>`;
 
   const n = banners.length;
-  // For infinite looping we clone the last slide before the first and the
-  // first slide after the last, then jump (without transition) when we hit
-  // a clone. data-real holds the logical banner index for dot syncing.
-  const seq = [banners[n - 1], ...banners, banners[0]];
-  const slideHtml = (b, realIdx, clone) => `
-    <div class="kc-slide" data-real="${realIdx}"${clone ? ' data-clone="1"' : ''}
-         style="flex:0 0 80%;box-sizing:border-box;padding:0 6px">
+  // Бесконечная карусель: клонируем по ДВА слайда с каждого края, чтобы при
+  // зацикливании peek-зона по бокам всегда была заполнена (никаких пустых/
+  // «подгружающихся» карточек на краях). Реальные слайды — индексы 2..n+1.
+  const at = (i) => banners[((i % n) + n) % n];
+  const seq = [at(-2), at(-1), ...banners, at(0), at(1)];
+  const slideHtml = (b) => `
+    <div class="kc-slide" style="flex:0 0 80%;box-sizing:border-box;padding:0 6px">
       <div class="banner" style="background-image:url('${escapeHtml(b.image_url)}');width:100%;aspect-ratio:16/9;background-size:cover;background-position:center;border-radius:var(--radius,12px);box-shadow:0 6px 18px rgba(24,39,75,.10)"></div>
     </div>`;
-  const slides = seq.map((b, i) => slideHtml(b, ((i - 1 + n) % n), i === 0 || i === seq.length - 1)).join("");
+  const slides = seq.map(slideHtml).join("");
   const dots = banners.map(() => '<span class="dot" style="width:6px;height:6px;border-radius:50%;background:#D2D8E3;transition:all .25s ease"></span>').join("");
   return `
     <div class="kc-carousel" id="bn-carousel" style="margin-bottom:14px;touch-action:pan-y">
@@ -224,8 +224,9 @@ ${bannerCarousel(data.banners)}
   const bnDots = carousel ? Array.from(carousel.querySelectorAll("#bn-dots .dot")) : [];
   if (bnTrack && bnDots.length > 1) {
     const n = bnDots.length;            // logical banner count
-    const slides = Array.from(bnTrack.children); // n + 2 (with clones at ends)
-    let pos = 1;                        // index in `slides` (1 == first real banner)
+    const slides = Array.from(bnTrack.children); // n + 4 (2 clones each side)
+    const realStart = 2, realEnd = n + 1;
+    let pos = realStart;                // index in `slides` (2 == first real banner)
     const EASE = "transform .5s cubic-bezier(.22,.61,.36,1)";
 
     const slideWidth = () => slides[0].getBoundingClientRect().width;
@@ -240,7 +241,7 @@ ${bannerCarousel(data.banners)}
       bnTrack.style.transform = `translateX(${offsetFor(pos)}px)`;
     };
     const syncDots = () => {
-      const real = ((pos - 1) % n + n) % n;
+      const real = ((pos - realStart) % n + n) % n;
       bnDots.forEach((d, i) => {
         const on = i === real;
         d.classList.toggle("active", on);
@@ -254,9 +255,10 @@ ${bannerCarousel(data.banners)}
     // Завершение шага: снять блок и, если встали на клон, бесшумно прыгнуть на реальный слайд.
     const settle = () => {
       animating = false;
-      const cur = slides[pos];
-      if (!cur) { pos = 1; applyTransform(false); return; } // защита от выхода за пределы
-      if (cur.dataset.clone) { pos = pos === 0 ? n : 1; applyTransform(false); }
+      if (!slides[pos]) { pos = realStart; applyTransform(false); return; } // защита
+      // Встали на клон-зону — бесшумно прыгаем на эквивалентный реальный слайд.
+      if (pos < realStart) { pos += n; applyTransform(false); }
+      else if (pos > realEnd) { pos -= n; applyTransform(false); }
     };
     bnTrack.addEventListener("transitionend", (e) => {
       if (e.propertyName && e.propertyName !== "transform") return;
@@ -403,7 +405,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=218").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=219").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {

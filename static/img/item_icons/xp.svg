@@ -1,3 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
-  <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="#9c27b0" stroke="#7b1fa2" stroke-width="1"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><defs><linearGradient id="xg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#E1BEE7"/><stop offset="55%" stop-color="#AB47BC"/><stop offset="100%" stop-color="#8E24AA"/></linearGradient></defs><path d="M5 15.5a11 6.5 0 0 0 22 0v3.4a11 6.5 0 0 1-22 0z" fill="#6A1B9A"/><ellipse cx="16" cy="15.5" rx="11" ry="6.5" fill="url(#xg)" stroke="#7B1FA2" stroke-width="0.8"/><ellipse cx="16" cy="15.5" rx="8" ry="4.4" fill="none" stroke="#F3E5F5" stroke-width="0.8" opacity="0.6"/><text x="16" y="18.4" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="900" font-size="7" fill="#fff">XP</text></svg>
