@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=216";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=217";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -53,7 +53,7 @@ export async function renderAdmin(root) {
         <h1>Админ</h1>
         <div class="subtitle">Полный контроль над Ковчегом.</div>
       </div>
-      <div class="hero-head"><img src="/static/img/admin_emblem.svg" alt="" class="hero-img-head"/></div>
+      <div class="hero-art"><img src="/static/img/admin_hero.svg" alt="Админ" class="hero-img"/></div>
     </section>
 
     <div class="admin-tabs">

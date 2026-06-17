@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=216";
+import { get, post, iconHtml } from "/static/api.js?v=217";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=216";
+import { openAssistantChat } from "/static/pages/assistant.js?v=217";
 
-import { playUISound } from "/static/pages/settings.js?v=216";
+import { playUISound } from "/static/pages/settings.js?v=217";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -141,7 +141,7 @@ export async function renderHome(root) {
         <h1>${welcome}<span class="beta-badge">Beta</span></h1>
         <div class="subtitle">${escapeHtml(data.server_time_msk)} мск</div>
       </div>
-      <div class="hero-art" title="Ковчег"><img src="/static/img/cube.svg" alt="Ковчег" class="hero-img"/></div>
+      <div class="hero-art" title="Ковчег"><img src="/static/img/home_hero.svg" alt="Ковчег" class="hero-img"/></div>
     </section>
 
 ${bannerCarousel(data.banners)}
@@ -254,21 +254,21 @@ ${bannerCarousel(data.banners)}
     function stopAuto() { if (bnTimer) { clearInterval(bnTimer); bnTimer = null; } }
 
     // --- drag / swipe ---
-    let dragging = false, startX = 0, startTf = 0;
-    const onDown = (x) => {
-      dragging = true; startX = x;
+    // horiz: null = ещё не определили направление; true = горизонтальный свайп
+    // (забираем жест себе, страница/мини-апп не двигаются); false = вертикальный
+    // (отдаём прокрутке страницы).
+    let dragging = false, startX = 0, startY = 0, startTf = 0, horiz = null;
+    const beginDrag = (x, y) => {
+      dragging = true; startX = x; startY = y; horiz = null;
       stopAuto();
       const m = /translateX\(([-0-9.]+)px\)/.exec(bnTrack.style.transform);
       startTf = m ? parseFloat(m[1]) : offsetFor(pos);
       bnTrack.style.transition = "none";
     };
-    const onMove = (x) => {
-      if (!dragging) return;
-      bnTrack.style.transform = `translateX(${startTf + (x - startX)}px)`;
-    };
-    const onUp = (x) => {
+    const finishDrag = (x) => {
       if (!dragging) return;
       dragging = false;
+      if (horiz === false) { startAuto(); return; }
       const dx = x - startX;
       const threshold = slideWidth() * 0.18;
       if (dx <= -threshold) go(1);
@@ -276,12 +276,29 @@ ${bannerCarousel(data.banners)}
       else applyTransform(true);
       startAuto();
     };
-    bnTrack.addEventListener("touchstart", (e) => onDown(e.touches[0].clientX), { passive: true });
-    bnTrack.addEventListener("touchmove", (e) => onMove(e.touches[0].clientX), { passive: true });
-    bnTrack.addEventListener("touchend", (e) => onUp((e.changedTouches[0] || {}).clientX || startX));
-    bnTrack.addEventListener("mousedown", (e) => { e.preventDefault(); onDown(e.clientX); });
-    window.addEventListener("mousemove", (e) => onMove(e.clientX));
-    window.addEventListener("mouseup", (e) => onUp(e.clientX));
+    // Touch: определяем направление по первому движению; горизонталь — preventDefault.
+    bnTrack.addEventListener("touchstart", (e) => beginDrag(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
+    bnTrack.addEventListener("touchmove", (e) => {
+      if (!dragging) return;
+      const t = e.touches[0];
+      const dx = t.clientX - startX, dy = t.clientY - startY;
+      if (horiz === null) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;       // ждём явного движения
+        horiz = Math.abs(dx) > Math.abs(dy);
+        if (!horiz) { dragging = false; applyTransform(true); startAuto(); return; } // вертикаль — странице
+      }
+      e.preventDefault();                                        // горизонталь — забираем жест
+      bnTrack.style.transform = `translateX(${startTf + dx}px)`;
+    }, { passive: false });
+    bnTrack.addEventListener("touchend", (e) => finishDrag((e.changedTouches[0] || {}).clientX || startX));
+    bnTrack.addEventListener("touchcancel", () => finishDrag(startX));
+    // Mouse (десктоп): всегда трактуем как горизонтальный drag.
+    bnTrack.addEventListener("mousedown", (e) => { e.preventDefault(); beginDrag(e.clientX, e.clientY); horiz = true; });
+    window.addEventListener("mousemove", (e) => {
+      if (!dragging || horiz === false) return;
+      bnTrack.style.transform = `translateX(${startTf + (e.clientX - startX)}px)`;
+    });
+    window.addEventListener("mouseup", (e) => finishDrag(e.clientX));
 
     // Keep centering correct on resize / orientation change.
     window.addEventListener("resize", () => applyTransform(false));
@@ -355,7 +372,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=216").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=217").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {

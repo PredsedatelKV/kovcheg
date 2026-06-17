@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=216";
+import { post, get } from "/static/api.js?v=217";
 
-import { playUISound } from "/static/pages/settings.js?v=216";
+import { playUISound } from "/static/pages/settings.js?v=217";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -1194,10 +1194,10 @@ function gameSlots() {
         modal.querySelector("#s2").textContent = r2;
         modal.querySelector("#s3").textContent = r3;
         spinBtn.disabled = false;
-        // Целевой RTP ~91.8% (домовое преимущество ~8%): джекпот x27 при p=7/343,
+        // Целевой RTP ~95.9% (чуть выгоднее игроку): джекпот x29 при p=7/343,
         // пара x1 (возврат ставки) при p=126/343.
         if (r1 === r2 && r2 === r3) {
-          const win = Math.floor(bet * 27);
+          const win = Math.floor(bet * 29);
           balance += win;
           updateBalanceDisplay("slots-balance", balance);
           post("/api/arcade/win", { amount: win }).catch(() => {});
@@ -1266,7 +1266,7 @@ function gameRocket() {
     timer = setInterval(() => {
       mult += 0.02 + Math.random() * 0.03;
       multEl.textContent = "x" + mult.toFixed(2);
-      if (Math.random() < 0.013 * mult) {
+      if (Math.random() < 0.017 * mult) { // выше шанс взрыва — ракета чуть невыгоднее
         clearInterval(timer); running = false; crashed = true;
         multEl.style.color = "#e55454";
         multEl.textContent = "💥 ВЗРЫВ";

@@ -1,18 +1,20 @@
-import { renderHome } from "/static/pages/home.js?v=216";
-import { renderProfile } from "/static/pages/profile.js?v=216";
-import { renderKoverna } from "/static/pages/koverna.js?v=216";
-import { renderArcade } from "/static/pages/arcade.js?v=216";
-import { renderAdmin } from "/static/pages/admin.js?v=216";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=216";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=216";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=216";
-import { get } from "/static/api.js?v=216";
+import { renderHome } from "/static/pages/home.js?v=217";
+import { renderProfile } from "/static/pages/profile.js?v=217";
+import { renderKoverna } from "/static/pages/koverna.js?v=217";
+import { renderArcade } from "/static/pages/arcade.js?v=217";
+import { renderAdmin } from "/static/pages/admin.js?v=217";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=217";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=217";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=217";
+import { get } from "/static/api.js?v=217";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
   tg.ready();
   tg.expand();
   if (tg.setHeaderColor) tg.setHeaderColor("secondary_bg_color");
+  // Чтобы свайпы по карусели не двигали/закрывали сам мини-апп.
+  if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
 }
 
 initSettings();
