@@ -49,15 +49,22 @@ async def lifespan(app: FastAPI):
         log.warning("embedder warmup failed: %s", exc)
     settings = get_settings()
     if settings.public_url and settings.telegram_bot_token:
-        try:
-            import asyncio
-            res = await asyncio.wait_for(configure_webhook(settings.public_url, settings.telegram_webhook_secret), timeout=10)
-            log.info("Telegram webhook configured: %s", res)
-            await asyncio.wait_for(set_menu_button(settings.public_url), timeout=10)
-        except asyncio.TimeoutError:
-            log.warning("Webhook configuration timed out (network issue)")
-        except Exception as exc:  # noqa: BLE001
-            log.warning("Не удалось настроить webhook/menu: %s", exc)
+        import asyncio
+        for attempt in range(5):
+            try:
+                res = await asyncio.wait_for(configure_webhook(settings.public_url, settings.telegram_webhook_secret), timeout=10)
+                if res.get("skipped"):
+                    log.info("Webhook already correct, skipping")
+                else:
+                    log.info("Telegram webhook configured: %s", res)
+                await asyncio.wait_for(set_menu_button(settings.public_url), timeout=10)
+                break
+            except asyncio.TimeoutError:
+                log.warning("Webhook attempt %d/5 timed out", attempt + 1)
+            except Exception as exc:
+                log.warning("Не удалось настроить webhook/menu (попытка %d/5): %s", attempt + 1, exc)
+            if attempt < 4:
+                await asyncio.sleep(5)
     yield
 
 

@@ -34,7 +34,7 @@ def _safe_error_body(exc: httpx.HTTPStatusError) -> dict[str, Any]:
 
 
 async def ask_llm(messages: list[dict[str, str]], max_tokens: int | None = None, temperature: float | None = None) -> str:
-    """Универсальный клиент: OpenRouter или Gemini."""
+    """Универсальный клиент: OpenRouter, Gemini или Anthropic."""
     settings = get_settings()
 
     if not settings.llm_api_key:
@@ -43,6 +43,8 @@ async def ask_llm(messages: list[dict[str, str]], max_tokens: int | None = None,
 
     if settings.llm_provider == "gemini":
         return await _ask_gemini(messages, max_tokens, temperature)
+    if settings.llm_provider == "anthropic":
+        return await _ask_anthropic(messages, max_tokens, temperature)
     return await _ask_openrouter(messages, max_tokens, temperature)
 
 
@@ -161,3 +163,69 @@ async def _ask_gemini(messages: list[dict[str, str]], max_tokens: int | None, te
             log.error("Gemini error: %s", exc)
             return "⚠️ Ошибка при работе агента."
     return "⚠️ Не удалось получить ответ от Gemini."
+
+
+async def _ask_anthropic(messages: list[dict[str, str]], max_tokens: int | None, temperature: float | None) -> str:
+    """Anthropic Claude API."""
+    settings = get_settings()
+    url = f"{settings.llm_base_url.rstrip('/')}/messages"
+    headers = {
+        "x-api-key": settings.llm_api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+
+    # Anthropic: system отдельно, messages только user/assistant
+    system_text = ""
+    anthro_messages: list[dict[str, str]] = []
+    for m in messages:
+        role = m.get("role", "user")
+        text = m.get("content") or ""
+        if role == "system":
+            system_text = text
+        elif role in ("user", "assistant"):
+            anthro_messages.append({"role": role, "content": text})
+
+    payload: dict[str, Any] = {
+        "model": settings.llm_model,
+        "max_tokens": max_tokens if max_tokens is not None else settings.llm_max_tokens,
+        "messages": anthro_messages,
+    }
+    if system_text:
+        payload["system"] = system_text
+    if temperature is not None:
+        payload["temperature"] = temperature
+    else:
+        payload["temperature"] = settings.llm_temperature
+
+    client = await _get_client()
+    for attempt in range(3):
+        try:
+            resp = await client.post(url, headers=headers, json=payload)
+            if (resp.status_code == 429 or resp.status_code >= 500) and attempt < 2:
+                wait = (attempt + 1) * 3
+                log.warning("Anthropic HTTP %s, retry in %ds (attempt %d)", resp.status_code, wait, attempt + 1)
+                await asyncio.sleep(wait)
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            content_blocks = data.get("content", [])
+            for block in content_blocks:
+                if block.get("type") == "text":
+                    return (block.get("text") or "").strip()
+            log.warning("Unexpected Anthropic response: %s", data)
+            return "⚠️ Агент получил пустой ответ."
+        except httpx.HTTPStatusError as exc:
+            log.error("Anthropic HTTP %s: %s", exc.response.status_code, exc.response.text)
+            if exc.response.status_code == 401:
+                return "⚠️ Ошибка авторизации Anthropic. Проверь API-ключ."
+            if exc.response.status_code == 429:
+                return "⏳ Лимит запросов Anthropic исчерпан."
+            return f"⚠️ Ошибка Anthropic (HTTP {exc.response.status_code})."
+        except httpx.RequestError as exc:
+            log.error("Anthropic request error: %s", exc)
+            return "⚠️ Не удалось связаться с Anthropic."
+        except Exception as exc:
+            log.error("Anthropic error: %s", exc)
+            return "⚠️ Ошибка при работе агента."
+    return "⚠️ Не удалось получить ответ от Anthropic."

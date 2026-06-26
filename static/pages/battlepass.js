@@ -1,4 +1,4 @@
-import { get, post } from "/static/api.js?v=219";
+import { get, post } from "/static/api.js?v=224";
 
 var _bpRoot = null;
 var _bpData = null;
@@ -173,12 +173,12 @@ function _renderBP(data) {
     }
   })();
 
-  // Auto-scroll only on first render
+  // Scroll to top on first render
   if (!_bpRoot._bpScrolled) {
     _bpRoot._bpScrolled = true;
     requestAnimationFrame(function() {
-      var el = document.getElementById("bp-lvl-" + (currentLevel + 1));
-      if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+      var v = document.getElementById("view");
+      if (v) v.scrollTo({ top: 0, behavior: "auto" });
     });
   }
 

@@ -370,3 +370,24 @@ class LootboxPoolEntry(Base):
 
     pool: Mapped["LootboxPool"] = relationship("LootboxPool", back_populates="entries")
     item: Mapped["Item"] = relationship("Item")
+
+
+class ClickerState(Base):
+    """Состояние кликера для каждого пользователя."""
+    __tablename__ = "clicker_states"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False)
+
+    # Уровни апгрейдов (0 = не куплен)
+    lvl_click: Mapped[int] = mapped_column(Integer, default=0)      # сила клика
+    lvl_passive: Mapped[int] = mapped_column(Integer, default=0)    # пассивный доход
+    lvl_energy: Mapped[int] = mapped_column(Integer, default=0)     # макс энергия
+    lvl_crit: Mapped[int] = mapped_column(Integer, default=0)       # крит шанс
+    lvl_regen: Mapped[int] = mapped_column(Integer, default=0)      # скорость регена
+
+    # Энергия — хранится как float чтобы аккуратно считать реген
+    energy: Mapped[float] = mapped_column(default=100.0)
+    last_sync: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    user: Mapped["User"] = relationship("User")

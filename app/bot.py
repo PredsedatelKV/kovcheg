@@ -364,6 +364,12 @@ async def feed_update(payload: dict[str, Any]) -> None:
 async def configure_webhook(public_url: str, secret: str) -> dict:
     bot = get_bot()
     webhook_url = f"{public_url.rstrip('/')}/telegram/webhook/{secret}"
+    try:
+        info = await bot.get_webhook_info()
+        if info.url == webhook_url:
+            return {"webhook_url": webhook_url, "ok": True, "skipped": True}
+    except Exception:
+        pass
     info = await bot.set_webhook(webhook_url, drop_pending_updates=True)
     return {"webhook_url": webhook_url, "ok": bool(info)}
 
@@ -372,4 +378,7 @@ async def set_menu_button(public_url: str) -> None:
     from aiogram.types import MenuButtonWebApp
 
     bot = get_bot()
-    await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="Ковчег", web_app=WebAppInfo(url=public_url)))
+    try:
+        await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="Ковчег", web_app=WebAppInfo(url=public_url)))
+    except Exception:
+        pass

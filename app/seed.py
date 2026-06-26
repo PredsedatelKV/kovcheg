@@ -615,3 +615,21 @@ def seed(db: Session) -> None:
                 db.add(models.UserBattlePass(user_id=user.id, season_id=season.id))
 
     seed_wheel_prizes(db)
+
+    # clicker_states — таблица кликера
+    existing_tables = {row[0] for row in db.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
+    if "clicker_states" not in existing_tables:
+        db.execute(text("""
+            CREATE TABLE clicker_states (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+                lvl_click INTEGER NOT NULL DEFAULT 0,
+                lvl_passive INTEGER NOT NULL DEFAULT 0,
+                lvl_energy INTEGER NOT NULL DEFAULT 0,
+                lvl_crit INTEGER NOT NULL DEFAULT 0,
+                lvl_regen INTEGER NOT NULL DEFAULT 0,
+                energy REAL NOT NULL DEFAULT 100.0,
+                last_sync DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        db.commit()
