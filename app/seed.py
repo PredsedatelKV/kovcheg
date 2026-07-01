@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import models
@@ -127,6 +128,29 @@ def migrate_schema(db: Session) -> None:
     if gcols and "state" not in gcols:
         db.execute(text("ALTER TABLE game_sessions ADD COLUMN state TEXT"))
         db.commit()
+
+    # clicker_states — новые поля: прогресс/ранги, бусты и анти-фрод (доработка кликера)
+    cc = {row[1] for row in db.execute(text("PRAGMA table_info(clicker_states)")).fetchall()}
+    if cc:
+        clicker_new_cols = [
+            ("total_earned", "INTEGER NOT NULL DEFAULT 0"),
+            ("tap_tokens", "REAL NOT NULL DEFAULT 45.0"),
+            ("suspicion", "INTEGER NOT NULL DEFAULT 0"),
+            ("locked_until", "DATETIME"),
+            ("turbo_until", "DATETIME"),
+            ("passive_boost_until", "DATETIME"),
+            ("boost_date", "VARCHAR(16) NOT NULL DEFAULT ''"),
+            ("turbo_used", "INTEGER NOT NULL DEFAULT 0"),
+            ("refill_used", "INTEGER NOT NULL DEFAULT 0"),
+            ("passboost_used", "INTEGER NOT NULL DEFAULT 0"),
+        ]
+        added = False
+        for col, ddl in clicker_new_cols:
+            if col not in cc:
+                db.execute(text(f"ALTER TABLE clicker_states ADD COLUMN {col} {ddl}"))
+                added = True
+        if added:
+            db.commit()
 
     # Бэкфилл: награды Battle Pass с kind='lootbox' исторически создавались без item_code,
     # из-за чего их клейм ничего не выдавал. Восстанавливаем код предмета из имени иконки

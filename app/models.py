@@ -390,4 +390,20 @@ class ClickerState(Base):
     energy: Mapped[float] = mapped_column(default=100.0)
     last_sync: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
+    # Прогресс игрока
+    total_earned: Mapped[int] = mapped_column(Integer, default=0)   # суммарно заработано в кликере (уровни/ранги)
+
+    # Анти-фрод (защита от автокликера): token-bucket + счётчик подозрительности
+    tap_tokens: Mapped[float] = mapped_column(default=45.0)          # «токены» тапов, копятся со скоростью человека
+    suspicion: Mapped[int] = mapped_column(Integer, default=0)       # накопленная подозрительность
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # временная блокировка тапов
+
+    # Активные бусты (с дневным лимитом)
+    turbo_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)          # турбо-режим до
+    passive_boost_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # ускорение пассива до
+    boost_date: Mapped[str] = mapped_column(String(16), default="")  # дата (UTC) для сброса дневных лимитов
+    turbo_used: Mapped[int] = mapped_column(Integer, default=0)
+    refill_used: Mapped[int] = mapped_column(Integer, default=0)
+    passboost_used: Mapped[int] = mapped_column(Integer, default=0)
+
     user: Mapped["User"] = relationship("User")

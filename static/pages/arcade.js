@@ -1382,6 +1382,393 @@ function gameDice() {
   });
 }
 
+function gameClicker() {
+  let st = null;
+  let pendingTaps = 0;
+  let tapTimer = null;
+  let energyTimer = null;
+  let pollTimer = null;
+  let destroyed = false;
+  let lastSyncEnergy = 0;
+  let lastSyncTime = 0;
+  let turboUntil = 0;        // ms-таймстамп конца турбо (клиентский)
+  let passiveUntil = 0;      // ms-таймстамп конца буста пассива
+  let lockedUntil = 0;       // ms-таймстамп конца блокировки анти-фрода
+
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Ковчег-Кликер</h2>
+    <p class="card-sub">Тапай монету и зарабатывай Ковбаксы!</p>
+    <div class="clicker-level">
+      <div class="clicker-level-head">
+        <span class="clicker-rank" id="clicker-rank">Юнга</span>
+        <span class="clicker-lvl" id="clicker-lvl">Ур. 0</span>
+      </div>
+      <div class="clicker-level-bar"><div class="clicker-level-fill" id="clicker-level-fill"></div></div>
+    </div>
+    <div class="clicker-stats">
+      <div class="clicker-balance">
+        <img src="/static/img/ui/coin.svg" alt="" class="game-icon-sm"/>
+        <strong id="clicker-balance">0</strong>
+      </div>
+      <div class="clicker-passive" id="clicker-passive-info">💤 0/мин</div>
+    </div>
+    <div class="clicker-energy-bar">
+      <div class="clicker-energy-fill" id="clicker-energy-fill"></div>
+      <span class="clicker-energy-text" id="clicker-energy-text">0 / 100</span>
+    </div>
+    <div class="clicker-coin-wrapper">
+      <button class="clicker-coin" id="clicker-coin">
+        <img src="/static/img/ui/coin.svg" alt="tap" />
+        <div class="clicker-coin-power" id="clicker-power">+1</div>
+      </button>
+      <div class="clicker-floats" id="clicker-floats"></div>
+      <div class="clicker-lock" id="clicker-lock" hidden>🚫<br><span id="clicker-lock-text"></span></div>
+    </div>
+    <div class="clicker-boosts" id="clicker-boosts"></div>
+    <h3 class="clicker-shop-title">Улучшения</h3>
+    <div class="clicker-upgrades" id="clicker-upgrades"></div>
+  `);
+
+  const elBalance = modal.querySelector("#clicker-balance");
+  const elEnergyFill = modal.querySelector("#clicker-energy-fill");
+  const elEnergyText = modal.querySelector("#clicker-energy-text");
+  const elCoin = modal.querySelector("#clicker-coin");
+  const elPower = modal.querySelector("#clicker-power");
+  const elFloats = modal.querySelector("#clicker-floats");
+  const elUpgrades = modal.querySelector("#clicker-upgrades");
+  const elPassiveInfo = modal.querySelector("#clicker-passive-info");
+  const elBoosts = modal.querySelector("#clicker-boosts");
+  const elRank = modal.querySelector("#clicker-rank");
+  const elLvl = modal.querySelector("#clicker-lvl");
+  const elLevelFill = modal.querySelector("#clicker-level-fill");
+  const elLock = modal.querySelector("#clicker-lock");
+  const elLockText = modal.querySelector("#clicker-lock-text");
+  const elCoinWrap = modal.querySelector(".clicker-coin-wrapper");
+
+  function fmt(n) { return Math.floor(n).toLocaleString("ru-RU"); }
+  function now() { return Date.now(); }
+  function turboActive() { return now() < turboUntil; }
+  function passiveActive() { return now() < passiveUntil; }
+  function lockedActive() { return now() < lockedUntil; }
+
+  function showFloat(text, x, y, isCrit) {
+    const f = document.createElement("div");
+    f.className = "clicker-float" + (isCrit ? " clicker-float-crit" : "");
+    f.textContent = text;
+    f.style.left = x + "px";
+    f.style.top = y + "px";
+    elFloats.appendChild(f);
+    setTimeout(() => f.remove(), 800);
+  }
+
+  function getCurrentEnergy() {
+    if (!st) return 0;
+    const elapsed = (Date.now() - lastSyncTime) / 1000;
+    return Math.min(st.max_energy, lastSyncEnergy + st.regen_per_sec * elapsed);
+  }
+
+  function updateEnergyBar() {
+    if (!st || destroyed) return;
+    const e = getCurrentEnergy();
+    const pct = (e / st.max_energy) * 100;
+    elEnergyFill.style.width = pct + "%";
+    if (turboActive()) {
+      elEnergyText.textContent = "ТУРБО ⚡ x" + (st.boosts && st.boosts.turbo ? st.boosts.turbo.mult : 7);
+    } else {
+      elEnergyText.textContent = Math.floor(e) + " / " + st.max_energy;
+    }
+    const usable = turboActive() || e >= 1;
+    elCoin.classList.toggle("clicker-coin-disabled", !usable && !lockedActive());
+  }
+
+  function updateLevel() {
+    if (!st) return;
+    elRank.textContent = st.rank || "Юнга";
+    elLvl.textContent = "Ур. " + (st.level || 0);
+    const span = Math.max(1, (st.level_next || 1) - (st.level_floor || 0));
+    const prog = Math.max(0, Math.min(1, ((st.total_earned || 0) - (st.level_floor || 0)) / span));
+    elLevelFill.style.width = (prog * 100).toFixed(1) + "%";
+  }
+
+  function updateCoinFx() {
+    elCoin.classList.toggle("clicker-coin-turbo", turboActive());
+  }
+
+  function updateLockUI() {
+    if (lockedActive()) {
+      const left = Math.ceil((lockedUntil - now()) / 1000);
+      elLock.hidden = false;
+      elLockText.textContent = "Подозрительная активность.\nПауза " + left + " сек";
+    } else {
+      elLock.hidden = true;
+    }
+  }
+
+  // ---------- Бусты ----------
+  const BOOST_INFO = {
+    turbo:   { name: "Турбо", icon: "🚀", desc: "x7 за тап, без энергии" },
+    refill:  { name: "Заправка", icon: "🔋", desc: "полная энергия" },
+    passive: { name: "Пассив x2", icon: "💰", desc: "×2 доход, 4 ч" },
+  };
+
+  function renderBoosts() {
+    if (!st || !st.boosts) return;
+    elBoosts.innerHTML = Object.keys(BOOST_INFO).map(key => {
+      const info = BOOST_INFO[key];
+      const b = st.boosts[key] || {};
+      const active = (key === "turbo" && turboActive()) || (key === "passive" && passiveActive());
+      const left = b.uses_left != null ? b.uses_left : 0;
+      const disabled = left <= 0 || active;
+      let badge;
+      if (active) {
+        badge = `<span class="clicker-boost-timer" data-timer="${key}">…</span>`;
+      } else {
+        badge = `<span class="clicker-boost-left">${left}/${b.daily || 0}</span>`;
+      }
+      return `
+        <button class="clicker-boost ${active ? "active" : ""} ${disabled ? "disabled" : ""}" data-boost="${key}" ${disabled ? "disabled" : ""}>
+          <span class="clicker-boost-icon">${info.icon}</span>
+          <span class="clicker-boost-name">${info.name}</span>
+          <span class="clicker-boost-desc">${info.desc}</span>
+          ${badge}
+        </button>
+      `;
+    }).join("");
+
+    elBoosts.querySelectorAll(".clicker-boost:not([disabled])").forEach(btn => {
+      btn.addEventListener("click", () => activateBoost(btn.dataset.boost));
+    });
+  }
+
+  function updateBoostTimers() {
+    elBoosts.querySelectorAll("[data-timer]").forEach(el => {
+      const key = el.dataset.timer;
+      const end = key === "turbo" ? turboUntil : passiveUntil;
+      const left = Math.max(0, Math.ceil((end - now()) / 1000));
+      el.textContent = left + "с";
+      if (left <= 0) renderBoosts();
+    });
+  }
+
+  async function activateBoost(key) {
+    if (!st) return;
+    try {
+      const resp = await post("/api/arcade/clicker/boost", { boost: key });
+      applyState(resp);
+      playUISound("cashout");
+      try {
+        if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
+          window.Telegram.WebApp.HapticFeedback.notificationOccurred("success");
+        }
+      } catch (_) {}
+      if (key === "refill") {
+        const cx = (elCoinWrap.offsetWidth || 200) / 2;
+        showFloat("Энергия полная!", cx, 30, false);
+      }
+    } catch (e) {
+      const msg = String((e && e.message) || e || "");
+      window.kov && window.kov.toast ? window.kov.toast(msg || "Не удалось") : null;
+    }
+  }
+
+  const UPGRADE_INFO = {
+    click:   { name: "Сила клика", icon: "⚔️", desc: "+1 к силе клика" },
+    passive: { name: "Пассивный доход", icon: "💰", desc: "+0.5 К/мин" },
+    energy:  { name: "Макс. энергия", icon: "🔋", desc: "+50 к максимуму" },
+    crit:    { name: "Крит шанс", icon: "🎯", desc: "+3% крит (x10)" },
+    regen:   { name: "Реген энергии", icon: "⚡", desc: "+0.5/сек реген" },
+  };
+
+  function renderUpgrades() {
+    if (!st) return;
+    elUpgrades.innerHTML = Object.keys(UPGRADE_INFO).map(key => {
+      const info = UPGRADE_INFO[key];
+      const lvl = st.levels[key];
+      const cost = st.upgrade_costs[key];
+      const maxed = lvl >= st.max_level;
+      const canAfford = st.balance >= cost;
+      return `
+        <div class="clicker-upgrade ${maxed ? "maxed" : ""} ${!canAfford && !maxed ? "disabled" : ""}" data-upgrade="${key}">
+          <div class="clicker-upgrade-icon">${info.icon}</div>
+          <div class="clicker-upgrade-info">
+            <div class="clicker-upgrade-name">${info.name}</div>
+            <div class="clicker-upgrade-desc">${info.desc}</div>
+            <div class="clicker-upgrade-lvl">Ур. ${lvl}${maxed ? " (МАКС)" : ""}</div>
+          </div>
+          <div class="clicker-upgrade-buy">
+            ${maxed
+              ? '<span class="clicker-max">МАКС</span>'
+              : `<span class="clicker-cost"><img src="/static/img/ui/coin.svg" class="game-icon-sm"/> ${fmt(cost)}</span><button class="btn btn-sm ${canAfford ? "" : "btn-disabled"}">Купить</button>`}
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    elUpgrades.querySelectorAll(".clicker-upgrade:not(.maxed)").forEach(card => {
+      card.addEventListener("click", async () => {
+        if (card.classList.contains("disabled")) return;
+        const key = card.dataset.upgrade;
+        try {
+          const resp = await post("/api/arcade/clicker/upgrade", { upgrade: key });
+          st.balance = resp.balance;
+          st.levels[key] = resp.new_level;
+          st.upgrade_costs[key] = resp.next_cost;
+          st.click_power = resp.click_power;
+          st.max_energy = resp.max_energy;
+          st.passive_per_min = resp.passive_per_min;
+          st.crit_chance = resp.crit_chance;
+          st.regen_per_sec = resp.regen_per_sec;
+          elBalance.textContent = fmt(st.balance);
+          elPower.textContent = "+" + st.click_power;
+          elPassiveInfo.textContent = "💤 " + st.passive_per_min + "/мин" + (passiveActive() ? " ×2" : "");
+          renderUpgrades();
+          playUISound("cashout");
+        } catch (e) {
+          const errStr = String((e && e.message) || e || "");
+          if (errStr.includes("Недостаточно")) {
+            card.style.animation = "shake 0.3s";
+            setTimeout(() => card.style.animation = "", 300);
+          }
+        }
+      });
+    });
+  }
+
+  // Применить снимок состояния (state/boost/tap-ответы могут содержать разные поля)
+  function applyState(s) {
+    if (!s) return;
+    st = Object.assign(st || {}, s);
+    if (s.boosts) {
+      turboUntil = s.boosts.turbo && s.boosts.turbo.active ? now() + s.boosts.turbo.left_sec * 1000 : 0;
+      passiveUntil = s.boosts.passive && s.boosts.passive.active ? now() + s.boosts.passive.left_sec * 1000 : 0;
+    }
+    if (s.locked) lockedUntil = now() + (s.locked_left || s.locked_left === 0 ? s.locked_left : 0) * 1000;
+    else if (s.locked === false) lockedUntil = 0;
+    if (s.energy != null) { lastSyncEnergy = s.energy; lastSyncTime = Date.now(); }
+    elBalance.textContent = fmt(st.balance || 0);
+    elPower.textContent = "+" + (st.click_power || 1);
+    elPassiveInfo.textContent = "💤 " + (st.passive_per_min || 0) + "/мин" + (passiveActive() ? " ×2" : "");
+    updateEnergyBar();
+    updateLevel();
+    updateCoinFx();
+    updateLockUI();
+    renderBoosts();
+    renderUpgrades();
+  }
+
+  async function loadState() {
+    try {
+      const s = await get("/api/arcade/clicker/state");
+      applyState(s);
+      if (s.passive_earned > 0) {
+        const cx = (elCoinWrap.offsetWidth || 200) / 2;
+        showFloat("+" + s.passive_earned + " пассив", cx, 20, false);
+      }
+    } catch (e) {
+      modal.querySelector(".card-sub").textContent = "Ошибка загрузки: " + (e.message || "");
+    }
+  }
+
+  async function flushTaps() {
+    if (pendingTaps <= 0 || !st || destroyed) return;
+    const batch = pendingTaps;
+    pendingTaps = 0;
+    try {
+      const resp = await post("/api/arcade/clicker/tap", { taps: batch });
+      st.balance = resp.balance;
+      st.energy = resp.energy;
+      st.max_energy = resp.max_energy;
+      st.total_earned = resp.total_earned != null ? resp.total_earned : st.total_earned;
+      lastSyncEnergy = resp.energy;
+      lastSyncTime = Date.now();
+      if (resp.locked) {
+        lockedUntil = now() + (resp.locked_left || 0) * 1000;
+        updateLockUI();
+      }
+      elBalance.textContent = fmt(st.balance);
+      updateEnergyBar();
+      updateLevel();
+    } catch (_) {}
+  }
+
+  elCoin.addEventListener("click", (e) => {
+    if (!st || destroyed) return;
+    if (lockedActive()) {
+      elCoin.style.animation = "shake 0.2s";
+      setTimeout(() => elCoin.style.animation = "", 200);
+      return;
+    }
+    const turbo = turboActive();
+    const currentEnergy = getCurrentEnergy();
+    if (!turbo && currentEnergy < 1) {
+      elCoin.style.animation = "shake 0.2s";
+      setTimeout(() => elCoin.style.animation = "", 200);
+      return;
+    }
+    if (!turbo) {
+      lastSyncEnergy = currentEnergy - 1;
+      lastSyncTime = Date.now();
+    }
+
+    // Visual feedback
+    const wrapperRect = elFloats.getBoundingClientRect();
+    const x = e.clientX - wrapperRect.left;
+    const y = e.clientY - wrapperRect.top - 20;
+    const mult = turbo ? (st.boosts && st.boosts.turbo ? st.boosts.turbo.mult : 7) : 1;
+    const isCrit = Math.random() < (st.crit_chance / 100);
+    const earned = (isCrit ? st.click_power * 10 : st.click_power) * mult;
+    showFloat((isCrit ? "КРИТ! +" : "+") + earned, x, y, isCrit || turbo);
+
+    elCoin.style.transform = "scale(0.93)";
+    setTimeout(() => { if (!destroyed) elCoin.style.transform = ""; }, 100);
+    playUISound("click");
+
+    // Haptic feedback (Telegram WebApp)
+    try {
+      if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
+        window.Telegram.WebApp.HapticFeedback.impactOccurred(isCrit || turbo ? "medium" : "light");
+      }
+    } catch (_) {}
+
+    // Batch taps
+    pendingTaps++;
+    if (tapTimer) clearTimeout(tapTimer);
+    tapTimer = setTimeout(flushTaps, 400);
+  });
+
+  // Тики: энергия/таймеры бустов/блокировка
+  energyTimer = setInterval(() => {
+    if (destroyed) return;
+    updateEnergyBar();
+    updateCoinFx();
+    updateBoostTimers();
+    updateLockUI();
+  }, 250);
+
+  // Периодическая подсинхронизация с сервером (пассив, таймеры)
+  pollTimer = setInterval(() => {
+    if (destroyed || pendingTaps > 0) return;
+    loadState();
+  }, 15000);
+
+  registerGameCleanup(() => {
+    clearInterval(energyTimer);
+    clearInterval(pollTimer);
+    if (tapTimer) clearTimeout(tapTimer);
+    // Flush remaining taps before destroying
+    if (pendingTaps > 0) {
+      const batch = pendingTaps;
+      pendingTaps = 0;
+      post("/api/arcade/clicker/tap", { taps: batch }).catch(() => {});
+    }
+    destroyed = true;
+  });
+
+  loadState();
+}
+
+
 // ============ RENDER ============
 
 export async function renderArcade(root) {
@@ -1398,6 +1785,15 @@ export async function renderArcade(root) {
       </div>
       <div class="hero-art" title="Аркада"><img src="/static/img/tabs/arcade.svg" alt="Аркада" class="hero-img"/></div>
     </section>
+
+    <h2 class="section-title">Кликер</h2>
+    <div class="game-grid">
+      <div class="game-tile" data-game="clicker" style="grid-column: 1 / -1">
+        <div class="game-tile-icon"><img src="/static/img/ui/coin.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-title">Ковчег-Кликер</div>
+        <div class="game-tile-desc">Тапай монету, прокачивайся</div>
+      </div>
+    </div>
 
     <h2 class="section-title">Мини-игры</h2>
     
@@ -1470,6 +1866,7 @@ export async function renderArcade(root) {
     rocket: gameRocket,
     dice: gameDice,
     roulette: gameRoulette,
+    clicker: gameClicker,
   };
   
   root.querySelectorAll(".game-tile").forEach((tile) => {
