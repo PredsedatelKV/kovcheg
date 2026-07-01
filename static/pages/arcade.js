@@ -1755,9 +1755,10 @@ function gameClicker() {
   }
 
   async function flushTaps() {
+    if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
     if (pendingTaps <= 0 || !st || destroyed) return;
-    const batch = pendingTaps;
-    pendingTaps = 0;
+    const batch = Math.min(pendingTaps, 200);
+    pendingTaps -= batch;
     try {
       const resp = await post("/api/arcade/clicker/tap", { taps: batch });
       st.kovcoins = resp.kovcoins != null ? resp.kovcoins : resp.balance;
@@ -1825,10 +1826,13 @@ function gameClicker() {
       }
     } catch (_) {}
 
-    // Batch taps
+    // Batch taps — периодический сброс маленькими пачками (не копим в одну большую)
     pendingTaps++;
-    if (tapTimer) clearTimeout(tapTimer);
-    tapTimer = setTimeout(flushTaps, 400);
+    if (pendingTaps >= 20) {
+      flushTaps();
+    } else if (!tapTimer) {
+      tapTimer = setTimeout(flushTaps, 300);
+    }
   });
 
   // Тики: энергия/таймеры бустов/блокировка

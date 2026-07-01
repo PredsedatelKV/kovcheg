@@ -154,14 +154,13 @@ CLICKER_BOOST_USED_ATTR = {
     "passive": "passboost_used",
 }
 
-# --- Анти-фрод (защита от автокликера) ---
-# Экономику ограничивает энергия, а token-bucket не даёт засчитать тапы быстрее,
-# чем это физически способен сделать человек. Слишком «нечеловеческий» темп копит
-# подозрительность и приводит к временной блокировке тапов.
-CLICKER_MAX_CPS = 15              # максимально «человеческая» скорость тапов (в сек)
-CLICKER_TOKEN_BURST = 45          # ёмкость bucket-а (запас на короткий всплеск)
-CLICKER_SUSPICION_LOCK = 12       # порог подозрительности → блокировка
-CLICKER_LOCK_SECONDS = 120        # длительность блокировки тапов
+# --- Анти-фрод (защита от автокликера), мягкий ---
+# Защита неблокирующая: token-bucket просто НЕ ЗАСЧИТЫВАЕТ тапы быстрее «человеческого»
+# темпа (лишние тапы за пачку отбрасываются). Живому игроку это не мешает — он и так
+# не тапает быстрее, а автокликер не получает никакого преимущества: заработок сверх
+# лимита скорости + энергии + дневного потолка просто невозможен. Никаких банов/пауз.
+CLICKER_MAX_CPS = 20              # максимально «человеческая» скорость тапов (в сек)
+CLICKER_TOKEN_BURST = 80          # ёмкость bucket-а (щедрый запас на всплеск/паузу)
 
 # Ранги по суммарному заработку
 CLICKER_RANKS = [
@@ -334,7 +333,12 @@ def _clicker_payload(state, wallet, now, passive_earned=0):
     lvl, rank, cur_floor, next_floor = _clicker_level(state.total_earned)
     turbo_active = _boost_active(state.turbo_until, now)
     passive_active = _boost_active(state.passive_boost_until, now)
-    locked = _boost_active(state.locked_until, now)
+    # Блокировки отключены (мягкий анти-фрод). Гасим возможные старые блокировки.
+    if state.locked_until is not None:
+        state.locked_until = None
+    if state.suspicion:
+        state.suspicion = 0
+    locked = False
     cap = _clicker_daily_cap(state)
     earned_today = state.earned_today or 0
 
@@ -415,15 +419,16 @@ def clicker_tap(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Пачка тапов — списывает энергию, начисляет монеты (крит/турбо), анти-фрод по CPS."""
-    if taps <= 0 or taps > 200:
+    """Пачка тапов — списывает энергию, начисляет ковкойны (крит/турбо).
+    Мягкий анти-фрод: лишние тапы сверх «человеческого» темпа просто не засчитываются."""
+    if taps <= 0 or taps > 500:
         raise HTTPException(status_code=400, detail="Некорректное количество тапов")
 
     state = _get_or_create_clicker_state(db, user)
     _sync_clicker(db, state, user)
     now = models.now_utc()
 
-    def _tap_result(coins, actual, crits, turbo, mult, locked, locked_now, cap_reached):
+    def _tap_result(coins, actual, crits, turbo, mult, cap_reached):
         return {
             "coins_earned": coins,
             "taps_processed": actual,
@@ -434,8 +439,8 @@ def clicker_tap(
             "balance": state.kovcoins or 0,
             "turbo": turbo,
             "mult": mult,
-            "locked": locked or locked_now,
-            "locked_left": int((state.locked_until - now).total_seconds()) if _boost_active(state.locked_until, now) else 0,
+            "locked": False,
+            "locked_left": 0,
             "total_earned": state.total_earned or 0,
             "daily_cap": _clicker_daily_cap(state),
             "earned_today": state.earned_today or 0,
@@ -443,36 +448,17 @@ def clicker_tap(
             "cap_reached": cap_reached,
         }
 
-    # Анти-фрод: активная блокировка — тапы не засчитываются
-    if _boost_active(state.locked_until, now):
-        db.commit()
-        return _tap_result(0, 0, 0, _boost_active(state.turbo_until, now), 1, True, False, False)
-
     # Дневной лимит достигнут — не тратим энергию, просто сообщаем
     if (state.earned_today or 0) >= _clicker_daily_cap(state):
         db.commit()
-        return _tap_result(0, 0, 0, _boost_active(state.turbo_until, now), 1, False, False, True)
+        return _tap_result(0, 0, 0, _boost_active(state.turbo_until, now), 1, True)
 
     turbo = _boost_active(state.turbo_until, now)
     tokens = int(state.tap_tokens or 0)
-    # В турбо энергия не тратится
+    # В турбо энергия не тратится. Мягкий клэмп: не быстрее человеческого темпа.
     energy_limit = taps if turbo else int(state.energy / CLICKER_TAP_ENERGY_COST)
-    allowed = max(0, min(taps, tokens, energy_limit))
+    actual = max(0, min(taps, tokens, energy_limit))
 
-    # Подозрительность: клиент заявил ощутимо больше тапов, чем позволяет «человеческий» темп
-    if taps > tokens + 5:
-        state.suspicion = (state.suspicion or 0) + 1
-    else:
-        state.suspicion = max(0, (state.suspicion or 0) - 1)
-
-    locked_now = False
-    if state.suspicion >= CLICKER_SUSPICION_LOCK:
-        state.locked_until = now + timedelta(seconds=CLICKER_LOCK_SECONDS)
-        state.suspicion = 0
-        allowed = 0
-        locked_now = True
-
-    actual = allowed
     state.tap_tokens = max(0.0, (state.tap_tokens or 0.0) - actual)
     if not turbo:
         state.energy = max(0.0, state.energy - actual * CLICKER_TAP_ENERGY_COST)
@@ -493,7 +479,7 @@ def clicker_tap(
     cap_reached = (state.earned_today or 0) >= _clicker_daily_cap(state)
     db.commit()
 
-    return _tap_result(coins, actual, crits, turbo, mult, False, locked_now, cap_reached)
+    return _tap_result(coins, actual, crits, turbo, mult, cap_reached)
 
 
 @router.post("/clicker/boost")
