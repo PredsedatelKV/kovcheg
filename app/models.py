@@ -390,6 +390,10 @@ class ClickerState(Base):
     energy: Mapped[float] = mapped_column(default=100.0)
     last_sync: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
+    # Внутриигровая валюта — ковкойны (в ковбаксы выводятся отдельно)
+    kovcoins: Mapped[int] = mapped_column(Integer, default=1)       # текущий баланс ковкойнов
+    earned_today: Mapped[int] = mapped_column(Integer, default=0)   # заработано за текущие сутки (дневной лимит)
+
     # Прогресс игрока
     total_earned: Mapped[int] = mapped_column(Integer, default=0)   # суммарно заработано в кликере (уровни/ранги)
 

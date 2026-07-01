@@ -133,6 +133,8 @@ def migrate_schema(db: Session) -> None:
     cc = {row[1] for row in db.execute(text("PRAGMA table_info(clicker_states)")).fetchall()}
     if cc:
         clicker_new_cols = [
+            ("kovcoins", "INTEGER NOT NULL DEFAULT 1"),
+            ("earned_today", "INTEGER NOT NULL DEFAULT 0"),
             ("total_earned", "INTEGER NOT NULL DEFAULT 0"),
             ("tap_tokens", "REAL NOT NULL DEFAULT 45.0"),
             ("suspicion", "INTEGER NOT NULL DEFAULT 0"),

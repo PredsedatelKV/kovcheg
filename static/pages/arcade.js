@@ -1395,10 +1395,11 @@ function gameClicker() {
   let passiveUntil = 0;      // ms-таймстамп конца буста пассива
   let lockedUntil = 0;       // ms-таймстамп конца блокировки анти-фрода
 
+  const COIN = "/static/img/ui/kovcoin.svg";
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <h2>Ковчег-Кликер</h2>
-    <p class="card-sub">Тапай монету и зарабатывай Ковбаксы!</p>
+    <p class="card-sub">Тапай и зарабатывай ковкойны, выводи в ковбаксы!</p>
     <div class="clicker-level">
       <div class="clicker-level-head">
         <span class="clicker-rank" id="clicker-rank">Юнга</span>
@@ -1408,10 +1409,18 @@ function gameClicker() {
     </div>
     <div class="clicker-stats">
       <div class="clicker-balance">
-        <img src="/static/img/ui/coin.svg" alt="" class="game-icon-sm"/>
+        <img src="${COIN}" alt="" class="game-icon-sm"/>
         <strong id="clicker-balance">0</strong>
+        <span class="clicker-cur">ковкойнов</span>
       </div>
       <div class="clicker-passive" id="clicker-passive-info">💤 0/мин</div>
+    </div>
+    <div class="clicker-daily" id="clicker-daily">
+      <div class="clicker-daily-head">
+        <span>Дневной лимит</span>
+        <span id="clicker-daily-text">0 / 0</span>
+      </div>
+      <div class="clicker-daily-bar"><div class="clicker-daily-fill" id="clicker-daily-fill"></div></div>
     </div>
     <div class="clicker-energy-bar">
       <div class="clicker-energy-fill" id="clicker-energy-fill"></div>
@@ -1419,14 +1428,21 @@ function gameClicker() {
     </div>
     <div class="clicker-coin-wrapper">
       <button class="clicker-coin" id="clicker-coin">
-        <img src="/static/img/ui/coin.svg" alt="tap" />
+        <img src="${COIN}" alt="tap" />
         <div class="clicker-coin-power" id="clicker-power">+1</div>
       </button>
       <div class="clicker-floats" id="clicker-floats"></div>
       <div class="clicker-lock" id="clicker-lock" hidden>🚫<br><span id="clicker-lock-text"></span></div>
     </div>
+    <div class="clicker-cashout" id="clicker-cashout">
+      <div class="clicker-cashout-info">
+        <span class="clicker-cashout-rate">100 ковкойнов = 1 ковбакс</span>
+        <span class="clicker-cashout-wallet"><img src="/static/img/ui/coin.svg" class="game-icon-sm"/> <strong id="clicker-wallet">0</strong> ковбаксов</span>
+      </div>
+      <button class="btn clicker-cashout-btn" id="clicker-cashout-btn">Вывести в ковбаксы</button>
+    </div>
     <div class="clicker-boosts" id="clicker-boosts"></div>
-    <h3 class="clicker-shop-title">Улучшения</h3>
+    <h3 class="clicker-shop-title">Улучшения (за ковкойны)</h3>
     <div class="clicker-upgrades" id="clicker-upgrades"></div>
   `);
 
@@ -1445,6 +1461,10 @@ function gameClicker() {
   const elLock = modal.querySelector("#clicker-lock");
   const elLockText = modal.querySelector("#clicker-lock-text");
   const elCoinWrap = modal.querySelector(".clicker-coin-wrapper");
+  const elDailyText = modal.querySelector("#clicker-daily-text");
+  const elDailyFill = modal.querySelector("#clicker-daily-fill");
+  const elWallet = modal.querySelector("#clicker-wallet");
+  const elCashoutBtn = modal.querySelector("#clicker-cashout-btn");
 
   function fmt(n) { return Math.floor(n).toLocaleString("ru-RU"); }
   function now() { return Date.now(); }
@@ -1468,18 +1488,32 @@ function gameClicker() {
     return Math.min(st.max_energy, lastSyncEnergy + st.regen_per_sec * elapsed);
   }
 
+  function capReached() {
+    return !!(st && st.cap_reached);
+  }
+
   function updateEnergyBar() {
     if (!st || destroyed) return;
     const e = getCurrentEnergy();
     const pct = (e / st.max_energy) * 100;
     elEnergyFill.style.width = pct + "%";
     if (turboActive()) {
-      elEnergyText.textContent = "ТУРБО ⚡ x" + (st.boosts && st.boosts.turbo ? st.boosts.turbo.mult : 7);
+      elEnergyText.textContent = "ТУРБО ⚡ x" + (st.boosts && st.boosts.turbo ? st.boosts.turbo.mult : 5);
     } else {
       elEnergyText.textContent = Math.floor(e) + " / " + st.max_energy;
     }
-    const usable = turboActive() || e >= 1;
+    const usable = (turboActive() || e >= 1) && !capReached();
     elCoin.classList.toggle("clicker-coin-disabled", !usable && !lockedActive());
+  }
+
+  function updateDaily() {
+    if (!st) return;
+    const cap = st.daily_cap || 0;
+    const earned = st.earned_today || 0;
+    elDailyText.textContent = fmt(earned) + " / " + fmt(cap);
+    const pct = cap > 0 ? Math.min(100, (earned / cap) * 100) : 0;
+    elDailyFill.style.width = pct.toFixed(1) + "%";
+    elDailyFill.classList.toggle("full", capReached());
   }
 
   function updateLevel() {
@@ -1507,7 +1541,7 @@ function gameClicker() {
 
   // ---------- Бусты ----------
   const BOOST_INFO = {
-    turbo:   { name: "Турбо", icon: "🚀", desc: "x7 за тап, без энергии" },
+    turbo:   { name: "Турбо", icon: "🚀", desc: "x5 за тап, без энергии" },
     refill:  { name: "Заправка", icon: "🔋", desc: "полная энергия" },
     passive: { name: "Пассив x2", icon: "💰", desc: "×2 доход, 4 ч" },
   };
@@ -1572,22 +1606,28 @@ function gameClicker() {
     }
   }
 
+  function powText(p) {
+    const n = Number(p || 0);
+    return Number.isInteger(n) ? String(n) : n.toFixed(1);
+  }
+
   const UPGRADE_INFO = {
-    click:   { name: "Сила клика", icon: "⚔️", desc: "+1 к силе клика" },
-    passive: { name: "Пассивный доход", icon: "💰", desc: "+0.5 К/мин" },
-    energy:  { name: "Макс. энергия", icon: "🔋", desc: "+50 к максимуму" },
-    crit:    { name: "Крит шанс", icon: "🎯", desc: "+3% крит (x10)" },
-    regen:   { name: "Реген энергии", icon: "⚡", desc: "+0.5/сек реген" },
+    click:   { name: "Сила клика", icon: "⚔️", desc: "+0.2 ковкойна за тап" },
+    passive: { name: "Пассивный доход", icon: "💰", desc: "+0.3 ковкойна/мин" },
+    energy:  { name: "Макс. энергия", icon: "🔋", desc: "+75 к максимуму" },
+    crit:    { name: "Крит шанс", icon: "🎯", desc: "+1% крит (x4)" },
+    regen:   { name: "Реген энергии", icon: "⚡", desc: "+0.2/сек реген" },
   };
 
   function renderUpgrades() {
     if (!st) return;
+    const bal = st.kovcoins != null ? st.kovcoins : (st.balance || 0);
     elUpgrades.innerHTML = Object.keys(UPGRADE_INFO).map(key => {
       const info = UPGRADE_INFO[key];
       const lvl = st.levels[key];
       const cost = st.upgrade_costs[key];
       const maxed = lvl >= st.max_level;
-      const canAfford = st.balance >= cost;
+      const canAfford = bal >= cost;
       return `
         <div class="clicker-upgrade ${maxed ? "maxed" : ""} ${!canAfford && !maxed ? "disabled" : ""}" data-upgrade="${key}">
           <div class="clicker-upgrade-icon">${info.icon}</div>
@@ -1599,7 +1639,7 @@ function gameClicker() {
           <div class="clicker-upgrade-buy">
             ${maxed
               ? '<span class="clicker-max">МАКС</span>'
-              : `<span class="clicker-cost"><img src="/static/img/ui/coin.svg" class="game-icon-sm"/> ${fmt(cost)}</span><button class="btn btn-sm ${canAfford ? "" : "btn-disabled"}">Купить</button>`}
+              : `<span class="clicker-cost"><img src="${COIN}" class="game-icon-sm"/> ${fmt(cost)}</span><button class="btn btn-sm ${canAfford ? "" : "btn-disabled"}">Купить</button>`}
           </div>
         </div>
       `;
@@ -1611,7 +1651,8 @@ function gameClicker() {
         const key = card.dataset.upgrade;
         try {
           const resp = await post("/api/arcade/clicker/upgrade", { upgrade: key });
-          st.balance = resp.balance;
+          st.kovcoins = resp.kovcoins;
+          st.balance = resp.kovcoins;
           st.levels[key] = resp.new_level;
           st.upgrade_costs[key] = resp.next_cost;
           st.click_power = resp.click_power;
@@ -1619,9 +1660,13 @@ function gameClicker() {
           st.passive_per_min = resp.passive_per_min;
           st.crit_chance = resp.crit_chance;
           st.regen_per_sec = resp.regen_per_sec;
-          elBalance.textContent = fmt(st.balance);
-          elPower.textContent = "+" + st.click_power;
+          st.daily_cap = resp.daily_cap;
+          st.earned_today = resp.earned_today;
+          st.cap_reached = (resp.earned_today || 0) >= (resp.daily_cap || 0);
+          elBalance.textContent = fmt(st.kovcoins);
+          elPower.textContent = "+" + powText(st.click_power);
           elPassiveInfo.textContent = "💤 " + st.passive_per_min + "/мин" + (passiveActive() ? " ×2" : "");
+          updateDaily();
           renderUpgrades();
           playUISound("cashout");
         } catch (e) {
@@ -1635,6 +1680,17 @@ function gameClicker() {
     });
   }
 
+  function updateWallet() {
+    if (!st) return;
+    elWallet.textContent = fmt(st.wallet || 0);
+    const kc = st.kovcoins != null ? st.kovcoins : (st.balance || 0);
+    const min = st.cashout_min || 100;
+    elCashoutBtn.disabled = kc < min;
+    elCashoutBtn.textContent = kc < min
+      ? `Нужно ≥ ${min} ковкойнов`
+      : `Вывести ${fmt(Math.floor(kc / (st.cashout_rate || 100)))} ковбаксов`;
+  }
+
   // Применить снимок состояния (state/boost/tap-ответы могут содержать разные поля)
   function applyState(s) {
     if (!s) return;
@@ -1643,19 +1699,47 @@ function gameClicker() {
       turboUntil = s.boosts.turbo && s.boosts.turbo.active ? now() + s.boosts.turbo.left_sec * 1000 : 0;
       passiveUntil = s.boosts.passive && s.boosts.passive.active ? now() + s.boosts.passive.left_sec * 1000 : 0;
     }
-    if (s.locked) lockedUntil = now() + (s.locked_left || s.locked_left === 0 ? s.locked_left : 0) * 1000;
+    if (s.locked) lockedUntil = now() + (s.locked_left || 0) * 1000;
     else if (s.locked === false) lockedUntil = 0;
     if (s.energy != null) { lastSyncEnergy = s.energy; lastSyncTime = Date.now(); }
-    elBalance.textContent = fmt(st.balance || 0);
-    elPower.textContent = "+" + (st.click_power || 1);
+    const kc = st.kovcoins != null ? st.kovcoins : (st.balance || 0);
+    elBalance.textContent = fmt(kc);
+    elPower.textContent = "+" + powText(st.click_power || 1);
     elPassiveInfo.textContent = "💤 " + (st.passive_per_min || 0) + "/мин" + (passiveActive() ? " ×2" : "");
     updateEnergyBar();
+    updateDaily();
+    updateWallet();
     updateLevel();
     updateCoinFx();
     updateLockUI();
     renderBoosts();
     renderUpgrades();
   }
+
+  async function cashout() {
+    if (!st) return;
+    const kc = st.kovcoins != null ? st.kovcoins : 0;
+    if (kc < (st.cashout_min || 100)) return;
+    try {
+      const resp = await post("/api/arcade/clicker/cashout", {});
+      applyState(resp);
+      playUISound("cashout");
+      if (resp.cashed_out > 0) {
+        const cx = (elCoinWrap.offsetWidth || 200) / 2;
+        showFloat("+" + resp.cashed_out + " ковбаксов", cx, 30, false);
+      }
+      try {
+        if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
+          window.Telegram.WebApp.HapticFeedback.notificationOccurred("success");
+        }
+      } catch (_) {}
+      if (typeof fetchBalance === "function") { fetchBalance().catch(() => {}); }
+    } catch (e) {
+      const msg = String((e && e.message) || e || "");
+      if (window.kov && window.kov.toast) window.kov.toast(msg || "Не удалось вывести");
+    }
+  }
+  elCashoutBtn.addEventListener("click", cashout);
 
   async function loadState() {
     try {
@@ -1676,25 +1760,35 @@ function gameClicker() {
     pendingTaps = 0;
     try {
       const resp = await post("/api/arcade/clicker/tap", { taps: batch });
-      st.balance = resp.balance;
+      st.kovcoins = resp.kovcoins != null ? resp.kovcoins : resp.balance;
+      st.balance = st.kovcoins;
       st.energy = resp.energy;
       st.max_energy = resp.max_energy;
       st.total_earned = resp.total_earned != null ? resp.total_earned : st.total_earned;
+      st.daily_cap = resp.daily_cap != null ? resp.daily_cap : st.daily_cap;
+      st.earned_today = resp.earned_today != null ? resp.earned_today : st.earned_today;
+      st.cap_reached = !!resp.cap_reached;
       lastSyncEnergy = resp.energy;
       lastSyncTime = Date.now();
       if (resp.locked) {
         lockedUntil = now() + (resp.locked_left || 0) * 1000;
         updateLockUI();
       }
-      elBalance.textContent = fmt(st.balance);
+      if (resp.cap_reached) {
+        const cx = (elCoinWrap.offsetWidth || 200) / 2;
+        showFloat("Дневной лимит!", cx, 30, false);
+      }
+      elBalance.textContent = fmt(st.kovcoins);
       updateEnergyBar();
+      updateDaily();
+      updateWallet();
       updateLevel();
     } catch (_) {}
   }
 
   elCoin.addEventListener("click", (e) => {
     if (!st || destroyed) return;
-    if (lockedActive()) {
+    if (lockedActive() || capReached()) {
       elCoin.style.animation = "shake 0.2s";
       setTimeout(() => elCoin.style.animation = "", 200);
       return;
@@ -1715,10 +1809,10 @@ function gameClicker() {
     const wrapperRect = elFloats.getBoundingClientRect();
     const x = e.clientX - wrapperRect.left;
     const y = e.clientY - wrapperRect.top - 20;
-    const mult = turbo ? (st.boosts && st.boosts.turbo ? st.boosts.turbo.mult : 7) : 1;
+    const mult = turbo ? (st.boosts && st.boosts.turbo ? st.boosts.turbo.mult : 5) : 1;
     const isCrit = Math.random() < (st.crit_chance / 100);
-    const earned = (isCrit ? st.click_power * 10 : st.click_power) * mult;
-    showFloat((isCrit ? "КРИТ! +" : "+") + earned, x, y, isCrit || turbo);
+    const earned = (isCrit ? st.click_power * 4 : st.click_power) * mult;
+    showFloat((isCrit ? "КРИТ! +" : "+") + powText(earned), x, y, isCrit || turbo);
 
     elCoin.style.transform = "scale(0.93)";
     setTimeout(() => { if (!destroyed) elCoin.style.transform = ""; }, 100);

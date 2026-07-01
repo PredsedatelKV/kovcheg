@@ -5219,3 +5219,61 @@ html.dark .clicker-energy-fill {
   color: var(--text-soft);
 }
 html.dark .clicker-lock { background: rgba(0,0,0,0.65); }
+
+/* ---- Валюта / дневной лимит / вывод ---- */
+.clicker-cur { font-size: 12px; color: var(--text-soft); font-weight: 600; margin-left: 2px; }
+.clicker-balance strong { color: #1e9e57; }
+
+.clicker-daily { margin: 4px 0 8px; }
+.clicker-daily-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-soft);
+  margin-bottom: 3px;
+}
+.clicker-daily-bar {
+  height: 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.clicker-daily-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #22b866, #4ff08f);
+  border-radius: 5px;
+  transition: width 0.3s ease;
+}
+.clicker-daily-fill.full { background: linear-gradient(90deg, #d98324, #f0a030); }
+
+.clicker-cashout {
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.clicker-cashout-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-soft);
+  margin-bottom: 8px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.clicker-cashout-rate { font-weight: 600; }
+.clicker-cashout-wallet { display: flex; align-items: center; gap: 4px; }
+.clicker-cashout-wallet strong { color: var(--accent, #6cb6fb); }
+.clicker-cashout-btn {
+  width: 100%;
+  background: linear-gradient(90deg, #1e9e57, #22b866);
+  color: #fff;
+  font-weight: 700;
+  border: none;
+}
+.clicker-cashout-btn:disabled { opacity: 0.45; pointer-events: none; }
+html.dark .clicker-balance strong { color: #4ff08f; }

@@ -117,13 +117,24 @@ import random
 from datetime import timedelta
 
 CLICKER_MAX_LEVEL = 20
-CLICKER_CRIT_MULT = 10
+CLICKER_CRIT_MULT = 4
 CLICKER_TAP_ENERGY_COST = 1
 CLICKER_MAX_PASSIVE_HOURS = 8
 
+# Внутриигровая валюта — «ковкойны». Тапаешь → копишь ковкойны → выводишь в ковбаксы.
+CLICKER_START_KOVCOINS = 1        # стартовый баланс ковкойнов (сразу можно кликать)
+CLICKER_CASHOUT_RATE = 100        # 100 ковкойнов = 1 ковбакс (~1 ₽)
+CLICKER_CASHOUT_MIN = 100         # минимальная сумма к выводу (в ковкойнах)
+
+# --- Дневной лимит заработка ---
+# Гарантирует «потолок» дохода: свежий игрок ~20 ₽/день, макс. прокачка ~100 ₽/день.
+# 1 ковбакс ≈ 1 ₽, 100 ковкойнов = 1 ковбакс → 2000 ковкойнов = 20 ₽, 10000 = 100 ₽.
+CLICKER_DAILY_CAP_MIN = 2000      # свежий игрок: ~20 ₽/день
+CLICKER_DAILY_CAP_MAX = 10000     # полностью прокачанный: ~100 ₽/день
+
 # --- Активные бусты (бесплатные, с дневным лимитом) ---
-CLICKER_TURBO_SECONDS = 20        # длительность турбо
-CLICKER_TURBO_MULT = 7            # множитель монет за тап в турбо (энергия не тратится)
+CLICKER_TURBO_SECONDS = 15        # длительность турбо
+CLICKER_TURBO_MULT = 5            # множитель монет за тап в турбо (энергия не тратится)
 CLICKER_TURBO_DAILY = 3           # запусков турбо в день
 
 CLICKER_REFILL_DAILY = 3          # «полная заправка» энергии в день
@@ -163,38 +174,69 @@ CLICKER_RANKS = [
     (6_000_000, "Легенда Ковчега"),
 ]
 
+# Стоимость апгрейдов — в ковкойнах (реинвест заработка). Прокачка растянута на дни/недели.
 CLICKER_UPGRADES = {
-    "click":   {"base_cost": 100, "mult": 1.5, "name": "Сила клика"},
-    "passive": {"base_cost": 200, "mult": 1.5, "name": "Пассивный доход"},
-    "energy":  {"base_cost": 150, "mult": 1.5, "name": "Макс. энергия"},
-    "crit":    {"base_cost": 300, "mult": 1.6, "name": "Крит шанс"},
-    "regen":   {"base_cost": 120, "mult": 1.5, "name": "Реген энергии"},
+    "click":   {"base_cost": 120, "mult": 1.28, "name": "Сила клика"},
+    "passive": {"base_cost": 180, "mult": 1.28, "name": "Пассивный доход"},
+    "energy":  {"base_cost": 150, "mult": 1.28, "name": "Макс. энергия"},
+    "crit":    {"base_cost": 200, "mult": 1.30, "name": "Крит шанс"},
+    "regen":   {"base_cost": 140, "mult": 1.28, "name": "Реген энергии"},
 }
 
 
+# Формулы прогрессии подобраны «пологими» (~5x от старта к максимуму), чтобы дневной
+# лимит заполнялся сопоставимым усилием на любом уровне, а доход рос 20 → 100 ₽/день.
 def _clicker_click_power(state):
-    return 1 + state.lvl_click
+    return 1.0 + state.lvl_click * 0.2          # 1.0 → 5.0
 
 
 def _clicker_max_energy(state):
-    return 100 + state.lvl_energy * 50
+    return 500 + state.lvl_energy * 75          # 500 → 2000
 
 
 def _clicker_regen_rate(state):
-    return 1.0 + state.lvl_regen * 0.5
+    return 1.0 + state.lvl_regen * 0.2          # 1.0 → 5.0 /сек
 
 
 def _clicker_crit_chance(state):
-    return min(state.lvl_crit * 3, 75) / 100.0
+    return min(state.lvl_crit * 1.0, 20) / 100.0  # 0 → 20%
 
 
 def _clicker_passive_per_min(state):
-    return state.lvl_passive * 0.5
+    return 0.5 + state.lvl_passive * 0.3        # 0.5 → 6.5 /мин
 
 
 def _clicker_upgrade_cost(key, current_level):
     cfg = CLICKER_UPGRADES[key]
     return int(cfg["base_cost"] * (cfg["mult"] ** current_level))
+
+
+def _clicker_total_levels(state):
+    return (
+        state.lvl_click + state.lvl_passive + state.lvl_energy
+        + state.lvl_crit + state.lvl_regen
+    )
+
+
+def _clicker_daily_cap(state):
+    """Дневной лимит заработка в ковкойнах — растёт линейно с суммарной прокачкой."""
+    frac = _clicker_total_levels(state) / (5.0 * CLICKER_MAX_LEVEL)
+    return int(CLICKER_DAILY_CAP_MIN + frac * (CLICKER_DAILY_CAP_MAX - CLICKER_DAILY_CAP_MIN))
+
+
+def _clicker_credit(state, amount):
+    """Начисляет ковкойны с учётом дневного лимита. Возвращает реально начисленное."""
+    amount = int(amount)
+    if amount <= 0:
+        return 0
+    cap = _clicker_daily_cap(state)
+    room = max(0, cap - (state.earned_today or 0))
+    gain = min(amount, room)
+    if gain > 0:
+        state.kovcoins = (state.kovcoins or 0) + gain
+        state.earned_today = (state.earned_today or 0) + gain
+        state.total_earned = (state.total_earned or 0) + gain
+    return gain
 
 
 def _clicker_level(total_earned):
@@ -215,13 +257,14 @@ def _boost_active(until, now):
 
 
 def _reset_daily_boosts(state, now):
-    """Сбрасывает дневные лимиты бустов при смене суток (UTC)."""
+    """Сбрасывает дневные лимиты бустов и дневной заработок при смене суток (UTC)."""
     key = now.strftime("%Y-%m-%d")
     if (state.boost_date or "") != key:
         state.boost_date = key
         state.turbo_used = 0
         state.refill_used = 0
         state.passboost_used = 0
+        state.earned_today = 0
 
 
 def _get_or_create_clicker_state(db, user):
@@ -231,14 +274,19 @@ def _get_or_create_clicker_state(db, user):
         .first()
     )
     if not state:
-        state = models.ClickerState(user_id=user.id)
+        state = models.ClickerState(
+            user_id=user.id,
+            kovcoins=CLICKER_START_KOVCOINS,
+            energy=500.0,
+        )
         db.add(state)
         db.flush()
     return state
 
 
 def _sync_clicker(db, state, user):
-    """Реген энергии + токенов + пассивный доход. Возвращает passive_earned (зачислен в кошелёк)."""
+    """Реген энергии + токенов + пассивный доход (в ковкойны, с дневным лимитом).
+    Возвращает passive_earned — реально начисленные ковкойны."""
     now = models.now_utc()
     _reset_daily_boosts(state, now)
 
@@ -267,24 +315,11 @@ def _sync_clicker(db, state, user):
         overlap = (b_end - b_start).total_seconds()
         if overlap > 0:
             earned += passive_rate * (CLICKER_PASSBOOST_MULT - 1) * overlap
-    passive_earned = int(earned)
 
     state.last_sync = now
 
-    if passive_earned > 0:
-        wallet = ensure_wallet(db, user)
-        wallet.balance += passive_earned
-        state.total_earned = (state.total_earned or 0) + passive_earned
-        db.add(
-            models.Transaction(
-                sender_id=None,
-                recipient_id=user.id,
-                amount=passive_earned,
-                note="clicker:passive",
-            )
-        )
-
-    return passive_earned
+    # Ковкойны — внутриигровая валюта, в кошелёк (ковбаксы) не попадают до вывода.
+    return _clicker_credit(state, int(earned))
 
 
 def _clicker_payload(state, wallet, now, passive_earned=0):
@@ -300,6 +335,8 @@ def _clicker_payload(state, wallet, now, passive_earned=0):
     turbo_active = _boost_active(state.turbo_until, now)
     passive_active = _boost_active(state.passive_boost_until, now)
     locked = _boost_active(state.locked_until, now)
+    cap = _clicker_daily_cap(state)
+    earned_today = state.earned_today or 0
 
     def _left(kind):
         return max(0, CLICKER_BOOST_DAILY[kind] - (getattr(state, CLICKER_BOOST_USED_ATTR[kind]) or 0))
@@ -308,14 +345,24 @@ def _clicker_payload(state, wallet, now, passive_earned=0):
         "levels": levels,
         "energy": round(state.energy, 1),
         "max_energy": _clicker_max_energy(state),
-        "click_power": _clicker_click_power(state),
-        "passive_per_min": round(_clicker_passive_per_min(state), 1),
+        "click_power": round(_clicker_click_power(state), 2),
+        "passive_per_min": round(_clicker_passive_per_min(state), 2),
         "crit_chance": round(_clicker_crit_chance(state) * 100, 1),
         "regen_per_sec": round(_clicker_regen_rate(state), 1),
         "passive_earned": passive_earned,
         "upgrade_costs": {k: _clicker_upgrade_cost(k, levels[k]) for k in CLICKER_UPGRADES},
         "max_level": CLICKER_MAX_LEVEL,
-        "balance": wallet.balance,
+        # Валюты
+        "kovcoins": state.kovcoins or 0,          # внутриигровая (ковкойны)
+        "balance": state.kovcoins or 0,           # алиас для совместимости
+        "wallet": wallet.balance,                 # ковбаксы (после вывода)
+        "cashout_rate": CLICKER_CASHOUT_RATE,
+        "cashout_min": CLICKER_CASHOUT_MIN,
+        # Дневной лимит
+        "daily_cap": cap,
+        "earned_today": earned_today,
+        "cap_left": max(0, cap - earned_today),
+        "cap_reached": earned_today >= cap,
         "total_earned": state.total_earned or 0,
         "level": lvl,
         "rank": rank,
@@ -375,23 +422,36 @@ def clicker_tap(
     state = _get_or_create_clicker_state(db, user)
     _sync_clicker(db, state, user)
     now = models.now_utc()
-    wallet = ensure_wallet(db, user)
+
+    def _tap_result(coins, actual, crits, turbo, mult, locked, locked_now, cap_reached):
+        return {
+            "coins_earned": coins,
+            "taps_processed": actual,
+            "crits": crits,
+            "energy": round(state.energy, 1),
+            "max_energy": _clicker_max_energy(state),
+            "kovcoins": state.kovcoins or 0,
+            "balance": state.kovcoins or 0,
+            "turbo": turbo,
+            "mult": mult,
+            "locked": locked or locked_now,
+            "locked_left": int((state.locked_until - now).total_seconds()) if _boost_active(state.locked_until, now) else 0,
+            "total_earned": state.total_earned or 0,
+            "daily_cap": _clicker_daily_cap(state),
+            "earned_today": state.earned_today or 0,
+            "cap_left": max(0, _clicker_daily_cap(state) - (state.earned_today or 0)),
+            "cap_reached": cap_reached,
+        }
 
     # Анти-фрод: активная блокировка — тапы не засчитываются
     if _boost_active(state.locked_until, now):
         db.commit()
-        return {
-            "coins_earned": 0,
-            "taps_processed": 0,
-            "crits": 0,
-            "energy": round(state.energy, 1),
-            "max_energy": _clicker_max_energy(state),
-            "balance": wallet.balance,
-            "turbo": _boost_active(state.turbo_until, now),
-            "locked": True,
-            "locked_left": int((state.locked_until - now).total_seconds()),
-            "total_earned": state.total_earned or 0,
-        }
+        return _tap_result(0, 0, 0, _boost_active(state.turbo_until, now), 1, True, False, False)
+
+    # Дневной лимит достигнут — не тратим энергию, просто сообщаем
+    if (state.earned_today or 0) >= _clicker_daily_cap(state):
+        db.commit()
+        return _tap_result(0, 0, 0, _boost_active(state.turbo_until, now), 1, False, False, True)
 
     turbo = _boost_active(state.turbo_until, now)
     tokens = int(state.tap_tokens or 0)
@@ -420,42 +480,20 @@ def clicker_tap(
     power = _clicker_click_power(state)
     crit = _clicker_crit_chance(state)
     mult = CLICKER_TURBO_MULT if turbo else 1
-    coins = 0
+    coins_f = 0.0
     crits = 0
     for _ in range(actual):
         if random.random() < crit:
-            coins += power * CLICKER_CRIT_MULT * mult
+            coins_f += power * CLICKER_CRIT_MULT * mult
             crits += 1
         else:
-            coins += power * mult
+            coins_f += power * mult
 
-    if coins > 0:
-        wallet.balance += coins
-        state.total_earned = (state.total_earned or 0) + coins
-        db.add(
-            models.Transaction(
-                sender_id=None,
-                recipient_id=user.id,
-                amount=coins,
-                note="clicker:tap",
-            )
-        )
+    coins = _clicker_credit(state, int(coins_f))
+    cap_reached = (state.earned_today or 0) >= _clicker_daily_cap(state)
     db.commit()
 
-    locked = _boost_active(state.locked_until, now)
-    return {
-        "coins_earned": coins,
-        "taps_processed": actual,
-        "crits": crits,
-        "energy": round(state.energy, 1),
-        "max_energy": _clicker_max_energy(state),
-        "balance": wallet.balance,
-        "turbo": turbo,
-        "mult": mult,
-        "locked": locked or locked_now,
-        "locked_left": int((state.locked_until - now).total_seconds()) if locked else 0,
-        "total_earned": state.total_earned or 0,
-    }
+    return _tap_result(coins, actual, crits, turbo, mult, False, locked_now, cap_reached)
 
 
 @router.post("/clicker/boost")
@@ -497,13 +535,57 @@ def clicker_boost(
     return payload
 
 
+@router.post("/clicker/cashout")
+def clicker_cashout(
+    amount: int = Body(None, embed=True),
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Вывод ковкойнов в ковбаксы по курсу 100:1. amount — сколько ковкойнов вывести
+    (по умолчанию — максимум, кратный курсу)."""
+    state = _get_or_create_clicker_state(db, user)
+    _sync_clicker(db, state, user)
+    now = models.now_utc()
+    wallet = ensure_wallet(db, user)
+
+    kc = state.kovcoins or 0
+    if amount is None:
+        spend = (kc // CLICKER_CASHOUT_RATE) * CLICKER_CASHOUT_RATE
+    else:
+        spend = (min(int(amount), kc) // CLICKER_CASHOUT_RATE) * CLICKER_CASHOUT_RATE
+
+    if spend < CLICKER_CASHOUT_MIN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Минимум для вывода — {CLICKER_CASHOUT_MIN} ковкойнов",
+        )
+
+    kovbaks = spend // CLICKER_CASHOUT_RATE
+    state.kovcoins = kc - spend
+    wallet.balance += kovbaks
+    db.add(
+        models.Transaction(
+            sender_id=None,
+            recipient_id=user.id,
+            amount=kovbaks,
+            note="clicker:cashout",
+        )
+    )
+    db.commit()
+
+    payload = _clicker_payload(state, wallet, now)
+    payload["cashed_out"] = kovbaks
+    payload["spent_kovcoins"] = spend
+    return payload
+
+
 @router.post("/clicker/upgrade")
 def clicker_upgrade(
     upgrade: str = Body(..., embed=True),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Buy an upgrade — deduct coins, increment level."""
+    """Покупка апгрейда за ковкойны (реинвест заработка)."""
     if upgrade not in CLICKER_UPGRADES:
         raise HTTPException(status_code=400, detail="Неизвестный апгрейд")
 
@@ -515,22 +597,12 @@ def clicker_upgrade(
         raise HTTPException(status_code=400, detail="Максимальный уровень достигнут")
 
     cost = _clicker_upgrade_cost(upgrade, current_level)
-    wallet = ensure_wallet(db, user)
 
-    if wallet.balance < cost:
-        raise HTTPException(status_code=400, detail="Недостаточно K")
+    if (state.kovcoins or 0) < cost:
+        raise HTTPException(status_code=400, detail="Недостаточно ковкойнов")
 
-    wallet.balance -= cost
+    state.kovcoins = (state.kovcoins or 0) - cost
     setattr(state, f"lvl_{upgrade}", current_level + 1)
-
-    db.add(
-        models.Transaction(
-            sender_id=user.id,
-            recipient_id=None,
-            amount=cost,
-            note=f"clicker:upgrade:{upgrade}",
-        )
-    )
     db.commit()
 
     new_level = current_level + 1
@@ -539,12 +611,16 @@ def clicker_upgrade(
         "name": CLICKER_UPGRADES[upgrade]["name"],
         "new_level": new_level,
         "cost": cost,
-        "balance": wallet.balance,
+        "kovcoins": state.kovcoins or 0,
+        "balance": state.kovcoins or 0,
         "next_cost": _clicker_upgrade_cost(upgrade, new_level) if new_level < CLICKER_MAX_LEVEL else None,
         "max_reached": new_level >= CLICKER_MAX_LEVEL,
-        "click_power": _clicker_click_power(state),
+        "click_power": round(_clicker_click_power(state), 2),
         "max_energy": _clicker_max_energy(state),
-        "passive_per_min": round(_clicker_passive_per_min(state), 1),
+        "passive_per_min": round(_clicker_passive_per_min(state), 2),
         "crit_chance": round(_clicker_crit_chance(state) * 100, 1),
         "regen_per_sec": round(_clicker_regen_rate(state), 1),
+        "daily_cap": _clicker_daily_cap(state),
+        "earned_today": state.earned_today or 0,
+        "cap_left": max(0, _clicker_daily_cap(state) - (state.earned_today or 0)),
     }
