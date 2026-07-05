@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 
@@ -11,14 +13,16 @@ from app.db import get_db
 router = APIRouter(prefix="/api/arcade", tags=["arcade"])
 
 MAX_WIN_MULTIPLIER = 5
+MSK = timezone(timedelta(hours=3))
 
 
 @router.post("/win")
 def arcade_win(
     amount: int = Body(..., embed=True),
+    game: str = Body("unknown", embed=True),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
-) -> schemas.UserOut:
+) -> dict:
     """Начислить выигрыш за мини-игру (привязан к последней ставке, ограничен)."""
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Некорректная сумма")
@@ -60,20 +64,66 @@ def arcade_win(
             note="arcade:win",
         )
     )
+
+    # Auto first-win bonus
+    first_win_bonus = 0
+    today = datetime.now(MSK).strftime("%Y-%m-%d")
+    if game and game != "unknown":
+        existing = db.query(models.ArcadeFirstWin).filter(
+            models.ArcadeFirstWin.user_id == user.id,
+            models.ArcadeFirstWin.game == game,
+            models.ArcadeFirstWin.win_date == today,
+        ).first()
+        if not existing:
+            db.add(models.ArcadeFirstWin(user_id=user.id, game=game, win_date=today))
+            wallet.balance += FIRST_WIN_REWARD
+            first_win_bonus = FIRST_WIN_REWARD
+            db.add(models.Transaction(recipient_id=user.id, amount=FIRST_WIN_REWARD, note=f"first_win:{game}"))
+
     db.commit()
     db.refresh(user)
-    return schemas.UserOut(
-        id=user.id,
-        telegram_id=user.telegram_id,
-        username=user.username,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        photo_url=user.photo_url,
-        role=user.role,
-        restrictions=user.restrictions,
-        balance=user.wallet.balance,
-        is_admin=False,
-    )
+    return {
+        "ok": True,
+        "balance": user.wallet.balance,
+        "first_win_bonus": first_win_bonus,
+    }
+
+
+FIRST_WIN_REWARD = 3
+
+
+@router.get("/first-win-status")
+def first_win_status(user: models.User = Depends(current_user), db: Session = Depends(get_db)):
+    today = datetime.now(MSK).strftime("%Y-%m-%d")
+    wins = db.query(models.ArcadeFirstWin).filter(
+        models.ArcadeFirstWin.user_id == user.id,
+        models.ArcadeFirstWin.win_date == today,
+    ).all()
+    return {"won_games": [w.game for w in wins], "reward": FIRST_WIN_REWARD}
+
+
+@router.post("/first-win")
+def claim_first_win(
+    game: str = Body(..., embed=True),
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    today = datetime.now(MSK).strftime("%Y-%m-%d")
+    existing = db.query(models.ArcadeFirstWin).filter(
+        models.ArcadeFirstWin.user_id == user.id,
+        models.ArcadeFirstWin.game == game,
+        models.ArcadeFirstWin.win_date == today,
+    ).first()
+    if existing:
+        return {"ok": False, "already_claimed": True}
+
+    db.add(models.ArcadeFirstWin(user_id=user.id, game=game, win_date=today))
+    wallet = ensure_wallet(db, user)
+    wallet.balance += FIRST_WIN_REWARD
+    db.add(models.Transaction(recipient_id=user.id, amount=FIRST_WIN_REWARD, note=f"first_win:{game}"))
+    db.commit()
+    db.refresh(user)
+    return {"ok": True, "reward": FIRST_WIN_REWARD, "balance": user.wallet.balance}
 
 
 @router.post("/bet")

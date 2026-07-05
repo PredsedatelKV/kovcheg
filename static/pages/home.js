@@ -37,7 +37,7 @@ function bannerCarousel(banners) {
   const slides = seq.map(slideHtml).join("");
   const dots = banners.map(() => '<span class="dot" style="width:6px;height:6px;border-radius:50%;background:#D2D8E3;transition:all .25s ease"></span>').join("");
   return `
-    <div class="kc-carousel" id="bn-carousel" style="margin-bottom:14px;touch-action:none">
+    <div class="kc-carousel" id="bn-carousel" style="margin-bottom:14px;touch-action:none;overscroll-behavior:none">
       <div class="kc-viewport" style="overflow:hidden">
         <div class="kc-track" id="bn-track" style="display:flex;will-change:transform;touch-action:none">${slides}</div>
       </div>
@@ -138,10 +138,10 @@ export async function renderHome(root) {
   root.innerHTML = `
     <section class="page-header">
       <div>
-        <h1>${welcome}<span class="beta-badge">Beta</span></h1>
-        <div class="subtitle">${escapeHtml(data.server_time_msk)} мск</div>
+        <h1>${welcome}</h1>
+        <div class="subtitle" id="home-clock">${escapeHtml(data.server_time_msk)} мск</div>
       </div>
-      <div class="hero-art" title="Ковчег"><img src="/static/img/home_hero.svg" alt="Ковчег" class="hero-img"/></div>
+      <div class="hero-art" title="Ковчег"><img src="/static/img/ui/stone_block.svg" alt="Ковчег" class="hero-img"/></div>
     </section>
 
 ${bannerCarousel(data.banners)}
@@ -166,6 +166,18 @@ ${bannerCarousel(data.banners)}
         <button class="see-all" data-action="all-tasks">Смотреть все</button>
       </div>
       ${tasksList(data.tasks.slice(0, 3), data.user_tasks)}
+    </div>
+
+    <div class="card" id="daily-reward-card" style="display:none">
+      <div style="display:flex;align-items:center;gap:12px;padding:4px 0">
+        <img src="/static/img/ui/coin.svg" alt="" style="width:36px;height:36px"/>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:15px">Ежедневная награда</div>
+          <div style="font-size:13px;color:var(--text-soft)" id="daily-reward-desc">Забери награду за вход</div>
+        </div>
+        <button class="btn btn-sm" id="daily-reward-btn">Забрать</button>
+      </div>
+      <div style="display:flex;gap:4px;margin-top:10px" id="daily-streak-dots"></div>
     </div>
 
     <div class="chip-row">
@@ -413,6 +425,67 @@ ${bannerCarousel(data.banners)}
   });
 
   loadQuizzes(root);
+
+  // Real-time clock: update every 10 seconds
+  function mskNow() {
+    return new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
+  }
+  var clockEl = root.querySelector("#home-clock");
+  if (clockEl) {
+    var clockTimer = setInterval(function() {
+      if (!document.body.contains(clockEl)) { clearInterval(clockTimer); return; }
+      clockEl.textContent = mskNow() + " мск";
+    }, 10000);
+    if (window.kov && window.kov.onTabChange) {
+      window.kov.onTabChange("home", function() { clearInterval(clockTimer); });
+    }
+  }
+
+  // Daily reward card
+  loadDailyReward(root);
+}
+
+async function loadDailyReward(root) {
+  var card = root.querySelector("#daily-reward-card");
+  if (!card) return;
+  try {
+    var dr = await get("/api/home/daily-reward");
+    card.style.display = "";
+    var desc = root.querySelector("#daily-reward-desc");
+    var btn = root.querySelector("#daily-reward-btn");
+    var dots = root.querySelector("#daily-streak-dots");
+
+    // Render streak dots (7 days)
+    var dotsHtml = "";
+    for (var i = 1; i <= 7; i++) {
+      var filled = i <= dr.streak;
+      dotsHtml += '<div style="width:28px;height:6px;border-radius:3px;background:' + (filled ? 'var(--primary)' : 'var(--border)') + ';transition:background .3s"></div>';
+    }
+    dots.innerHTML = dotsHtml;
+
+    if (dr.claimed_today) {
+      btn.disabled = true;
+      btn.textContent = "Получено";
+      desc.textContent = "Завтра: " + Math.min(dr.streak + 1, 7) + " K";
+    } else {
+      desc.textContent = "День " + Math.min(dr.streak + 1, 7) + " · " + Math.min(dr.streak + 1, 7) + " K";
+      btn.addEventListener("click", async function() {
+        btn.disabled = true;
+        try {
+          var res = await post("/api/home/daily-reward/claim");
+          window.kov.toast("+" + res.reward + " K! Серия: " + res.streak + " дн.");
+          if (window.kov.me) window.kov.me.balance = res.balance;
+          if (window.kov.emit) window.kov.emit("balance:update", { balance: res.balance });
+          loadDailyReward(root);
+        } catch (e) {
+          btn.disabled = false;
+          window.kov.toast(e.message);
+        }
+      });
+    }
+  } catch (e) {
+    card.style.display = "none";
+  }
 }
 
 async function openAllNews() {

@@ -559,6 +559,14 @@ def seed(db: Session) -> None:
         rarity="Легендарный",
         lootbox_pool_code="legendary",
     )
+    _get_or_create_item(
+        db, "box_fragment",
+        name="Фрагмент ковбокса",
+        icon="/static/img/ui/box.svg",
+        description="Собери 3 фрагмента, чтобы собрать случайный ковбокс.",
+        category="Ресурсы",
+        rarity="Обычный",
+    )
     db.flush()
 
     # Seed lootbox pools

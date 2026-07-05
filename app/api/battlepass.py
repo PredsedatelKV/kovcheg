@@ -67,7 +67,14 @@ def get_battlepass(
         return None
     ubp = _get_ubp(db, user.id, season)
     level, current_xp = _calc_level(user.xp, season.xp_per_level)
-    claimed_raw: list = json.loads(ubp.claimed_rewards) if isinstance(ubp.claimed_rewards, str) else ubp.claimed_rewards
+    claimed_raw: list = []
+    if ubp.claimed_rewards:
+        try:
+            parsed = json.loads(ubp.claimed_rewards) if isinstance(ubp.claimed_rewards, str) else ubp.claimed_rewards
+            if isinstance(parsed, list):
+                claimed_raw = parsed
+        except (json.JSONDecodeError, TypeError):
+            claimed_raw = []
     claimed = _normalize_claimed(claimed_raw)
 
     rewards: list[schemas.BattlePassRewardOut] = []
@@ -108,6 +115,7 @@ def claim_reward(
     reward = db.query(models.BattlePassReward).filter(
         models.BattlePassReward.season_id == season.id,
         models.BattlePassReward.level == body.level,
+        models.BattlePassReward.track == "free",
     ).first()
     if not reward:
         raise HTTPException(404, "Награда не найдена")
@@ -115,8 +123,16 @@ def claim_reward(
     if reward.level > level:
         raise HTTPException(403, f"Уровень {reward.level} ещё не достигнут (текущий {level})")
 
-    claimed_raw: list = json.loads(ubp.claimed_rewards) if isinstance(ubp.claimed_rewards, str) else ubp.claimed_rewards
+    claimed_raw: list = []
+    if ubp.claimed_rewards:
+        try:
+            parsed = json.loads(ubp.claimed_rewards) if isinstance(ubp.claimed_rewards, str) else ubp.claimed_rewards
+            if isinstance(parsed, list):
+                claimed_raw = parsed
+        except (json.JSONDecodeError, TypeError):
+            claimed_raw = []
     claimed = _normalize_claimed(claimed_raw)
+
     if reward.level in claimed:
         raise HTTPException(409, "Награда уже получена")
 
@@ -125,7 +141,7 @@ def claim_reward(
         item = db.query(models.Item).filter(models.Item.code == item_code).first()
         if not item:
             raise HTTPException(400, "Предмет награды не найден")
-        qty = reward.value if reward.value and reward.value > 0 else 1
+        qty = (reward.value or 1) if reward.value and reward.value > 0 else 1
         inv = db.query(models.InventoryItem).filter(
             models.InventoryItem.user_id == user.id,
             models.InventoryItem.item_id == item.id,
@@ -136,12 +152,13 @@ def claim_reward(
             db.add(models.InventoryItem(user_id=user.id, item_id=item.id, quantity=qty))
 
     xp_to_coins = 0
+    reward_value = reward.value or 0
     if reward.kind == "coins" or reward.kind.startswith("coins_"):
         wallet = ensure_wallet(db, user)
-        wallet.balance += reward.value
-        db.add(models.Transaction(recipient_id=user.id, amount=reward.value, note=f"Battle Pass: {reward.label}"))
+        wallet.balance += reward_value
+        db.add(models.Transaction(recipient_id=user.id, amount=reward_value, note=f"Battle Pass: {reward.label}"))
     elif reward.kind == "xp":
-        xp_to_coins = award_xp(db, user, reward.value)["coins"]
+        xp_to_coins = award_xp(db, user, reward_value)["coins"]
     elif reward.kind == "item":
         if not reward.item_code:
             raise HTTPException(400, "У награды не задан предмет")

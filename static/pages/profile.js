@@ -57,7 +57,6 @@ export async function renderProfile(root) {
       <div>
         <h1>${escapeHtml(user.first_name || "Гражданин")}</h1>
         <div class="subtitle">Должность: ${escapeHtml(user.role)}</div>
-        <div class="subtitle">Ограничения: ${escapeHtml(user.restrictions || "-")}</div>
       </div>
       <div class="hero-head">${photoOrEmoji}</div>
     </section>
@@ -231,6 +230,7 @@ async function loadOnlineAvatars(root) {
               ${profile.role ? '<div style="color:var(--text-muted);font-size:13px">' + escapeHtml(profile.role) + '</div>' : ''}
               ${profile.username ? '<div style="color:var(--text-muted);font-size:13px">@' + escapeHtml(profile.username) + '</div>' : ''}
               <div style="margin-top:8px;font-size:13px">Баланс: <strong>${profile.balance || 0}</strong> К</div>
+              ${profile.bp_level ? '<div style="margin-top:4px;font-size:12px;color:var(--primary)">Уровень пропуска: ' + profile.bp_level + '</div>' : ''}
               <div style="margin-top:4px;font-size:12px;color:${online ? '#4CAF50' : 'var(--text-muted)'}">${online ? '● онлайн' : 'не в сети'}</div>
             </div>
           `);
@@ -460,7 +460,11 @@ function openItemActionsDialog(row) {
         <img src="/static/img/ui/coin.svg" alt="" class="icon icon-md"/>
         <span>Продать</span>
       </button>
-      ${item.lootbox_pool_code ? `
+      ${item.code === "box_fragment" && row.quantity >= 3 ? `
+      <button class="btn" id="ia-assemble">
+        <img src="/static/img/ui/box.svg" alt="" class="icon icon-md"/>
+        <span>Собрать ковбокс (×3)</span>
+      </button>` : item.lootbox_pool_code ? `
       <button class="btn" id="ia-open-lootbox">
         <img src="/static/img/ui/box.svg" alt="" class="icon icon-md"/>
         <span>Открыть</span>
@@ -487,6 +491,16 @@ function openItemActionsDialog(row) {
       window.closeModal();
       _updateSections(["inventory", "balance"]);
       window.kov.toast(`✨ «${item.name}» активирован`);
+    } catch (err) {
+      window.kov.toast(err.message);
+    }
+  });
+  modal.querySelector("#ia-assemble")?.addEventListener("click", async () => {
+    try {
+      var res = await post("/api/profile/inventory/assemble-fragments");
+      window.closeModal();
+      _updateSections(["inventory", "balance"]);
+      window.kov.toast("🎁 Собрано: " + res.item_name);
     } catch (err) {
       window.kov.toast(err.message);
     }

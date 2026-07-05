@@ -128,12 +128,9 @@ function gameWhereIsMoshonka(container) {
   const CUP_STEP = 72;
   // Уровни сложности: число стаканов, длительность одной перестановки, число перестановок.
   const LEVELS = {
-    // Длительности ускорены ~в 1.7-1.8 раза от прежних, относительная разница уровней сохранена.
-    easy:   { label: "Лёгкий",  cups: 3, dur: 400, swaps: 5, pause: 150 },
-    medium: { label: "Средний", cups: () => 3 + Math.floor(Math.random() * 2), dur: 290, swaps: 5, pause: 115 },
     hard:   { label: "Сложный", cups: () => 4 + Math.floor(Math.random() * 2), dur: 200, swaps: 7, pause: 80 },
   };
-  let level = null;       // выбранный объект уровня
+  let level = LEVELS.hard;       // выбранный объект уровня
   let CUP_COUNT = 3;      // фактическое число стаканов в текущей партии
   let round = 1;
   let score = 0;
@@ -291,15 +288,9 @@ function gameWhereIsMoshonka(container) {
   }
 
   const html = `
-    <div id="moshonka-level" style="text-align:center;margin-bottom:10px">
-      <div style="font-size:13px;color:var(--text-soft);margin-bottom:8px">Выбери сложность:</div>
-      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-        <button class="btn" data-level="easy">Лёгкий</button>
-        <button class="btn" data-level="medium">Средний</button>
-        <button class="btn" data-level="hard">Сложный</button>
-      </div>
+    <div id="moshonka-level" style="display:none">
     </div>
-    <div id="moshonka-game" style="display:none">
+    <div id="moshonka-game" style="">
       <div style="text-align:center;margin-bottom:6px">
         <span style="font-size:13px;color:var(--text-soft)">Счёт: <span id="moshonka-score-val">0</span></span>
       </div>
@@ -326,14 +317,8 @@ function gameWhereIsMoshonka(container) {
 
   const levelPicker = root.querySelector("#moshonka-level");
   const gameArea = root.querySelector("#moshonka-game");
-  levelPicker.querySelectorAll("button[data-level]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      level = LEVELS[btn.dataset.level];
-      levelPicker.style.display = "none";
-      gameArea.style.display = "";
-      startRound();
-    });
-  });
+  // Auto-start with hard difficulty
+  startRound();
 }
 
 function gameTicTacToe(container) {
@@ -531,7 +516,7 @@ function gameMinesweeper() {
     <button class="close" onclick="closeModal()">×</button>
     <h2>Сапёр</h2>
     <p class="card-sub">Найди все безопасные клетки! 10 мин среди ${cellCount}.</p>
-    <div class="game-mine-board" id="mine-board" style="width:300px;max-width:300px;margin:20px auto">
+    <div class="game-mine-board" id="mine-board">
       ${Array(cellCount).fill("").map((_, i) => `<button class="mine-cell" data-idx="${i}"></button>`).join("")}
     </div>
     <!-- Резервируем место под сообщение результата и кнопку заранее, чтобы при окончании
@@ -828,13 +813,13 @@ function gameRoulette() {
           resultEl.innerHTML = `<div class="game-win">${chosen.label}! Выигрыш: ${win} K</div>`;
           animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
           playUISound("win");
-          try { await post("/api/arcade/win", { amount: win }); } catch (_) { await syncBalance(); }
+          try { await post("/api/arcade/win", { amount: win, game: "roulette" }); } catch (_) { await syncBalance(); }
         } else if (mult === 1) {
           balance += bet;
           updateBalanceDisplay("roulette-balance", balance);
           resultEl.innerHTML = `<div class="game-neutral">x1. Ставка возвращена.</div>`;
           playUISound("cashout");
-          try { await post("/api/arcade/win", { amount: bet }); } catch (_) { await syncBalance(); }
+          try { await post("/api/arcade/win", { amount: bet, game: "roulette" }); } catch (_) { await syncBalance(); }
         } else {
           resultEl.innerHTML = `<div class="game-lose">${chosen.label}. Ставка потеряна.</div>`;
           playUISound("lose");
@@ -1070,7 +1055,7 @@ function gameCheckers() {
       if (state[i]) { if (state[i].color === "white") w++; else b++; }
     }
     if (w === 0) { resultEl.innerHTML = '<div class="game-lose">Мошонка победил!</div>'; }
-    else if (b === 0) { resultEl.innerHTML = '<div class="game-win">Ты победил!</div>'; post("/api/arcade/win", { amount: 50 }).catch(() => {}); balance += 50; syncBalance(); }
+    else if (b === 0) { resultEl.innerHTML = '<div class="game-win">Ты победил!</div>'; post("/api/arcade/win", { amount: 50, game: "checkers" }).catch(() => {}); balance += 50; syncBalance(); }
     status.textContent = turn === "white" ? "Твой ход" : "Ход Мошонки...";
   }
 
@@ -1117,7 +1102,7 @@ function gamePingPong() {
     if (bx < BS || bx > W - BS) bvx = -bvx;
     if (by < 10 + PH + BS && bx > ai && bx < ai + PW) { bvy = Math.abs(bvy); bvx += (bx - (ai + PW / 2)) * 0.1; }
     if (by > H - 20 - BS && bx > px && bx < px + PW) { bvy = -Math.abs(bvy); bvx += (bx - (px + PW / 2)) * 0.1; }
-    if (by < 0) { ps++; scoreEl.textContent = ps + " : " + as; resetBall(); if (ps >= 5) { running = false; resultEl.innerHTML = '<div class="game-win">Ты победил! +30K</div>'; post("/api/arcade/win", { amount: 30 }).catch(() => {}); balance += 30; syncBalance(); return; } }
+    if (by < 0) { ps++; scoreEl.textContent = ps + " : " + as; resetBall(); if (ps >= 5) { running = false; resultEl.innerHTML = '<div class="game-win">Ты победил! +30K</div>'; post("/api/arcade/win", { amount: 30, game: "pingpong" }).catch(() => {}); balance += 30; syncBalance(); return; } }
     if (by > H) { as++; scoreEl.textContent = ps + " : " + as; resetBall(); if (as >= 5) { running = false; resultEl.innerHTML = '<div class="game-lose">Мошонка победил</div>'; return; } }
     const target = bx - PW / 2;
     ai += (target - ai) * 0.06;
@@ -1200,14 +1185,14 @@ function gameSlots() {
           const win = Math.floor(bet * 29);
           balance += win;
           updateBalanceDisplay("slots-balance", balance);
-          post("/api/arcade/win", { amount: win }).catch(() => {});
+          post("/api/arcade/win", { amount: win, game: "slots" }).catch(() => {});
           resultEl.innerHTML = '<div class="game-win">ДЖЕКПОТ! +' + win + ' K</div>';
           playUISound("win");
         } else if (r1 === r2 || r2 === r3 || r1 === r3) {
           const win = Math.floor(bet * 1);
           balance += win;
           updateBalanceDisplay("slots-balance", balance);
-          post("/api/arcade/win", { amount: win }).catch(() => {});
+          post("/api/arcade/win", { amount: win, game: "slots" }).catch(() => {});
           resultEl.innerHTML = '<div class="game-neutral">Пара! Ставка возвращена.</div>';
           playUISound("cashout");
         } else {
@@ -1284,7 +1269,7 @@ function gameRocket() {
     const win = Math.floor(bet * mult);
     balance += win;
     updateBalanceDisplay("rocket-balance", balance);
-    post("/api/arcade/win", { amount: win }).catch(() => {});
+    post("/api/arcade/win", { amount: win, game: "rocket" }).catch(() => {});
     multEl.style.color = "#6bd995";
     resultEl.innerHTML = '<div class="game-win">Забрал x' + mult.toFixed(2) + '! +' + win + ' K</div>';
     cashBtn.style.display = "none"; startBtn.style.display = "";
@@ -1367,7 +1352,7 @@ function gameDice() {
           if (win > 0) {
             balance += win;
             updateBalanceDisplay("dice-balance", balance);
-            post("/api/arcade/win", { amount: win }).catch(() => {});
+            post("/api/arcade/win", { amount: win, game: "dice" }).catch(() => {});
             resEl.innerHTML = '<div class="game-win">Выпало ' + roll + '! +' + win + ' K</div>';
             playUISound("win");
           } else {

@@ -148,7 +148,6 @@ async function renderUsers(body) {
       ${formGrid(
         field("Имя", `<input class="input" data-k="first_name" value="${escapeHtml(u.first_name)}"/>`),
         field("Должность", `<input class="input" data-k="role" value="${escapeHtml(u.role)}"/>`),
-        field("Ограничения", `<input class="input" data-k="restrictions" value="${escapeHtml(u.restrictions || "")}"/>`),
       )}
       <div class="row gap">
         <button class="btn btn-sm" data-action="save" data-id="${u.id}">Сохранить</button>
@@ -187,7 +186,6 @@ async function renderUsers(body) {
       const payload = {
         first_name: card.querySelector('[data-k="first_name"]').value,
         role: card.querySelector('[data-k="role"]').value,
-        restrictions: card.querySelector('[data-k="restrictions"]').value,
       };
       try {
         await patch(`/api/admin/users/${b.dataset.id}`, payload);

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from app import models, schemas
@@ -112,3 +112,51 @@ def get_home(user: models.User = Depends(current_user), db: Session = Depends(ge
         user_tasks=[_user_task_to_out(ut) for ut in user_tasks],
         channel_url=settings.channel_url,
     )
+
+
+def _today_str() -> str:
+    return datetime.now(MSK).strftime("%Y-%m-%d")
+
+
+def _yesterday_str() -> str:
+    return (datetime.now(MSK) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+
+@router.get("/daily-reward")
+def get_daily_reward(user: models.User = Depends(current_user), db: Session = Depends(get_db)):
+    dr = db.query(models.DailyReward).filter(models.DailyReward.user_id == user.id).first()
+    today = _today_str()
+    if not dr:
+        return {"streak": 0, "claimed_today": False, "reward": 1}
+    claimed_today = dr.last_claim_date == today
+    streak = dr.streak if not claimed_today else dr.streak
+    next_reward = min(streak + 1, 7) if not claimed_today else streak
+    return {"streak": streak, "claimed_today": claimed_today, "reward": next_reward}
+
+
+@router.post("/daily-reward/claim")
+def claim_daily_reward(user: models.User = Depends(current_user), db: Session = Depends(get_db)):
+    from app.api._helpers import ensure_wallet
+
+    today = _today_str()
+    dr = db.query(models.DailyReward).filter(models.DailyReward.user_id == user.id).first()
+    if dr and dr.last_claim_date == today:
+        raise HTTPException(409, "Награда уже получена сегодня")
+
+    if dr:
+        if dr.last_claim_date == _yesterday_str():
+            dr.streak = min(dr.streak + 1, 7)
+        else:
+            dr.streak = 1
+        dr.last_claim_date = today
+    else:
+        dr = models.DailyReward(user_id=user.id, streak=1, last_claim_date=today)
+        db.add(dr)
+
+    reward = dr.streak
+    wallet = ensure_wallet(db, user)
+    wallet.balance += reward
+    db.add(models.Transaction(recipient_id=user.id, amount=reward, note=f"Ежедневная награда (день {dr.streak})"))
+    db.commit()
+    db.refresh(user)
+    return {"ok": True, "streak": dr.streak, "reward": reward, "balance": user.wallet.balance}

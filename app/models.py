@@ -411,3 +411,25 @@ class ClickerState(Base):
     passboost_used: Mapped[int] = mapped_column(Integer, default=0)
 
     user: Mapped["User"] = relationship("User")
+
+
+class DailyReward(Base):
+    """Tracks daily reward streak for each user."""
+    __tablename__ = "daily_rewards"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False)
+    streak: Mapped[int] = mapped_column(Integer, default=0)
+    last_claim_date: Mapped[str | None] = mapped_column(String(10), nullable=True)  # YYYY-MM-DD
+
+
+class ArcadeFirstWin(Base):
+    """Tracks first win of the day per mini-game per user."""
+    __tablename__ = "arcade_first_wins"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    game: Mapped[str] = mapped_column(String(32), nullable=False)  # clicker, dice, slots, etc.
+    win_date: Mapped[str] = mapped_column(String(10), nullable=False)  # YYYY-MM-DD
+
+    __table_args__ = (UniqueConstraint("user_id", "game", "win_date", name="uq_arcade_first_win"),)

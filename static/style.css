@@ -1939,6 +1939,25 @@ html.dark .admin-header .emblem-text { color: #93C5FD; }
 html.dark .admin-nav-btn { color: var(--text); }
 html.dark .hero-img-head { filter: brightness(1.3); }
 html.dark .page-header .subtitle { color: var(--text-soft); }
+html.dark .card-sub { color: var(--text-soft); }
+html.dark .empty { color: var(--text-muted); }
+html.dark .game-result { color: var(--text); }
+html.dark .game-win { color: #6BD995; }
+html.dark .game-lose { color: #FF6B6B; }
+html.dark .game-neutral { color: var(--text-soft); }
+html.dark .btn { color: #fff; }
+html.dark .btn-secondary { color: var(--text); }
+html.dark .modal .close { color: var(--text-soft); }
+html.dark .task-row { border-color: var(--border); }
+html.dark .task-row .meta p { color: var(--text-soft); }
+html.dark .quiz-q-text { color: var(--text); }
+html.dark .quiz-opt { color: var(--text); }
+html.dark .inv-cell .name { color: var(--text); }
+html.dark .wallet-balance-num strong { color: var(--text); }
+html.dark .wallet-xp-text { color: var(--text-soft); }
+html.dark .chip { color: var(--text); border-color: var(--border); }
+html.dark .big-square-title { color: var(--text); }
+html.dark .big-square-arrow { color: var(--text-soft); }
 
 /* Wheel mini SVG in card */
 .wheel-mini-svg {
@@ -2134,7 +2153,7 @@ html.dark .game-icon, html.dark .game-icon-sm, html.dark .game-icon-lg {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   gap: 3px;
-  max-width: 300px;
+  width: min(300px, 85vw);
   margin: 20px auto;
 }
 .mine-cell {
@@ -2148,6 +2167,11 @@ html.dark .game-icon, html.dark .game-icon-sm, html.dark .game-icon-lg {
   justify-content: center;
   transition: transform 0.1s;
 }
+html.dark .mine-cell { background: var(--surface-2); border-color: var(--border); }
+html.dark .mine-cell.revealed { background: #2a2a2a; border-color: #555; }
+html.dark .mine-cell.mine-hit { background: rgba(229,57,53,0.2); border-color: #E53935; }
+html.dark .mine-cell.mine-show { background: rgba(229,57,53,0.2); border-color: #E53935; }
+html.dark .mine-cell.flagged { background: rgba(242,179,60,0.2); border-color: #F2B33C; }
 .mine-cell:hover:not(.revealed) { transform: scale(1.05); }
 .mine-cell.revealed { background: #E8E8E8; border-color: #CCC; cursor: default; }
 .mine-cell.mine-hit { background: #FFCDD2; border-color: #E53935; animation: shake 0.5s; }

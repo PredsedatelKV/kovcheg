@@ -11,6 +11,14 @@ from app.db import get_db
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
 
+def _get_bp_level(db: Session, user: models.User) -> int:
+    """Get battlepass level for a user from the active season."""
+    season = db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active == True).first()
+    if not season:
+        return 0
+    return min(user.xp // season.xp_per_level, season.total_levels - 1) + 1
+
+
 def _user_to_out(user: models.User) -> schemas.UserOut:
     return schemas.UserOut(
         id=user.id,
@@ -211,6 +219,7 @@ def get_user_profile(
         "role": target.role,
         "balance": target.wallet.balance if target.wallet else 0,
         "is_online": is_online,
+        "bp_level": _get_bp_level(db, target),
     }
 
 @router.post("/transfer", response_model=schemas.UserOut)
@@ -353,3 +362,48 @@ def activate_item(
         f"✨ <b>{user.first_name}</b> активировал(а) <b>{item_name}</b>"
     )
     return me(user=user, db=db)
+
+
+@router.post("/inventory/assemble-fragments")
+def assemble_fragments(
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Assemble 3 Фрагмент ковбокса into a random lootbox."""
+    import random as _random
+
+    fragment_item = db.query(models.Item).filter(models.Item.code == "box_fragment").first()
+    if not fragment_item:
+        raise HTTPException(404, "Предмет «Фрагмент ковбокса» не найден")
+
+    inv = db.query(models.InventoryItem).filter(
+        models.InventoryItem.user_id == user.id,
+        models.InventoryItem.item_id == fragment_item.id,
+    ).first()
+    if not inv or inv.quantity < 3:
+        raise HTTPException(400, "Нужно 3 фрагмента для сборки")
+
+    # Consume 3 fragments
+    inv.quantity -= 3
+    if inv.quantity <= 0:
+        db.delete(inv)
+
+    # Give random lootbox (weighted: common > rare > epic > legendary)
+    lootbox_codes = ["lootbox_common"] * 60 + ["lootbox_rare"] * 25 + ["lootbox_epic"] * 12 + ["lootbox_legendary"] * 3
+    chosen_code = _random.choice(lootbox_codes)
+    lootbox_item = db.query(models.Item).filter(models.Item.code == chosen_code).first()
+    if not lootbox_item:
+        lootbox_item = db.query(models.Item).filter(models.Item.code == "lootbox_common").first()
+
+    target_inv = db.query(models.InventoryItem).filter(
+        models.InventoryItem.user_id == user.id,
+        models.InventoryItem.item_id == lootbox_item.id,
+    ).first()
+    if target_inv:
+        target_inv.quantity += 1
+    else:
+        db.add(models.InventoryItem(user_id=user.id, item_id=lootbox_item.id, quantity=1))
+
+    db.commit()
+    db.refresh(user)
+    return {"ok": True, "item_name": lootbox_item.name, "item_icon": lootbox_item.icon}
