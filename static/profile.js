@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=39";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=226";
 
-import { playUISound } from "/static/pages/settings.js?v=39";
+import { playUISound } from "/static/pages/settings.js?v=226";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 

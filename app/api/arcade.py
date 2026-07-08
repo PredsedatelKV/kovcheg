@@ -7,13 +7,20 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.api._helpers import ensure_wallet
-from app.auth import current_user
+from app.auth import current_user, is_admin
 from app.db import get_db
 
 router = APIRouter(prefix="/api/arcade", tags=["arcade"])
 
 MAX_WIN_MULTIPLIER = 5
 MSK = timezone(timedelta(hours=3))
+
+
+def _require_clicker_access(user: models.User) -> None:
+    """Кликер временно доступен только Омару (админу). Проверяется на сервере,
+    чтобы обычный пользователь не мог открыть игру обходным путём (через API)."""
+    if not is_admin(user):
+        raise HTTPException(status_code=403, detail="Кликер временно недоступен")
 
 
 @router.post("/win")
@@ -65,31 +72,17 @@ def arcade_win(
         )
     )
 
-    # Auto first-win bonus
-    first_win_bonus = 0
-    today = datetime.now(MSK).strftime("%Y-%m-%d")
-    if game and game != "unknown":
-        existing = db.query(models.ArcadeFirstWin).filter(
-            models.ArcadeFirstWin.user_id == user.id,
-            models.ArcadeFirstWin.game == game,
-            models.ArcadeFirstWin.win_date == today,
-        ).first()
-        if not existing:
-            db.add(models.ArcadeFirstWin(user_id=user.id, game=game, win_date=today))
-            wallet.balance += FIRST_WIN_REWARD
-            first_win_bonus = FIRST_WIN_REWARD
-            db.add(models.Transaction(recipient_id=user.id, amount=FIRST_WIN_REWARD, note=f"first_win:{game}"))
-
     db.commit()
     db.refresh(user)
     return {
         "ok": True,
         "balance": user.wallet.balance,
-        "first_win_bonus": first_win_bonus,
     }
 
 
+# Награда за первую победу дня в мини-игре (в ковбаксах). Только для 6 мини-игр Аркады.
 FIRST_WIN_REWARD = 3
+FIRST_WIN_GAMES = {"moshonka", "tictactoe", "minesweeper", "harvest", "checkers", "pingpong"}
 
 
 @router.get("/first-win-status")
@@ -99,7 +92,8 @@ def first_win_status(user: models.User = Depends(current_user), db: Session = De
         models.ArcadeFirstWin.user_id == user.id,
         models.ArcadeFirstWin.win_date == today,
     ).all()
-    return {"won_games": [w.game for w in wins], "reward": FIRST_WIN_REWARD}
+    won = [w.game for w in wins if w.game in FIRST_WIN_GAMES]
+    return {"won_games": won, "reward": FIRST_WIN_REWARD}
 
 
 @router.post("/first-win")
@@ -108,6 +102,8 @@ def claim_first_win(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    if game not in FIRST_WIN_GAMES:
+        raise HTTPException(status_code=400, detail="Неизвестная мини-игра")
     today = datetime.now(MSK).strftime("%Y-%m-%d")
     existing = db.query(models.ArcadeFirstWin).filter(
         models.ArcadeFirstWin.user_id == user.id,
@@ -455,6 +451,7 @@ def clicker_state(
     db: Session = Depends(get_db),
 ) -> dict:
     """Состояние кликера + синхронизация энергии/пассива."""
+    _require_clicker_access(user)
     state = _get_or_create_clicker_state(db, user)
     passive_earned = _sync_clicker(db, state, user)
     wallet = ensure_wallet(db, user)
@@ -474,6 +471,7 @@ def clicker_tap(
     if taps <= 0 or taps > 500:
         raise HTTPException(status_code=400, detail="Некорректное количество тапов")
 
+    _require_clicker_access(user)
     state = _get_or_create_clicker_state(db, user)
     _sync_clicker(db, state, user)
     now = models.now_utc()
@@ -542,6 +540,7 @@ def clicker_boost(
     if boost not in CLICKER_BOOST_DAILY:
         raise HTTPException(status_code=400, detail="Неизвестный буст")
 
+    _require_clicker_access(user)
     state = _get_or_create_clicker_state(db, user)
     _sync_clicker(db, state, user)
     now = models.now_utc()
@@ -579,6 +578,7 @@ def clicker_cashout(
 ) -> dict:
     """Вывод ковкойнов в ковбаксы по курсу 100:1. amount — сколько ковкойнов вывести
     (по умолчанию — максимум, кратный курсу)."""
+    _require_clicker_access(user)
     state = _get_or_create_clicker_state(db, user)
     _sync_clicker(db, state, user)
     now = models.now_utc()
@@ -625,6 +625,7 @@ def clicker_upgrade(
     if upgrade not in CLICKER_UPGRADES:
         raise HTTPException(status_code=400, detail="Неизвестный апгрейд")
 
+    _require_clicker_access(user)
     state = _get_or_create_clicker_state(db, user)
     _sync_clicker(db, state, user)
 

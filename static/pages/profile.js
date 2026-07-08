@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=224";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=226";
 
-import { playUISound } from "/static/pages/settings.js?v=224";
+import { playUISound } from "/static/pages/settings.js?v=226";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -56,7 +56,7 @@ export async function renderProfile(root) {
     <section class="page-header">
       <div>
         <h1>${escapeHtml(user.first_name || "Гражданин")}</h1>
-        <div class="subtitle">Должность: ${escapeHtml(user.role)}</div>
+        <div class="subtitle">${escapeHtml(user.role)}</div>
       </div>
       <div class="hero-head">${photoOrEmoji}</div>
     </section>
@@ -229,8 +229,10 @@ async function loadOnlineAvatars(root) {
               <h3 style="margin:0">${escapeHtml(profile.first_name || "Игрок")}</h3>
               ${profile.role ? '<div style="color:var(--text-muted);font-size:13px">' + escapeHtml(profile.role) + '</div>' : ''}
               ${profile.username ? '<div style="color:var(--text-muted);font-size:13px">@' + escapeHtml(profile.username) + '</div>' : ''}
-              <div style="margin-top:8px;font-size:13px">Баланс: <strong>${profile.balance || 0}</strong> К</div>
-              ${profile.bp_level ? '<div style="margin-top:4px;font-size:12px;color:var(--primary)">Уровень пропуска: ' + profile.bp_level + '</div>' : ''}
+              <div style="margin-top:10px;font-size:13px;display:flex;gap:14px;justify-content:center;align-items:center;flex-wrap:wrap">
+                <span><strong>${profile.balance || 0}</strong> К</span>
+                <span style="color:var(--primary);font-weight:600">Пропуск ур. ${profile.bp_level || 1}</span>
+              </div>
               <div style="margin-top:4px;font-size:12px;color:${online ? '#4CAF50' : 'var(--text-muted)'}">${online ? '● онлайн' : 'не в сети'}</div>
             </div>
           `);
@@ -500,7 +502,7 @@ function openItemActionsDialog(row) {
       var res = await post("/api/profile/inventory/assemble-fragments");
       window.closeModal();
       _updateSections(["inventory", "balance"]);
-      window.kov.toast("🎁 Собрано: " + res.item_name);
+      window.kov.toast("🎁 Вы получили: " + res.item_name);
     } catch (err) {
       window.kov.toast(err.message);
     }

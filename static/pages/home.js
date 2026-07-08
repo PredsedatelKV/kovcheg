@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=224";
+import { get, post, iconHtml } from "/static/api.js?v=226";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=224";
+import { openAssistantChat } from "/static/pages/assistant.js?v=226";
 
-import { playUISound } from "/static/pages/settings.js?v=224";
+import { playUISound } from "/static/pages/settings.js?v=226";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -37,9 +37,9 @@ function bannerCarousel(banners) {
   const slides = seq.map(slideHtml).join("");
   const dots = banners.map(() => '<span class="dot" style="width:6px;height:6px;border-radius:50%;background:#D2D8E3;transition:all .25s ease"></span>').join("");
   return `
-    <div class="kc-carousel" id="bn-carousel" style="margin-bottom:14px;touch-action:none;overscroll-behavior:none">
+    <div class="kc-carousel" id="bn-carousel" style="margin-bottom:14px;touch-action:pan-y;overscroll-behavior:none">
       <div class="kc-viewport" style="overflow:hidden">
-        <div class="kc-track" id="bn-track" style="display:flex;will-change:transform;touch-action:none">${slides}</div>
+        <div class="kc-track" id="bn-track" style="display:flex;will-change:transform;touch-action:pan-y">${slides}</div>
       </div>
       <div class="dots" id="bn-dots" style="display:flex;justify-content:center;gap:6px;padding:8px 0 2px">${dots}</div>
     </div>`;
@@ -141,7 +141,7 @@ export async function renderHome(root) {
         <h1>${welcome}</h1>
         <div class="subtitle" id="home-clock">${escapeHtml(data.server_time_msk)} мск</div>
       </div>
-      <div class="hero-art" title="Ковчег"><img src="/static/img/ui/stone_block.svg" alt="Ковчег" class="hero-img"/></div>
+      <div class="hero-art" title="Ковчег"><img src="/static/img/cube.svg" alt="Ковчег" class="hero-img"/></div>
     </section>
 
 ${bannerCarousel(data.banners)}
@@ -151,6 +151,18 @@ ${bannerCarousel(data.banners)}
     <div class="square-row">
       ${bigSquareCard({ id: "wheel-card", type: "wheel", title: "Колесо фортуны", cssClass: "wheel-square" })}
       ${bigSquareCard({ id: "news-card", type: "news", title: "Новости", slides: data.news || [], cssClass: "news-square" })}
+    </div>
+
+    <div class="card daily-reward-card" id="daily-reward-card" style="display:none">
+      <div class="daily-reward-head">
+        <img src="/static/img/ui/coin.svg" alt="" class="daily-reward-icon"/>
+        <div class="daily-reward-meta">
+          <div class="daily-reward-title">Ежедневная награда</div>
+          <div class="daily-reward-desc" id="daily-reward-desc">Забери награду за вход</div>
+        </div>
+        <button class="btn btn-sm" id="daily-reward-btn">Забрать</button>
+      </div>
+      <div class="daily-streak-dots" id="daily-streak-dots"></div>
     </div>
 
     <div class="card quiz-card" id="quiz-card">
@@ -166,18 +178,6 @@ ${bannerCarousel(data.banners)}
         <button class="see-all" data-action="all-tasks">Смотреть все</button>
       </div>
       ${tasksList(data.tasks.slice(0, 3), data.user_tasks)}
-    </div>
-
-    <div class="card" id="daily-reward-card" style="display:none">
-      <div style="display:flex;align-items:center;gap:12px;padding:4px 0">
-        <img src="/static/img/ui/coin.svg" alt="" style="width:36px;height:36px"/>
-        <div style="flex:1">
-          <div style="font-weight:700;font-size:15px">Ежедневная награда</div>
-          <div style="font-size:13px;color:var(--text-soft)" id="daily-reward-desc">Забери награду за вход</div>
-        </div>
-        <button class="btn btn-sm" id="daily-reward-btn">Забрать</button>
-      </div>
-      <div style="display:flex;gap:4px;margin-top:10px" id="daily-streak-dots"></div>
     </div>
 
     <div class="chip-row">
@@ -417,7 +417,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=224").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=226").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {
@@ -426,16 +426,21 @@ ${bannerCarousel(data.banners)}
 
   loadQuizzes(root);
 
-  // Real-time clock: update every 10 seconds
-  function mskNow() {
-    return new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
+  // Часы реального времени по МСК — обновляется только текст, раз в секунду,
+  // без перезагрузки страницы.
+  function mskClock() {
+    var now = new Date();
+    var date = now.toLocaleDateString("ru-RU", { day: "numeric", month: "long", timeZone: "Europe/Moscow" });
+    var time = now.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Europe/Moscow" });
+    return date + ", " + time + " мск";
   }
   var clockEl = root.querySelector("#home-clock");
   if (clockEl) {
+    clockEl.textContent = mskClock();
     var clockTimer = setInterval(function() {
       if (!document.body.contains(clockEl)) { clearInterval(clockTimer); return; }
-      clockEl.textContent = mskNow() + " мск";
-    }, 10000);
+      clockEl.textContent = mskClock();
+    }, 1000);
     if (window.kov && window.kov.onTabChange) {
       window.kov.onTabChange("home", function() { clearInterval(clockTimer); });
     }
@@ -443,6 +448,15 @@ ${bannerCarousel(data.banners)}
 
   // Daily reward card
   loadDailyReward(root);
+}
+
+function kovbaksWord(n) {
+  var abs = Math.abs(n) % 100;
+  var last = abs % 10;
+  if (abs > 10 && abs < 20) return "ковбаксов";
+  if (last === 1) return "ковбакс";
+  if (last >= 2 && last <= 4) return "ковбакса";
+  return "ковбаксов";
 }
 
 async function loadDailyReward(root) {
@@ -455,25 +469,34 @@ async function loadDailyReward(root) {
     var btn = root.querySelector("#daily-reward-btn");
     var dots = root.querySelector("#daily-streak-dots");
 
-    // Render streak dots (7 days)
+    // Полоски серии (7 дней). Награда за день N = N ковбаксов (макс 7).
     var dotsHtml = "";
     for (var i = 1; i <= 7; i++) {
       var filled = i <= dr.streak;
-      dotsHtml += '<div style="width:28px;height:6px;border-radius:3px;background:' + (filled ? 'var(--primary)' : 'var(--border)') + ';transition:background .3s"></div>';
+      dotsHtml += '<span class="daily-dot ' + (filled ? 'filled' : '') + '"><b>' + i + '</b></span>';
     }
     dots.innerHTML = dotsHtml;
+
+    // Клонируем кнопку, чтобы убрать возможные старые обработчики при повторной загрузке.
+    var freshBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(freshBtn, btn);
+    btn = freshBtn;
 
     if (dr.claimed_today) {
       btn.disabled = true;
       btn.textContent = "Получено";
-      desc.textContent = "Завтра: " + Math.min(dr.streak + 1, 7) + " K";
+      var next = Math.min(dr.streak + 1, 7);
+      desc.textContent = "Серия: " + dr.streak + " дн. · завтра " + next + " " + kovbaksWord(next);
     } else {
-      desc.textContent = "День " + Math.min(dr.streak + 1, 7) + " · " + Math.min(dr.streak + 1, 7) + " K";
+      btn.disabled = false;
+      btn.textContent = "Забрать";
+      var reward = dr.reward;
+      desc.textContent = "День " + reward + " · +" + reward + " " + kovbaksWord(reward);
       btn.addEventListener("click", async function() {
         btn.disabled = true;
         try {
           var res = await post("/api/home/daily-reward/claim");
-          window.kov.toast("+" + res.reward + " K! Серия: " + res.streak + " дн.");
+          window.kov.toast("+" + res.reward + " " + kovbaksWord(res.reward) + "! Серия: " + res.streak + " дн.");
           if (window.kov.me) window.kov.me.balance = res.balance;
           if (window.kov.emit) window.kov.emit("balance:update", { balance: res.balance });
           loadDailyReward(root);

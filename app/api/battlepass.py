@@ -179,11 +179,13 @@ def claim_reward(
 
 
 @router.post("/award-xp")
-def award_xp(
+def award_xp_route(
     body: schemas.AwardXpRequest,
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    # ВАЖНО: имя функции не должно совпадать с импортированным хелпером award_xp
+    # (иначе оно перекрывает его на уровне модуля и клейм наград-XP падает).
     if not is_admin(user):
         raise HTTPException(403, "Только для админов")
 

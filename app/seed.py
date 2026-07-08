@@ -53,6 +53,7 @@ ITEM_ICON_BY_CODE: dict[str, str] = {
     "popcorn": "/static/img/items/popcorn.svg",
     "booster_1h": "/static/img/items/booster_1h.svg",
     "exp_scroll": "/static/img/items/exp_scroll.svg",
+    "box_fragment": "/static/img/items/box_fragment.svg",
 }
 
 TASK_ICON_BY_NAME: dict[str, str] = {
@@ -562,8 +563,8 @@ def seed(db: Session) -> None:
     _get_or_create_item(
         db, "box_fragment",
         name="Фрагмент ковбокса",
-        icon="/static/img/ui/box.svg",
-        description="Собери 3 фрагмента, чтобы собрать случайный ковбокс.",
+        icon="/static/img/items/box_fragment.svg",
+        description="Осколок ковбокса. Собери 3 фрагмента, чтобы получить случайный ковбокс.",
         category="Ресурсы",
         rarity="Обычный",
     )

@@ -129,9 +129,15 @@ def get_daily_reward(user: models.User = Depends(current_user), db: Session = De
     if not dr:
         return {"streak": 0, "claimed_today": False, "reward": 1}
     claimed_today = dr.last_claim_date == today
-    streak = dr.streak if not claimed_today else dr.streak
-    next_reward = min(streak + 1, 7) if not claimed_today else streak
-    return {"streak": streak, "claimed_today": claimed_today, "reward": next_reward}
+    if claimed_today:
+        # Уже забрано сегодня: показываем текущую серию и полученную награду.
+        return {"streak": dr.streak, "claimed_today": True, "reward": min(dr.streak, 7)}
+    # Не забрано сегодня. Серия продолжается только если забирали вчера, иначе сбрасывается.
+    if dr.last_claim_date == _yesterday_str():
+        next_streak = min(dr.streak + 1, 7)
+    else:
+        next_streak = 1  # пропущен календарный день — серия сброшена
+    return {"streak": dr.streak, "claimed_today": False, "reward": next_streak}
 
 
 @router.post("/daily-reward/claim")

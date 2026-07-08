@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=224";
+import { post, get } from "/static/api.js?v=226";
 
-import { playUISound } from "/static/pages/settings.js?v=224";
+import { playUISound } from "/static/pages/settings.js?v=226";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -271,6 +271,7 @@ function gameWhereIsMoshonka(container) {
         if (isWin) {
           result.innerHTML = `<div class="game-win">Угадал! +${10 * round}</div>`;
           playUISound("win");
+          awardFirstWin("moshonka");
           score += 10 * round;
           round++;
           scoreEl.textContent = score;
@@ -288,8 +289,6 @@ function gameWhereIsMoshonka(container) {
   }
 
   const html = `
-    <div id="moshonka-level" style="display:none">
-    </div>
     <div id="moshonka-game" style="">
       <div style="text-align:center;margin-bottom:6px">
         <span style="font-size:13px;color:var(--text-soft)">Счёт: <span id="moshonka-score-val">0</span></span>
@@ -315,9 +314,7 @@ function gameWhereIsMoshonka(container) {
   cupContainer = root.querySelector("#moshonka-cups");
   scoreEl = root.querySelector("#moshonka-score-val");
 
-  const levelPicker = root.querySelector("#moshonka-level");
-  const gameArea = root.querySelector("#moshonka-game");
-  // Auto-start with hard difficulty
+  // Сразу запускаем сложный уровень — экран выбора сложности не нужен.
   startRound();
 }
 
@@ -428,6 +425,7 @@ function gameTicTacToe(container) {
           resultEl.innerHTML = `<div class="game-win">Победа!</div>`;
           animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
           playUISound("win");
+          awardFirstWin("tictactoe");
         } else if (winner === "draw") {
           resultEl.innerHTML = `<div class="game-neutral">Ничья!</div>`;
         } else {
@@ -578,6 +576,7 @@ function gameMinesweeper() {
       resultEl.innerHTML = `<div class="game-win">Все безопасные клетки найдены!</div>`;
       animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
       playUISound("win");
+      awardFirstWin("minesweeper");
       modal.querySelector("#mine-again").style.visibility = "visible";
     }
   }
@@ -695,6 +694,7 @@ function gameHarvest() {
       if (score >= 10) {
         modal.querySelector("#harvest-result").innerHTML = `<div class="game-win">Урожай собран! Тыкв: ${score}.</div>`;
         playUISound("win");
+        awardFirstWin("harvest");
       } else if (score >= 5) {
         modal.querySelector("#harvest-result").innerHTML = `<div class="game-neutral">Неплохо! Тыкв: ${score}.</div>`;
       } else {
@@ -1055,7 +1055,7 @@ function gameCheckers() {
       if (state[i]) { if (state[i].color === "white") w++; else b++; }
     }
     if (w === 0) { resultEl.innerHTML = '<div class="game-lose">Мошонка победил!</div>'; }
-    else if (b === 0) { resultEl.innerHTML = '<div class="game-win">Ты победил!</div>'; post("/api/arcade/win", { amount: 50, game: "checkers" }).catch(() => {}); balance += 50; syncBalance(); }
+    else if (b === 0) { resultEl.innerHTML = '<div class="game-win">Ты победил!</div>'; playUISound("win"); awardFirstWin("checkers"); }
     status.textContent = turn === "white" ? "Твой ход" : "Ход Мошонки...";
   }
 
@@ -1102,7 +1102,7 @@ function gamePingPong() {
     if (bx < BS || bx > W - BS) bvx = -bvx;
     if (by < 10 + PH + BS && bx > ai && bx < ai + PW) { bvy = Math.abs(bvy); bvx += (bx - (ai + PW / 2)) * 0.1; }
     if (by > H - 20 - BS && bx > px && bx < px + PW) { bvy = -Math.abs(bvy); bvx += (bx - (px + PW / 2)) * 0.1; }
-    if (by < 0) { ps++; scoreEl.textContent = ps + " : " + as; resetBall(); if (ps >= 5) { running = false; resultEl.innerHTML = '<div class="game-win">Ты победил! +30K</div>'; post("/api/arcade/win", { amount: 30, game: "pingpong" }).catch(() => {}); balance += 30; syncBalance(); return; } }
+    if (by < 0) { ps++; scoreEl.textContent = ps + " : " + as; resetBall(); if (ps >= 5) { running = false; resultEl.innerHTML = '<div class="game-win">Ты победил!</div>'; playUISound("win"); awardFirstWin("pingpong"); return; } }
     if (by > H) { as++; scoreEl.textContent = ps + " : " + as; resetBall(); if (as >= 5) { running = false; resultEl.innerHTML = '<div class="game-lose">Мошонка победил</div>'; return; } }
     const target = bx - PW / 2;
     ai += (target - ai) * 0.06;
@@ -1383,7 +1383,7 @@ function gameClicker() {
   const COIN = "/static/img/ui/kovcoin.svg";
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
-    <h2>Ковчег-Кликер</h2>
+    <h2>Кликер</h2>
     <p class="card-sub">Тапай и зарабатывай ковкойны, выводи в ковбаксы!</p>
     <div class="clicker-level">
       <div class="clicker-level-head">
@@ -1859,7 +1859,12 @@ export async function renderArcade(root) {
   try {
     await fetchBalance();
   } catch (_) {}
-  
+
+  // Кликер временно доступен только Омару (админу). Для остальных карточка видна,
+  // но затемнена и не запускается (проверка дублируется на сервере).
+  const isAdmin = !!(window.kov && window.kov.me && window.kov.me.is_admin);
+  const clickerLocked = !isAdmin;
+
   root.innerHTML = `
     <section class="page-header">
       <div>
@@ -1871,10 +1876,11 @@ export async function renderArcade(root) {
 
     <h2 class="section-title">Кликер</h2>
     <div class="game-grid">
-      <div class="game-tile" data-game="clicker" style="grid-column: 1 / -1">
+      <div class="game-tile${clickerLocked ? ' game-tile-soon' : ''}" data-game="clicker" ${clickerLocked ? 'data-locked="1"' : ''} style="grid-column: 1 / -1">
         <div class="game-tile-icon"><img src="/static/img/ui/coin.svg" alt="" class="game-icon-lg"/></div>
-        <div class="game-tile-title">Ковчег-Кликер</div>
+        <div class="game-tile-title">Кликер</div>
         <div class="game-tile-desc">Тапай монету, прокачивайся</div>
+        ${clickerLocked ? '<div class="game-tile-soon-badge">Скоро</div>' : ''}
       </div>
     </div>
 
@@ -1904,7 +1910,7 @@ export async function renderArcade(root) {
       <div class="game-tile" data-game="checkers">
         <div class="game-tile-icon"><img src="/static/img/ui/checkers.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Шашки</div>
-        <div class="game-tile-desc">3 уровня сложности</div>
+        <div class="game-tile-desc">Играй против Мошонки</div>
       </div>
       <div class="game-tile" data-game="pingpong">
         <div class="game-tile-icon"><img src="/static/img/ui/pingpong.svg" alt="" class="game-icon-lg"/></div>
@@ -1955,9 +1961,110 @@ export async function renderArcade(root) {
   root.querySelectorAll(".game-tile").forEach((tile) => {
     tile.addEventListener("click", () => {
       const game = tile.dataset.game;
+      if (tile.dataset.locked) {
+        window.kov.toast("Скоро — игра пока недоступна");
+        return;
+      }
       if (games[game]) games[game]();
     });
   });
-  
+
   window.kov.arcade = games;
+
+  // Индикаторы награды за первую победу дня в мини-играх.
+  loadFirstWinBadges(root);
+}
+
+// ============ НАГРАДА ЗА ПЕРВУЮ ПОБЕДУ (мини-игры) ============
+
+const MINI_GAMES = ["moshonka", "tictactoe", "minesweeper", "harvest", "checkers", "pingpong"];
+
+function _kovbaksWord(n) {
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if (abs > 10 && abs < 20) return "ковбаксов";
+  if (last === 1) return "ковбакс";
+  if (last >= 2 && last <= 4) return "ковбакса";
+  return "ковбаксов";
+}
+
+// Начислить награду за первую победу дня в конкретной мини-игре.
+// Сервер сам решает, положена ли награда (идемпотентно, не чаще 1 раза в сутки на игру).
+async function awardFirstWin(game) {
+  try {
+    const res = await post("/api/arcade/first-win", { game });
+    if (res && res.ok && res.reward) {
+      window.kov.toast("🏆 +" + res.reward + " " + _kovbaksWord(res.reward) + " за первую победу!");
+      balance = res.balance;
+      const pb = document.querySelector(".wallet-balance-value strong");
+      if (pb) pb.textContent = balance;
+      if (window.kov.me) window.kov.me.balance = res.balance;
+      if (window.kov.emit) window.kov.emit("balance:update", { balance: res.balance });
+      // Обновим бейджи на карточках (если вкладка ещё открыта).
+      const arcRoot = document.querySelector('.tab-content .game-grid');
+      if (arcRoot) loadFirstWinBadges(arcRoot.closest('.tab-content') || document);
+    }
+  } catch (_) { /* награда некритична — молча игнорируем */ }
+}
+
+function _msToNextMskMidnight() {
+  // МСК = UTC+3, без перехода на летнее время.
+  const dayMs = 24 * 3600 * 1000;
+  const mskMs = Date.now() + 3 * 3600 * 1000;
+  return dayMs - (mskMs % dayMs);
+}
+
+function _fmtFwTimer(ms) {
+  let s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return "через " + h + "ч " + m + "м";
+  const sec = s % 60;
+  if (m > 0) return "через " + m + "м";
+  return "через " + sec + "с";
+}
+
+let _fwTimer = null;
+
+function _updateFwTimers(scope) {
+  const badges = (scope || document).querySelectorAll(".fw-badge.claimed");
+  const ms = _msToNextMskMidnight();
+  badges.forEach((b) => { b.textContent = _fmtFwTimer(ms); });
+}
+
+async function loadFirstWinBadges(root) {
+  if (!root || !root.querySelector) return;
+  let status;
+  try {
+    status = await get("/api/arcade/first-win-status");
+  } catch (_) { return; }
+  const won = new Set(status.won_games || []);
+  const reward = status.reward || 3;
+  MINI_GAMES.forEach((g) => {
+    const tile = root.querySelector('.game-tile[data-game="' + g + '"]');
+    if (!tile) return;
+    let badge = tile.querySelector(".fw-badge");
+    if (!badge) {
+      badge = document.createElement("div");
+      badge.className = "fw-badge";
+      tile.appendChild(badge);
+    }
+    if (won.has(g)) {
+      badge.classList.add("claimed");
+      badge.title = "Награда получена сегодня";
+    } else {
+      badge.classList.remove("claimed");
+      badge.title = "Победи, чтобы получить награду";
+      badge.textContent = "+" + reward + " " + _kovbaksWord(reward);
+    }
+  });
+  _updateFwTimers(root);
+  if (_fwTimer) clearInterval(_fwTimer);
+  _fwTimer = setInterval(() => {
+    if (!document.body.contains(root)) { clearInterval(_fwTimer); _fwTimer = null; return; }
+    _updateFwTimers(root);
+  }, 1000);
+  if (window.kov && window.kov.onTabChange) {
+    window.kov.onTabChange("arcade", () => { if (_fwTimer) { clearInterval(_fwTimer); _fwTimer = null; } });
+  }
 }

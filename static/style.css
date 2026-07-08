@@ -5301,3 +5301,80 @@ html.dark .clicker-lock { background: rgba(0,0,0,0.65); }
 }
 .clicker-cashout-btn:disabled { opacity: 0.45; pointer-events: none; }
 html.dark .clicker-balance strong { color: #4ff08f; }
+
+/* ===================================================================
+   Правки (июль 2026): ежедневная награда, аркада-бейджи, «Скоро»,
+   стабильное поле «Сапёра», доп. контраст тёмной темы.
+   =================================================================== */
+
+/* --- Задача 12: карточка «Ежедневная награда» --- */
+.daily-reward-head { display: flex; align-items: center; gap: 12px; }
+.daily-reward-icon { width: 36px; height: 36px; flex-shrink: 0; }
+.daily-reward-meta { flex: 1; min-width: 0; }
+.daily-reward-title { font-weight: 700; font-size: 15px; }
+.daily-reward-desc { font-size: 13px; color: var(--text-soft); margin-top: 2px; }
+.daily-streak-dots { display: flex; gap: 5px; margin-top: 12px; }
+.daily-dot {
+  flex: 1; height: 22px; border-radius: 6px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  transition: background .3s;
+}
+.daily-dot b { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+.daily-dot.filled { background: linear-gradient(180deg, #4d96ff, #2f7bf5); border-color: transparent; }
+.daily-dot.filled b { color: #fff; }
+html.dark .daily-reward-title { color: var(--text); }
+html.dark .daily-reward-desc { color: var(--text-soft); }
+html.dark .daily-dot b { color: var(--text-soft); }
+
+/* --- Задача 10: бейдж награды за первую победу дня --- */
+.game-tile { position: relative; }
+.fw-badge {
+  position: absolute; top: 6px; right: 6px;
+  background: linear-gradient(180deg, #ffd54a, #f5a623);
+  color: #3a2a00; font-size: 10px; font-weight: 800;
+  padding: 2px 7px; border-radius: 999px; line-height: 1.4;
+  box-shadow: 0 2px 6px rgba(0,0,0,.18); pointer-events: none; white-space: nowrap;
+}
+.fw-badge.claimed {
+  background: var(--surface-2); color: var(--text-soft);
+  border: 1px solid var(--border); box-shadow: none; font-weight: 700;
+}
+html.dark .fw-badge.claimed { background: rgba(255,255,255,.08); color: var(--text-soft); border-color: var(--border); }
+
+/* --- Задача 14: кликер «Скоро» (недоступен обычным гражданам) --- */
+.game-tile-soon { opacity: .6; filter: grayscale(.35); cursor: default; }
+.game-tile-soon:hover { transform: none; box-shadow: none; }
+.game-tile-soon-badge {
+  position: absolute; top: 8px; right: 10px;
+  background: rgba(0,0,0,.62); color: #fff; font-size: 11px; font-weight: 700;
+  padding: 3px 10px; border-radius: 999px; letter-spacing: .5px;
+}
+
+/* --- Задача 4: поле «Сапёра» фиксированного размера (не зависит от содержимого) --- */
+.game-mine-board {
+  --mine-cell: clamp(26px, 9.5vw, 34px);
+  display: grid;
+  grid-template-columns: repeat(8, var(--mine-cell));
+  grid-auto-rows: var(--mine-cell);
+  gap: 3px;
+  width: max-content;
+  margin: 20px auto;
+}
+.mine-cell {
+  width: var(--mine-cell); height: var(--mine-cell);
+  aspect-ratio: auto; min-width: 0; min-height: 0;
+}
+
+/* --- Задача 5: доп. страховка контраста текста в тёмной теме --- */
+html.dark .clicker-upgrade-name,
+html.dark .clicker-boost-name,
+html.dark .clicker-cost,
+html.dark .clicker-cashout-rate,
+html.dark .game-balance,
+html.dark .card-title,
+html.dark .section-title,
+html.dark .quiz-row h4,
+html.dark .item-meta,
+html.dark .modal .item-actions-head h2 { color: var(--text); }
+html.dark .game-balance strong { color: var(--text); }
