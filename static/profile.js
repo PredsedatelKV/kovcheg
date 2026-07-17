@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=226";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=227";
 
-import { playUISound } from "/static/pages/settings.js?v=226";
+import { playUISound } from "/static/pages/settings.js?v=227";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -57,7 +57,7 @@ export async function renderProfile(root) {
     <section class="page-header">
       <div>
         <h1>${escapeHtml(user.first_name || "Гражданин")}</h1>
-        <div class="subtitle">Должность: ${escapeHtml(user.role)}</div>
+        <div class="subtitle">${escapeHtml(user.role)}</div>
         <div class="subtitle">Ограничения: ${escapeHtml(user.restrictions || "-")}</div>
       </div>
       <div class="hero-head">${photoOrEmoji}</div>

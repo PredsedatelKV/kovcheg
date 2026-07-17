@@ -5378,3 +5378,29 @@ html.dark .quiz-row h4,
 html.dark .item-meta,
 html.dark .modal .item-actions-head h2 { color: var(--text); }
 html.dark .game-balance strong { color: var(--text); }
+
+/* iOS/WebView gesture ownership: horizontal drag stays with the banner while
+   the page keeps its normal vertical scroll. */
+.kc-carousel, .kc-viewport, .kc-track {
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.kc-track { cursor: grab; }
+.kc-track:active { cursor: grabbing; }
+
+/* Reserve the badge corner so it never covers a title or game artwork. */
+.game-tile[data-game="moshonka"],
+.game-tile[data-game="tictactoe"],
+.game-tile[data-game="minesweeper"],
+.game-tile[data-game="harvest"],
+.game-tile[data-game="checkers"],
+.game-tile[data-game="pingpong"] { padding-top: 34px; }
+
+html.dark .chat-message.user .chat-bubble { color: var(--text); }
+html.dark input::placeholder,
+html.dark textarea::placeholder { color: #8f98ab; opacity: 1; }
+html.dark .input:disabled,
+html.dark .btn:disabled { color: #c3c8d4; }
+html.dark .error,
+html.dark [role="alert"] { color: #ff8a8a; }

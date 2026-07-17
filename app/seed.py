@@ -170,6 +170,37 @@ def migrate_schema(db: Session) -> None:
         if broken:
             db.commit()
 
+    # Move legacy JSON claim markers to immutable rows with a database unique
+    # constraint.  Keep the JSON field during the compatibility window because
+    # old admin tooling still reads it.
+    if db.get_bind().dialect.name == "sqlite":
+        import json
+        for ubp in db.query(models.UserBattlePass).all():
+            try:
+                raw = json.loads(ubp.claimed_rewards or "[]")
+            except (TypeError, json.JSONDecodeError):
+                raw = []
+            levels: set[int] = set()
+            for marker in raw:
+                value = marker[0] if isinstance(marker, list) and marker else marker
+                if isinstance(value, int):
+                    levels.add(value)
+            if not levels:
+                continue
+            rewards = db.query(models.BattlePassReward).filter(
+                models.BattlePassReward.season_id == ubp.season_id,
+                models.BattlePassReward.track == "free",
+                models.BattlePassReward.level.in_(levels),
+            ).all()
+            for reward in rewards:
+                exists = db.query(models.BattlePassClaim).filter(
+                    models.BattlePassClaim.user_id == ubp.user_id,
+                    models.BattlePassClaim.reward_id == reward.id,
+                ).first()
+                if not exists:
+                    db.add(models.BattlePassClaim(user_id=ubp.user_id, reward_id=reward.id))
+        db.commit()
+
 
 # Старые фейковые seed-аккаунты (нереальные Telegram ID) — удаляются на старте,
 # чтобы в игре остались строго трое привязанных граждан.
@@ -519,7 +550,7 @@ def seed(db: Session) -> None:
             db.add(models.ChatMessage(user_id=ibragim.id, content="Привет всем!", message_type="text"))
 
     # XP за задания (по умолчанию)
-    for t in db.query(models.Task).filter(models.Task.is_active == True).all():
+    for t in db.query(models.Task).filter(models.Task.is_active.is_(True)).all():
         if t.xp_reward == 0:
             t.xp_reward = 10
 
@@ -639,7 +670,7 @@ def seed(db: Session) -> None:
             ))
 
     # Create UserBattlePass for every existing user
-    season = db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active == True).first()
+    season = db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active.is_(True)).first()
     if season:
         for user in db.query(models.User).all():
             ubp = db.query(models.UserBattlePass).filter(

@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=226";
+import { get, post, iconHtml } from "/static/api.js?v=227";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=226";
+import { openAssistantChat } from "/static/pages/assistant.js?v=227";
 
-import { playUISound } from "/static/pages/settings.js?v=226";
+import { playUISound } from "/static/pages/settings.js?v=227";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -296,7 +296,7 @@ ${bannerCarousel(data.banners)}
     // horiz: null = ещё не определили направление; true = горизонтальный свайп
     // (забираем жест себе, страница/мини-апп не двигаются); false = вертикальный
     // (отдаём прокрутке страницы).
-    let dragging = false, startX = 0, startY = 0, startTf = 0, horiz = null;
+    let dragging = false, startX = 0, startY = 0, startTf = 0, horiz = null, suppressClick = false;
     const beginDrag = (x, y) => {
       dragging = true; startX = x; startY = y; horiz = null;
       stopAuto();
@@ -309,6 +309,7 @@ ${bannerCarousel(data.banners)}
       dragging = false;
       if (horiz === false) { startAuto(); return; }
       const dx = x - startX;
+      suppressClick = Math.abs(dx) > 8;
       const threshold = slideWidth() * 0.18;
       if (dx <= -threshold) go(1);
       else if (dx >= threshold) go(-1);
@@ -331,6 +332,12 @@ ${bannerCarousel(data.banners)}
     }, { passive: false });
     bnTrack.addEventListener("touchend", (e) => finishDrag((e.changedTouches[0] || {}).clientX || startX));
     bnTrack.addEventListener("touchcancel", () => finishDrag(startX));
+    bnTrack.addEventListener("click", (e) => {
+      if (!suppressClick) return;
+      e.preventDefault();
+      e.stopPropagation();
+      suppressClick = false;
+    }, true);
     // Mouse (десктоп): всегда трактуем как горизонтальный drag.
     bnTrack.addEventListener("mousedown", (e) => { e.preventDefault(); beginDrag(e.clientX, e.clientY); horiz = true; });
     window.addEventListener("mousemove", (e) => {
@@ -417,7 +424,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=226").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=227").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {
@@ -428,8 +435,9 @@ ${bannerCarousel(data.banners)}
 
   // Часы реального времени по МСК — обновляется только текст, раз в секунду,
   // без перезагрузки страницы.
+  var serverClockOffset = Number(data.server_epoch_ms || Date.now()) - Date.now();
   function mskClock() {
-    var now = new Date();
+    var now = new Date(Date.now() + serverClockOffset);
     var date = now.toLocaleDateString("ru-RU", { day: "numeric", month: "long", timeZone: "Europe/Moscow" });
     var time = now.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Europe/Moscow" });
     return date + ", " + time + " мск";

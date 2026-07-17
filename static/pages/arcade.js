@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=226";
+import { post, get } from "/static/api.js?v=227";
 
-import { playUISound } from "/static/pages/settings.js?v=226";
+import { playUISound } from "/static/pages/settings.js?v=227";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -762,8 +762,9 @@ function gameRoulette() {
     playUISound("bet");
 
     // Надёжное списание: ждём ответ /bet, при ошибке не крутим.
+    let serverRound;
     try {
-      await post("/api/arcade/bet", { amount: bet });
+      serverRound = await post("/api/arcade/casino/start", { game: "roulette", amount: bet });
     } catch (_) {
       resultEl.innerHTML = `<div class="game-lose">Ошибка ставки, попробуйте ещё</div>`;
       spinBtn.disabled = false;
@@ -773,20 +774,13 @@ function gameRoulette() {
     // Раунд пошёл — блокируем закрытие модалки до его завершения.
     setCasinoRoundLocked(true);
 
-    balance -= bet;
+    balance = serverRound.balance;
     updateBalanceDisplay("roulette-balance", balance);
 
-    const totalWeight = sectors.reduce((s, sec) => s + sec.weight, 0);
-    let rand = Math.random() * totalWeight;
-    let chosen = sectors[0];
-    for (const sec of sectors) {
-      rand -= sec.weight;
-      if (rand <= 0) { chosen = sec; break; }
-    }
-
-    const mult = chosen.mult;
+    const chosen = sectors[serverRound.outcome.index];
+    const mult = Number(serverRound.outcome.multiplier);
     const win = Math.floor(bet * mult);
-    const chosenIdx = sectors.indexOf(chosen);
+    const chosenIdx = serverRound.outcome.index;
 
     wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("active", "highlight"));
     let currentIdx = 0;
@@ -807,19 +801,17 @@ function gameRoulette() {
         wheel.children[chosenIdx].classList.add("active");
         animateElement(wheel.children[chosenIdx], "popIn", 300);
 
+        const settled = await post("/api/arcade/casino/settle", { token: serverRound.token });
+        balance = settled.balance;
         if (mult > 1) {
-          balance += win;
           updateBalanceDisplay("roulette-balance", balance);
           resultEl.innerHTML = `<div class="game-win">${chosen.label}! Выигрыш: ${win} K</div>`;
           animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
           playUISound("win");
-          try { await post("/api/arcade/win", { amount: win, game: "roulette" }); } catch (_) { await syncBalance(); }
         } else if (mult === 1) {
-          balance += bet;
           updateBalanceDisplay("roulette-balance", balance);
           resultEl.innerHTML = `<div class="game-neutral">x1. Ставка возвращена.</div>`;
           playUISound("cashout");
-          try { await post("/api/arcade/win", { amount: bet, game: "roulette" }); } catch (_) { await syncBalance(); }
         } else {
           resultEl.innerHTML = `<div class="game-lose">${chosen.label}. Ставка потеряна.</div>`;
           playUISound("lose");
@@ -1151,8 +1143,9 @@ function gameSlots() {
     const bet = getBetValue("slots-bet");
     if (balance < bet) { resultEl.innerHTML = '<div class="game-lose">Недостаточно K</div>'; spinBtn.disabled = false; return; }
     // Надёжное списание: ждём ответ /bet, при ошибке не крутим.
+    let serverRound;
     try {
-      await post("/api/arcade/bet", { amount: bet });
+      serverRound = await post("/api/arcade/casino/start", { game: "slots", amount: bet });
     } catch (_) {
       resultEl.innerHTML = '<div class="game-lose">Ошибка ставки, попробуйте ещё</div>';
       spinBtn.disabled = false;
@@ -1160,14 +1153,12 @@ function gameSlots() {
     }
     // Раунд пошёл — блокируем закрытие модалки до результата.
     setCasinoRoundLocked(true);
-    balance -= bet;
+    balance = serverRound.balance;
     updateBalanceDisplay("slots-balance", balance);
     playUISound("spin");
-    const r1 = symbols[Math.floor(Math.random() * symbols.length)];
-    const r2 = symbols[Math.floor(Math.random() * symbols.length)];
-    const r3 = symbols[Math.floor(Math.random() * symbols.length)];
+    const [r1, r2, r3] = serverRound.outcome.reels;
     let spins = 0;
-    si = setInterval(() => {
+    si = setInterval(async () => {
       modal.querySelector("#s1").textContent = symbols[Math.floor(Math.random() * symbols.length)];
       modal.querySelector("#s2").textContent = symbols[Math.floor(Math.random() * symbols.length)];
       modal.querySelector("#s3").textContent = symbols[Math.floor(Math.random() * symbols.length)];
@@ -1179,20 +1170,18 @@ function gameSlots() {
         modal.querySelector("#s2").textContent = r2;
         modal.querySelector("#s3").textContent = r3;
         spinBtn.disabled = false;
+        const settled = await post("/api/arcade/casino/settle", { token: serverRound.token });
+        balance = settled.balance;
         // Целевой RTP ~95.9% (чуть выгоднее игроку): джекпот x29 при p=7/343,
         // пара x1 (возврат ставки) при p=126/343.
         if (r1 === r2 && r2 === r3) {
           const win = Math.floor(bet * 29);
-          balance += win;
           updateBalanceDisplay("slots-balance", balance);
-          post("/api/arcade/win", { amount: win, game: "slots" }).catch(() => {});
           resultEl.innerHTML = '<div class="game-win">ДЖЕКПОТ! +' + win + ' K</div>';
           playUISound("win");
         } else if (r1 === r2 || r2 === r3 || r1 === r3) {
           const win = Math.floor(bet * 1);
-          balance += win;
           updateBalanceDisplay("slots-balance", balance);
-          post("/api/arcade/win", { amount: win, game: "slots" }).catch(() => {});
           resultEl.innerHTML = '<div class="game-neutral">Пара! Ставка возвращена.</div>';
           playUISound("cashout");
         } else {
@@ -1223,7 +1212,7 @@ function gameRocket() {
   const resultEl = modal.querySelector("#rocket-result");
   const startBtn = modal.querySelector("#rocket-start");
   const cashBtn = modal.querySelector("#rocket-cashout");
-  let mult = 1, running = false, crashed = false, bet = 0, timer;
+  let mult = 1, running = false, crashed = false, bet = 0, timer, serverRound = null;
 
   startBtn.addEventListener("click", async () => {
     if (running) return;
@@ -1234,14 +1223,14 @@ function gameRocket() {
     startBtn.disabled = true;
     // Надёжное списание: ждём ответ /bet, при ошибке не запускаем.
     try {
-      await post("/api/arcade/bet", { amount: bet });
+      serverRound = await post("/api/arcade/casino/start", { game: "rocket", amount: bet });
     } catch (_) {
       resultEl.innerHTML = '<div class="game-lose">Ошибка ставки, попробуйте ещё</div>';
       startBtn.disabled = false;
       return;
     }
     startBtn.disabled = false;
-    balance -= bet;
+    balance = serverRound.balance;
     updateBalanceDisplay("rocket-balance", balance);
     mult = 1; running = true; crashed = false;
     startBtn.style.display = "none"; cashBtn.style.display = "";
@@ -1249,27 +1238,28 @@ function gameRocket() {
     resultEl.innerHTML = "";
 
     timer = setInterval(() => {
-      mult += 0.02 + Math.random() * 0.03;
+      mult += 0.025;
       multEl.textContent = "x" + mult.toFixed(2);
-      if (Math.random() < 0.017 * mult) { // выше шанс взрыва — ракета чуть невыгоднее
+      if (mult >= Number(serverRound.outcome.crash_at)) {
         clearInterval(timer); running = false; crashed = true;
         multEl.style.color = "#e55454";
         multEl.textContent = "💥 ВЗРЫВ";
         resultEl.innerHTML = '<div class="game-lose">Ракета взорвалась на x' + mult.toFixed(2) + '</div>';
         cashBtn.style.display = "none"; startBtn.style.display = "";
         playUISound("lose");
+        post("/api/arcade/casino/settle", { token: serverRound.token, multiplier: mult }).then(r => { balance = r.balance; updateBalanceDisplay("rocket-balance", balance); }).catch(() => syncBalance());
         syncBalance();
       }
     }, 100);
   });
 
-  cashBtn.addEventListener("click", () => {
+  cashBtn.addEventListener("click", async () => {
     if (!running) return;
     clearInterval(timer); running = false;
-    const win = Math.floor(bet * mult);
-    balance += win;
+    const settled = await post("/api/arcade/casino/settle", { token: serverRound.token, multiplier: mult });
+    const win = settled.payout;
+    balance = settled.balance;
     updateBalanceDisplay("rocket-balance", balance);
-    post("/api/arcade/win", { amount: win, game: "rocket" }).catch(() => {});
     multEl.style.color = "#6bd995";
     resultEl.innerHTML = '<div class="game-win">Забрал x' + mult.toFixed(2) + '! +' + win + ' K</div>';
     cashBtn.style.display = "none"; startBtn.style.display = "";
@@ -1323,18 +1313,19 @@ function gameDice() {
       if (balance < bet) { resEl.innerHTML = '<div class="game-lose">Недостаточно K</div>'; return; }
       rolling = true;
       // Надёжное списание: ждём ответ /bet, при ошибке не бросаем.
+      let serverRound;
       try {
-        await post("/api/arcade/bet", { amount: bet });
+        serverRound = await post("/api/arcade/casino/start", { game: "dice", amount: bet, choice: btn.dataset.pick });
       } catch (_) {
         resEl.innerHTML = '<div class="game-lose">Ошибка ставки, попробуйте ещё</div>';
         rolling = false;
         return;
       }
-      balance -= bet;
+      balance = serverRound.balance;
       updateBalanceDisplay("dice-balance", balance);
-      const roll = Math.floor(Math.random() * 6) + 1;
+      const roll = Number(serverRound.outcome.roll);
       let spins = 0;
-      const si = setInterval(() => {
+      const si = setInterval(async () => {
         diceEl.innerHTML = diceSVG[Math.floor(Math.random() * 6)];
         spins++;
         if (spins > 15) {
@@ -1349,10 +1340,10 @@ function gameDice() {
           else if (pick === "low" && roll <= 3) win = Math.floor(bet * 1.8);
           else if (pick === "high" && roll >= 4) win = Math.floor(bet * 1.8);
           else if (pick === String(roll)) win = bet * 5;
+          const settled = await post("/api/arcade/casino/settle", { token: serverRound.token });
+          balance = settled.balance;
           if (win > 0) {
-            balance += win;
             updateBalanceDisplay("dice-balance", balance);
-            post("/api/arcade/win", { amount: win, game: "dice" }).catch(() => {});
             resEl.innerHTML = '<div class="game-win">Выпало ' + roll + '! +' + win + ' K</div>';
             playUISound("win");
           } else {
@@ -1862,8 +1853,8 @@ export async function renderArcade(root) {
 
   // Кликер временно доступен только Омару (админу). Для остальных карточка видна,
   // но затемнена и не запускается (проверка дублируется на сервере).
-  const isAdmin = !!(window.kov && window.kov.me && window.kov.me.is_admin);
-  const clickerLocked = !isAdmin;
+  const canUseClicker = !!(window.kov && window.kov.me && window.kov.me.can_use_clicker);
+  const clickerLocked = !canUseClicker;
 
   root.innerHTML = `
     <section class="page-header">
@@ -1965,6 +1956,7 @@ export async function renderArcade(root) {
         window.kov.toast("Скоро — игра пока недоступна");
         return;
       }
+      if (MINI_GAMES.includes(game)) startFirstWinRound(game);
       if (games[game]) games[game]();
     });
   });
@@ -1978,6 +1970,12 @@ export async function renderArcade(root) {
 // ============ НАГРАДА ЗА ПЕРВУЮ ПОБЕДУ (мини-игры) ============
 
 const MINI_GAMES = ["moshonka", "tictactoe", "minesweeper", "harvest", "checkers", "pingpong"];
+const _firstWinRounds = new Map();
+
+function startFirstWinRound(game) {
+  if (!MINI_GAMES.includes(game)) return;
+  _firstWinRounds.set(game, post("/api/arcade/round/start", { game }).then(r => r.token));
+}
 
 function _kovbaksWord(n) {
   const abs = Math.abs(n) % 100;
@@ -1992,7 +1990,11 @@ function _kovbaksWord(n) {
 // Сервер сам решает, положена ли награда (идемпотентно, не чаще 1 раза в сутки на игру).
 async function awardFirstWin(game) {
   try {
-    const res = await post("/api/arcade/first-win", { game });
+    const pending = _firstWinRounds.get(game);
+    if (!pending) return;
+    const roundToken = await pending;
+    const res = await post("/api/arcade/first-win", { game, round_token: roundToken });
+    _firstWinRounds.delete(game);
     if (res && res.ok && res.reward) {
       window.kov.toast("🏆 +" + res.reward + " " + _kovbaksWord(res.reward) + " за первую победу!");
       balance = res.balance;
@@ -2025,10 +2027,11 @@ function _fmtFwTimer(ms) {
 }
 
 let _fwTimer = null;
+let _fwResetAt = 0;
 
 function _updateFwTimers(scope) {
   const badges = (scope || document).querySelectorAll(".fw-badge.claimed");
-  const ms = _msToNextMskMidnight();
+  const ms = _fwResetAt ? Math.max(0, _fwResetAt - Date.now()) : _msToNextMskMidnight();
   badges.forEach((b) => { b.textContent = _fmtFwTimer(ms); });
 }
 
@@ -2039,6 +2042,7 @@ async function loadFirstWinBadges(root) {
     status = await get("/api/arcade/first-win-status");
   } catch (_) { return; }
   const won = new Set(status.won_games || []);
+  _fwResetAt = Date.now() + Math.max(0, Number(status.next_reset_seconds || 0)) * 1000;
   const reward = status.reward || 3;
   MINI_GAMES.forEach((g) => {
     const tile = root.querySelector('.game-tile[data-game="' + g + '"]');

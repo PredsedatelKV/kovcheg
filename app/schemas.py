@@ -17,6 +17,7 @@ class UserOut(BaseModel):
     balance: int
     xp: int = 0
     is_admin: bool = False
+    can_use_clicker: bool = False
 
 
 class PlayerOut(BaseModel):
@@ -97,6 +98,7 @@ class NewsOut(BaseModel):
 class HomePayload(BaseModel):
     user: UserOut
     server_time_msk: str
+    server_epoch_ms: int
     banners: list[BannerOut]
     news: list[NewsOut] = []
     daily_plan: TaskOut | None = None
@@ -171,6 +173,7 @@ class LegalTextOut(BaseModel):
 
 class ProfilePayload(BaseModel):
     user: UserOut
+    bp_level: int = 0
     inventory: list[InventoryItemOut]
     user_tasks: list[UserTaskOut]
     daily_plan: TaskOut | None = None

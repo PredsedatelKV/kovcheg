@@ -9,7 +9,7 @@ from app import models, schemas
 from app.api.profile import _user_task_to_out, _user_to_out
 from app.auth import current_user
 from app.config import get_settings
-from app.db import get_db
+from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/home", tags=["home"])
 
@@ -96,6 +96,7 @@ def get_home(user: models.User = Depends(current_user), db: Session = Depends(ge
     return schemas.HomePayload(
         user=_user_to_out(user),
         server_time_msk=msk_now_label(),
+        server_epoch_ms=int(datetime.now(timezone.utc).timestamp() * 1000),
         banners=[schemas.BannerOut(id=b.id, image_url=b.image_url, title=b.title) for b in banners],
         news=[
             schemas.NewsOut(
@@ -144,6 +145,7 @@ def get_daily_reward(user: models.User = Depends(current_user), db: Session = De
 def claim_daily_reward(user: models.User = Depends(current_user), db: Session = Depends(get_db)):
     from app.api._helpers import ensure_wallet
 
+    begin_game_write(db)
     today = _today_str()
     dr = db.query(models.DailyReward).filter(models.DailyReward.user_id == user.id).first()
     if dr and dr.last_claim_date == today:

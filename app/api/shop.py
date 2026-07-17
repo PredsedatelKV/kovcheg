@@ -7,7 +7,7 @@ from app import models, schemas
 from app.api._helpers import ensure_wallet
 from app.api.profile import _item_to_out
 from app.auth import current_user
-from app.db import get_db
+from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/shop", tags=["shop"])
 
@@ -24,6 +24,7 @@ def buy(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> schemas.UserOut:
+    begin_game_write(db)
     product = (
         db.query(models.ShopProduct).filter(models.ShopProduct.id == payload.product_id, models.ShopProduct.is_active.is_(True)).one_or_none()
     )

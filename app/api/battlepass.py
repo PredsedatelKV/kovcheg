@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import json
 import random
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.api._helpers import award_xp, ensure_wallet
 from app.auth import current_user, is_admin
-from app.db import get_db
-from app.models import now_utc
+from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/battlepass", tags=["battlepass"])
 
 
 def _get_active_season(db: Session) -> models.BattlePassSeason | None:
-    return db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active == True).first()
+    return db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active.is_(True)).first()
 
 
 def _get_ubp(db: Session, user_id: int, season: models.BattlePassSeason) -> models.UserBattlePass:
@@ -75,7 +75,13 @@ def get_battlepass(
                 claimed_raw = parsed
         except (json.JSONDecodeError, TypeError):
             claimed_raw = []
-    claimed = _normalize_claimed(claimed_raw)
+    claimed = set(_normalize_claimed(claimed_raw))
+    claimed.update(
+        level for (level,) in db.query(models.BattlePassReward.level)
+        .join(models.BattlePassClaim, models.BattlePassClaim.reward_id == models.BattlePassReward.id)
+        .filter(models.BattlePassClaim.user_id == user.id, models.BattlePassReward.season_id == season.id)
+        .all()
+    )
 
     rewards: list[schemas.BattlePassRewardOut] = []
     for r in season.rewards:
@@ -94,7 +100,7 @@ def get_battlepass(
         current_level=min(level, season.total_levels - 1),
         current_xp=current_xp,
         xp_for_level=season.xp_per_level,
-        claimed_rewards=claimed,
+        claimed_rewards=sorted(claimed),
     )
 
 
@@ -104,13 +110,14 @@ def claim_reward(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    begin_game_write(db)
     season = _get_active_season(db)
     if not season:
         raise HTTPException(404, "Нет активного сезона")
     ubp = _get_ubp(db, user.id, season)
-    level, _ = _calc_level(user.xp, season.xp_per_level)
-    # Кап уровня согласован с get_battlepass (там min(level, total_levels-1)).
-    level = min(level, season.total_levels - 1)
+    level_index, _ = _calc_level(user.xp, season.xp_per_level)
+    # API stores a zero-based progress index, while rewards are numbered 1..N.
+    achieved_level = min(level_index + 1, season.total_levels)
 
     reward = db.query(models.BattlePassReward).filter(
         models.BattlePassReward.season_id == season.id,
@@ -120,8 +127,8 @@ def claim_reward(
     if not reward:
         raise HTTPException(404, "Награда не найдена")
 
-    if reward.level > level:
-        raise HTTPException(403, f"Уровень {reward.level} ещё не достигнут (текущий {level})")
+    if reward.level > achieved_level:
+        raise HTTPException(403, f"Уровень {reward.level} ещё не достигнут (текущий {achieved_level})")
 
     claimed_raw: list = []
     if ubp.claimed_rewards:
@@ -133,7 +140,11 @@ def claim_reward(
             claimed_raw = []
     claimed = _normalize_claimed(claimed_raw)
 
-    if reward.level in claimed:
+    existing_claim = db.query(models.BattlePassClaim).filter(
+        models.BattlePassClaim.user_id == user.id,
+        models.BattlePassClaim.reward_id == reward.id,
+    ).first()
+    if reward.level in claimed or existing_claim:
         raise HTTPException(409, "Награда уже получена")
 
     # Сначала ВЫДАЁМ награду; claimed помечаем и коммитим ТОЛЬКО после успешной выдачи.
@@ -170,6 +181,7 @@ def claim_reward(
     else:
         raise HTTPException(400, f"Неизвестный тип награды: {reward.kind}")
 
+    db.add(models.BattlePassClaim(user_id=user.id, reward_id=reward.id))
     claimed.append(reward.level)
     ubp.claimed_rewards = json.dumps(claimed)
 
@@ -213,6 +225,7 @@ def open_lootbox(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    begin_game_write(db)
     item = db.query(models.Item).filter(models.Item.id == body.item_id).first()
     if not item or not item.lootbox_pool_code:
         raise HTTPException(404, "Лутбокс не найден")
@@ -270,21 +283,9 @@ def award_arcade_xp(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    from datetime import timedelta
-    # Учёт лимита НЕ должен искажать денежную историю: пишем amount=0 с явной
-    # пометкой "arcade_xp_limit" (баланс не меняется, в истории нет ложного "+5").
-    one_hour_ago = now_utc() - timedelta(hours=1)
-    recent_xp = db.query(models.Transaction).filter(
-        models.Transaction.recipient_id == user.id,
-        models.Transaction.note == "arcade_xp_limit",
-        models.Transaction.created_at >= one_hour_ago,
-    ).count()
-    if recent_xp >= 3:
-        raise HTTPException(429, "Лимит XP за аркаду: 3 раза в час")
-    xp_to_coins = award_xp(db, user, 5)["coins"]
-    db.add(models.Transaction(recipient_id=user.id, amount=0, note="arcade_xp_limit"))
-    db.commit()
-    return {"ok": True, "xp": user.xp, "xp_to_coins": xp_to_coins}
+    # The old route had no game proof and could be called three times per hour
+    # without playing. XP now comes only from verified game/task flows.
+    raise HTTPException(status_code=410, detail="Устаревший способ начисления XP отключён")
 
 
 @router.get("/lootbox-pools")

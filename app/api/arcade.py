@@ -1,25 +1,28 @@
 from __future__ import annotations
 
+import json
+import random
+import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.api._helpers import ensure_wallet
-from app.auth import current_user, is_admin
-from app.db import get_db
+from app.auth import current_user
+from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/arcade", tags=["arcade"])
 
-MAX_WIN_MULTIPLIER = 5
 MSK = timezone(timedelta(hours=3))
+OMAR_TELEGRAM_ID = 849162365
 
 
 def _require_clicker_access(user: models.User) -> None:
     """Кликер временно доступен только Омару (админу). Проверяется на сервере,
     чтобы обычный пользователь не мог открыть игру обходным путём (через API)."""
-    if not is_admin(user):
+    if user.telegram_id != OMAR_TELEGRAM_ID:
         raise HTTPException(status_code=403, detail="Кликер временно недоступен")
 
 
@@ -30,80 +33,76 @@ def arcade_win(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Начислить выигрыш за мини-игру (привязан к последней ставке, ограничен)."""
-    if amount <= 0:
-        raise HTTPException(status_code=400, detail="Некорректная сумма")
-    wallet = ensure_wallet(db, user)
-
-    last_bet = (
-        db.query(models.Transaction)
-        .filter(
-            models.Transaction.sender_id == user.id,
-            models.Transaction.note == "arcade:bet",
-        )
-        .order_by(models.Transaction.created_at.desc())
-        .first()
-    )
-    if last_bet is None:
-        raise HTTPException(status_code=400, detail="Сначала сделайте ставку")
-
-    already_won = (
-        db.query(models.Transaction)
-        .filter(
-            models.Transaction.recipient_id == user.id,
-            models.Transaction.note == "arcade:win",
-            models.Transaction.created_at >= last_bet.created_at,
-        )
-        .first()
-    )
-    if already_won is not None:
-        raise HTTPException(status_code=400, detail="Выигрыш уже начислен")
-
-    if amount > last_bet.amount * MAX_WIN_MULTIPLIER:
-        raise HTTPException(status_code=400, detail="Слишком большой выигрыш")
-
-    wallet.balance += amount
-    db.add(
-        models.Transaction(
-            sender_id=None,
-            recipient_id=user.id,
-            amount=amount,
-            note="arcade:win",
-        )
-    )
-
-    db.commit()
-    db.refresh(user)
-    return {
-        "ok": True,
-        "balance": user.wallet.balance,
-    }
+    """Removed insecure legacy endpoint that trusted a client payout."""
+    raise HTTPException(status_code=410, detail="Используйте серверный раунд казино")
 
 
 # Награда за первую победу дня в мини-игре (в ковбаксах). Только для 6 мини-игр Аркады.
 FIRST_WIN_REWARD = 3
 FIRST_WIN_GAMES = {"moshonka", "tictactoe", "minesweeper", "harvest", "checkers", "pingpong"}
+FIRST_WIN_MIN_SECONDS = {
+    "moshonka": 2.0, "tictactoe": 1.0, "minesweeper": 2.0,
+    "harvest": 8.0, "checkers": 4.0, "pingpong": 4.0,
+}
 
 
-@router.get("/first-win-status")
-def first_win_status(user: models.User = Depends(current_user), db: Session = Depends(get_db)):
-    today = datetime.now(MSK).strftime("%Y-%m-%d")
-    wins = db.query(models.ArcadeFirstWin).filter(
-        models.ArcadeFirstWin.user_id == user.id,
-        models.ArcadeFirstWin.win_date == today,
-    ).all()
-    won = [w.game for w in wins if w.game in FIRST_WIN_GAMES]
-    return {"won_games": won, "reward": FIRST_WIN_REWARD}
-
-
-@router.post("/first-win")
-def claim_first_win(
+@router.post("/round/start")
+def start_arcade_round(
     game: str = Body(..., embed=True),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
     if game not in FIRST_WIN_GAMES:
         raise HTTPException(status_code=400, detail="Неизвестная мини-игра")
+    token = secrets.token_urlsafe(32)
+    now = models.now_utc()
+    db.add(models.ArcadeRound(
+        token=token, user_id=user.id, game=game,
+        started_at=now, expires_at=now + timedelta(hours=2),
+    ))
+    db.commit()
+    return {"token": token, "game": game, "server_time": now.isoformat()}
+
+
+@router.get("/first-win-status")
+def first_win_status(user: models.User = Depends(current_user), db: Session = Depends(get_db)):
+    now = datetime.now(MSK)
+    today = now.strftime("%Y-%m-%d")
+    wins = db.query(models.ArcadeFirstWin).filter(
+        models.ArcadeFirstWin.user_id == user.id,
+        models.ArcadeFirstWin.win_date == today,
+    ).all()
+    won = [w.game for w in wins if w.game in FIRST_WIN_GAMES]
+    tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return {
+        "won_games": won,
+        "reward": FIRST_WIN_REWARD,
+        "server_time": now.isoformat(),
+        "next_reset_seconds": max(0, int((tomorrow - now).total_seconds())),
+    }
+
+
+@router.post("/first-win")
+def claim_first_win(
+    game: str = Body(..., embed=True),
+    round_token: str = Body(..., embed=True),
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if game not in FIRST_WIN_GAMES:
+        raise HTTPException(status_code=400, detail="Неизвестная мини-игра")
+    begin_game_write(db)
+    now = models.now_utc()
+    game_round = db.query(models.ArcadeRound).filter(
+        models.ArcadeRound.token == round_token,
+        models.ArcadeRound.user_id == user.id,
+        models.ArcadeRound.game == game,
+    ).first()
+    if not game_round or game_round.consumed_at or game_round.expires_at < now:
+        raise HTTPException(status_code=409, detail="Игровой раунд недействителен")
+    if (now - game_round.started_at).total_seconds() < FIRST_WIN_MIN_SECONDS[game]:
+        raise HTTPException(status_code=400, detail="Невозможный результат игры")
+    game_round.consumed_at = now
     today = datetime.now(MSK).strftime("%Y-%m-%d")
     existing = db.query(models.ArcadeFirstWin).filter(
         models.ArcadeFirstWin.user_id == user.id,
@@ -111,6 +110,7 @@ def claim_first_win(
         models.ArcadeFirstWin.win_date == today,
     ).first()
     if existing:
+        db.commit()
         return {"ok": False, "already_claimed": True}
 
     db.add(models.ArcadeFirstWin(user_id=user.id, game=game, win_date=today))
@@ -128,40 +128,94 @@ def arcade_bet(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> schemas.UserOut:
-    """Списать ставку для казино."""
-    if amount <= 0:
-        raise HTTPException(status_code=400, detail="Некорректная сумма")
+    raise HTTPException(status_code=410, detail="Используйте серверный раунд казино")
+
+
+CASINO_GAMES = {"roulette", "slots", "dice", "rocket"}
+ROULETTE_MULTS = [(0.05, 16), (0.25, 11), (0.5, 15), (0.75, 15), (1.0, 15), (1.5, 12), (2.0, 8), (2.5, 5), (3.0, 3)]
+
+
+@router.post("/casino/start")
+def casino_start(
+    game: str = Body(..., embed=True),
+    amount: int = Body(..., embed=True),
+    choice: str | None = Body(None, embed=True),
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if game not in CASINO_GAMES or amount <= 0 or amount > 1_000_000:
+        raise HTTPException(status_code=400, detail="Некорректный раунд")
+    begin_game_write(db)
     wallet = ensure_wallet(db, user)
     if wallet.balance < amount:
-        raise HTTPException(status_code=400, detail="Недостаточно K")
+        raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
+    outcome: dict = {}
+    payout = 0
+    if game == "roulette":
+        mult = random.choices([m for m, _ in ROULETTE_MULTS], weights=[w for _, w in ROULETTE_MULTS], k=1)[0]
+        outcome = {"multiplier": mult, "index": [m for m, _ in ROULETTE_MULTS].index(mult)}
+        payout = int(amount * mult)
+    elif game == "slots":
+        symbols = ["🍒", "🍋", "🍊", "🍇", "⭐", "💎", "7️⃣"]
+        reels = [random.choice(symbols) for _ in range(3)]
+        payout = amount * 29 if len(set(reels)) == 1 else amount if len(set(reels)) == 2 else 0
+        outcome = {"reels": reels}
+    elif game == "dice":
+        allowed = {"odd", "even", "low", "high", "1", "2", "3", "4", "5", "6"}
+        if choice not in allowed:
+            raise HTTPException(status_code=400, detail="Некорректный выбор")
+        roll = random.randint(1, 6)
+        won = ((choice == "odd" and roll % 2 == 1) or (choice == "even" and roll % 2 == 0)
+               or (choice == "low" and roll <= 3) or (choice == "high" and roll >= 4) or choice == str(roll))
+        payout = (amount * 5 if choice and choice.isdigit() else int(amount * 1.8)) if won else 0
+        outcome = {"roll": roll, "choice": choice}
+    else:
+        # Deterministic growth on the client; server-owned crash point prevents
+        # a forged multiplier. Cap 5x keeps the game economy bounded.
+        crash_at = round(min(5.0, 1.05 + random.expovariate(1.1)), 2)
+        outcome = {"crash_at": crash_at}
+
+    token = secrets.token_urlsafe(32)
     wallet.balance -= amount
-    db.add(
-        models.Transaction(
-            sender_id=user.id,
-            recipient_id=None,
-            amount=amount,
-            note="arcade:bet",
-        )
-    )
+    db.add(models.CasinoRound(token=token, user_id=user.id, game=game, bet=amount,
+                              outcome=json.dumps(outcome), payout=payout))
+    db.add(models.Transaction(sender_id=user.id, amount=amount, note=f"casino:bet:{game}"))
     db.commit()
-    db.refresh(user)
-    return schemas.UserOut(
-        id=user.id,
-        telegram_id=user.telegram_id,
-        username=user.username,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        photo_url=user.photo_url,
-        role=user.role,
-        restrictions=user.restrictions,
-        balance=user.wallet.balance,
-        is_admin=False,
-    )
+    return {"token": token, "outcome": outcome, "balance": wallet.balance}
+
+
+@router.post("/casino/settle")
+def casino_settle(
+    token: str = Body(..., embed=True),
+    multiplier: float | None = Body(None, embed=True),
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    begin_game_write(db)
+    row = db.query(models.CasinoRound).filter(
+        models.CasinoRound.token == token, models.CasinoRound.user_id == user.id,
+    ).first()
+    if not row or row.settled:
+        raise HTTPException(status_code=409, detail="Раунд уже завершён или не найден")
+    payout = row.payout
+    if row.game == "rocket":
+        outcome = json.loads(row.outcome)
+        elapsed_mult = 1 + max(0.0, (models.now_utc() - row.created_at).total_seconds()) * 0.25
+        requested = float(multiplier or 0)
+        if requested < 1 or requested > elapsed_mult + 0.08 or requested >= float(outcome["crash_at"]):
+            payout = 0
+        else:
+            payout = min(row.bet * 5, int(row.bet * requested))
+    row.settled = True
+    row.payout = payout
+    wallet = ensure_wallet(db, user)
+    if payout > 0:
+        wallet.balance += payout
+        db.add(models.Transaction(recipient_id=user.id, amount=payout, note=f"casino:win:{row.game}"))
+    db.commit()
+    return {"ok": True, "payout": payout, "balance": wallet.balance}
 
 # ============ CLICKER ============
-import random
-from datetime import timedelta
-
 CLICKER_MAX_LEVEL = 20
 CLICKER_CRIT_MULT = 4
 CLICKER_TAP_ENERGY_COST = 1
@@ -302,8 +356,8 @@ def _boost_active(until, now):
 
 
 def _reset_daily_boosts(state, now):
-    """Сбрасывает дневные лимиты бустов и дневной заработок при смене суток (UTC)."""
-    key = now.strftime("%Y-%m-%d")
+    """Reset clicker limits on the same Moscow calendar boundary as rewards."""
+    key = now.replace(tzinfo=timezone.utc).astimezone(MSK).strftime("%Y-%m-%d")
     if (state.boost_date or "") != key:
         state.boost_date = key
         state.turbo_used = 0
@@ -452,6 +506,7 @@ def clicker_state(
 ) -> dict:
     """Состояние кликера + синхронизация энергии/пассива."""
     _require_clicker_access(user)
+    begin_game_write(db)
     state = _get_or_create_clicker_state(db, user)
     passive_earned = _sync_clicker(db, state, user)
     wallet = ensure_wallet(db, user)
@@ -472,6 +527,7 @@ def clicker_tap(
         raise HTTPException(status_code=400, detail="Некорректное количество тапов")
 
     _require_clicker_access(user)
+    begin_game_write(db)
     state = _get_or_create_clicker_state(db, user)
     _sync_clicker(db, state, user)
     now = models.now_utc()
@@ -541,6 +597,7 @@ def clicker_boost(
         raise HTTPException(status_code=400, detail="Неизвестный буст")
 
     _require_clicker_access(user)
+    begin_game_write(db)
     state = _get_or_create_clicker_state(db, user)
     _sync_clicker(db, state, user)
     now = models.now_utc()
@@ -579,6 +636,7 @@ def clicker_cashout(
     """Вывод ковкойнов в ковбаксы по курсу 100:1. amount — сколько ковкойнов вывести
     (по умолчанию — максимум, кратный курсу)."""
     _require_clicker_access(user)
+    begin_game_write(db)
     state = _get_or_create_clicker_state(db, user)
     _sync_clicker(db, state, user)
     now = models.now_utc()
@@ -626,6 +684,7 @@ def clicker_upgrade(
         raise HTTPException(status_code=400, detail="Неизвестный апгрейд")
 
     _require_clicker_access(user)
+    begin_game_write(db)
     state = _get_or_create_clicker_state(db, user)
     _sync_clicker(db, state, user)
 

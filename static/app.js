@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=226";
-import { renderProfile } from "/static/pages/profile.js?v=226";
-import { renderKoverna } from "/static/pages/koverna.js?v=226";
-import { renderArcade } from "/static/pages/arcade.js?v=226";
-import { renderAdmin } from "/static/pages/admin.js?v=226";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=226";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=226";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=226";
-import { get, post } from "/static/api.js?v=226";
+import { renderHome } from "/static/pages/home.js?v=227";
+import { renderProfile } from "/static/pages/profile.js?v=227";
+import { renderKoverna } from "/static/pages/koverna.js?v=227";
+import { renderArcade } from "/static/pages/arcade.js?v=227";
+import { renderAdmin } from "/static/pages/admin.js?v=227";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=227";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=227";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=227";
+import { get, post } from "/static/api.js?v=227";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -72,10 +72,14 @@ async function setTab(name, force) {
   }
 
   // Все вкладки кешируются после первой загрузки — никакого моргания.
-  const needsRender = !containers[name] || name === "admin";
+  // Home and Arcade own timers, observers and game listeners. Recreate them
+  // when returning to the tab so cleanup is complete and no stale timer stays
+  // stopped or points at detached UI.
+  const needsRender = !containers[name] || name === "admin" || name === "home" || name === "arcade";
 
   if (needsRender) {
     if (containers[name]) containers[name].remove();
+    tabListeners[name] = [];
     const div = document.createElement("div");
     div.className = "tab-content";
     div.style.display = "";

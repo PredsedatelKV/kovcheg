@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.api._helpers import ensure_wallet
 from app.auth import is_admin, require_admin
-from app.db import get_db
+from app.db import begin_game_write, get_db
 from app.models import now_utc
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -465,6 +465,7 @@ def list_user_tasks(db: Session = Depends(get_db)) -> list[schemas.AdminUserTask
 def approve_user_task(
     user_task_id: int, db: Session = Depends(get_db)
 ) -> schemas.AdminUserTaskOut:
+    begin_game_write(db)
     ut = db.query(models.UserTask).filter(models.UserTask.id == user_task_id).one_or_none()
     if ut is None:
         raise HTTPException(status_code=404, detail="Задание не найдено")

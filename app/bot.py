@@ -145,7 +145,7 @@ def _register_handlers(dp: Dispatcher) -> None:
                 return
             balance = user.wallet.balance if user.wallet else 0
             await message.answer(
-                f"<b>{user.first_name}</b>\nДолжность: {user.role}\nБаланс: {balance} Ковбаксов"
+                f"<b>{user.first_name}</b>\n{user.role}\nБаланс: {balance} Ковбаксов"
             )
 
     @dp.message(Command("pending"))

@@ -7,7 +7,7 @@ from app import models, schemas
 from app.api._helpers import ensure_wallet
 from app.api.profile import _inventory_to_out, _item_to_out, _user_to_out
 from app.auth import current_user
-from app.db import get_db
+from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -62,6 +62,7 @@ def create_listing(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> schemas.MarketListingOut:
+    begin_game_write(db)
     inv = (
         db.query(models.InventoryItem)
         .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == payload.item_id)
@@ -98,6 +99,7 @@ def unlist(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> schemas.MarketListingOut:
+    begin_game_write(db)
     listing = db.query(models.MarketListing).filter(models.MarketListing.id == listing_id).one_or_none()
     if listing is None or listing.seller_id != user.id:
         raise HTTPException(status_code=404, detail="Объявление не найдено")
@@ -132,6 +134,7 @@ def buy_listing(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> schemas.UserOut:
+    begin_game_write(db)
     listing = db.query(models.MarketListing).filter(models.MarketListing.id == payload.listing_id).one_or_none()
     if listing is None or not listing.is_active:
         raise HTTPException(status_code=404, detail="Объявление не найдено")

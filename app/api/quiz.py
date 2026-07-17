@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.api._helpers import award_xp, ensure_wallet
 from app.auth import current_user
-from app.db import get_db
+from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/quiz", tags=["quiz"])
 
@@ -66,6 +66,7 @@ def submit_quiz(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> schemas.QuizResultOut:
+    begin_game_write(db)
     q = db.query(models.Quiz).filter(models.Quiz.id == payload.quiz_id).one_or_none()
     if q is None:
         raise HTTPException(status_code=404, detail="Тест не найден")

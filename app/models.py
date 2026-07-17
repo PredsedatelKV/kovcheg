@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -67,6 +77,7 @@ class WebSession(Base):
 
 class Wallet(Base):
     __tablename__ = "wallets"
+    __table_args__ = (CheckConstraint("balance >= 0", name="ck_wallet_balance_nonnegative"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False)
@@ -93,7 +104,10 @@ class Item(Base):
 
 class InventoryItem(Base):
     __tablename__ = "inventory"
-    __table_args__ = (UniqueConstraint("user_id", "item_id", name="uq_user_item"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "item_id", name="uq_user_item"),
+        CheckConstraint("quantity >= 0", name="ck_inventory_quantity_nonnegative"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
@@ -372,6 +386,17 @@ class UserBattlePass(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class BattlePassClaim(Base):
+    """One immutable claim fact per concrete reward and user."""
+    __tablename__ = "battlepass_claims"
+    __table_args__ = (UniqueConstraint("user_id", "reward_id", name="uq_bp_claim_reward"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    reward_id: Mapped[int] = mapped_column(ForeignKey("battlepass_rewards.id"), nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class LootboxPool(Base):
     """Пул призов для лутбокса (по code: bronze/silver/gold)."""
     __tablename__ = "lootbox_pools"
@@ -456,3 +481,31 @@ class ArcadeFirstWin(Base):
     win_date: Mapped[str] = mapped_column(String(10), nullable=False)  # YYYY-MM-DD
 
     __table_args__ = (UniqueConstraint("user_id", "game", "win_date", name="uq_arcade_first_win"),)
+
+
+class ArcadeRound(Base):
+    """Server-issued, single-use proof that a mini-game was actually started."""
+    __tablename__ = "arcade_rounds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    game: Mapped[str] = mapped_column(String(32), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class CasinoRound(Base):
+    """A casino bet and its outcome, generated and settled by the server."""
+    __tablename__ = "casino_rounds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    game: Mapped[str] = mapped_column(String(16), nullable=False)
+    bet: Mapped[int] = mapped_column(Integer, nullable=False)
+    outcome: Mapped[str] = mapped_column(Text, nullable=False)
+    payout: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    settled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)

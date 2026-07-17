@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=226";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=227";
 
-import { playUISound } from "/static/pages/settings.js?v=226";
+import { playUISound } from "/static/pages/settings.js?v=227";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -13,8 +13,7 @@ export async function renderKoverna(root) {
     <section class="page-header">
       <div>
         <h1>Коверна</h1>
-        <div class="subtitle">${state.mode === "shop" ? "Магазин официальных товаров" : "Рынок игроков"}</div>
-        <div class="subtitle" style="margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${state.mode === "shop" ? "Товары с доставкой в инвентарь." : "Покупайте товары у других жителей."}</div>
+        <div class="subtitle" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${state.mode === "shop" ? "Товары Ковчега с доставкой в инвентарь" : "Покупайте предметы у других граждан"}</div>
       </div>
       <div class="hero-art"><img src="/static/img/shop.svg" alt="Лавка" class="hero-img"/></div>
     </section>

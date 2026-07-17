@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=226";
+import { get, post, iconHtml } from "/static/api.js?v=227";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=226";
+import { openAssistantChat } from "/static/pages/assistant.js?v=227";
 
-import { playUISound } from "/static/pages/settings.js?v=226";
+import { playUISound } from "/static/pages/settings.js?v=227";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -293,7 +293,7 @@ export async function renderHome(root) {
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=226").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=227").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {

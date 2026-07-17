@@ -6,14 +6,14 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.api._helpers import ensure_wallet
 from app.auth import current_user, is_admin
-from app.db import get_db
+from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
 
 def _get_bp_level(db: Session, user: models.User) -> int:
     """Get battlepass level for a user from the active season."""
-    season = db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active == True).first()
+    season = db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active.is_(True)).first()
     if not season:
         return 0
     return min(user.xp // season.xp_per_level, season.total_levels - 1) + 1
@@ -32,6 +32,7 @@ def _user_to_out(user: models.User) -> schemas.UserOut:
         balance=user.wallet.balance if user.wallet else 0,
         xp=user.xp,
         is_admin=is_admin(user),
+        can_use_clicker=user.telegram_id == 849162365,
     )
 
 
@@ -41,7 +42,7 @@ def list_players(
     db: Session = Depends(get_db),
 ) -> list[schemas.PlayerOut]:
     """Все игроки кроме текущего — для выпадающего списка получателя при переводе."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     threshold = datetime.now(timezone.utc) - timedelta(minutes=5)
     rows = (
         db.query(models.User)
@@ -117,6 +118,7 @@ def me(user: models.User = Depends(current_user), db: Session = Depends(get_db))
     daily_plan = db.query(models.Task).filter(models.Task.is_daily_plan.is_(True), models.Task.is_active.is_(True)).first()
     return schemas.ProfilePayload(
         user=_user_to_out(user),
+        bp_level=_get_bp_level(db, user),
         inventory=_inventory_to_out(inventory),
         user_tasks=[_user_task_to_out(ut) for ut in user_tasks],
         daily_plan=(
@@ -228,6 +230,7 @@ def transfer(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> schemas.UserOut:
+    begin_game_write(db)
     recipient = _resolve_recipient(db, payload.recipient)
     if recipient.id == user.id:
         raise HTTPException(status_code=400, detail="Нельзя перевести себе")
@@ -243,9 +246,9 @@ def transfer(
     except HTTPException:
         db.rollback()
         raise
-    except Exception:
+    except Exception as exc:
         db.rollback()
-        raise HTTPException(status_code=500, detail="Не удалось выполнить перевод")
+        raise HTTPException(status_code=500, detail="Не удалось выполнить перевод") from exc
     db.refresh(user)
     from app.notify import notify_admins_bg
     notify_admins_bg(
@@ -260,6 +263,7 @@ def gift_item(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> schemas.ProfilePayload:
+    begin_game_write(db)
     inv = (
         db.query(models.InventoryItem)
         .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == payload.item_id)
@@ -302,6 +306,7 @@ def sell_item(
 ) -> schemas.ProfilePayload:
     """Выставить предмет на адресную продажу выбранному игроку.
     Предмет резервируется (списывается из инвентаря) и появляется у покупателя в Коверне с пометкой «Это для тебя»."""
+    begin_game_write(db)
     inv = (
         db.query(models.InventoryItem)
         .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == payload.item_id)
@@ -342,6 +347,7 @@ def activate_item(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> schemas.ProfilePayload:
+    begin_game_write(db)
     inv = (
         db.query(models.InventoryItem)
         .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == payload.item_id)
@@ -349,14 +355,19 @@ def activate_item(
     )
     if inv is None or inv.quantity < 1:
         raise HTTPException(status_code=400, detail="Нет предмета")
+    if not inv.item.can_activate:
+        raise HTTPException(status_code=400, detail="Этот предмет нельзя активировать")
+    xp_by_code = {"exp_scroll": 50, "scroll_of_wisdom": 250}
+    if inv.item.code not in xp_by_code:
+        raise HTTPException(status_code=400, detail="Для предмета не настроен эффект")
     item_name = inv.item.name
-    wallet = ensure_wallet(db, user)
+    from app.api._helpers import award_xp
+    award_xp(db, user, xp_by_code[inv.item.code])
     inv.quantity -= 1
     if inv.quantity == 0:
         db.delete(inv)
     db.commit()
     db.refresh(user)
-    db.refresh(wallet)
     from app.notify import notify_admins_bg
     notify_admins_bg(
         f"✨ <b>{user.first_name}</b> активировал(а) <b>{item_name}</b>"
@@ -372,6 +383,7 @@ def assemble_fragments(
     """Assemble 3 Фрагмент ковбокса into a random lootbox."""
     import random as _random
 
+    begin_game_write(db)
     fragment_item = db.query(models.Item).filter(models.Item.code == "box_fragment").first()
     if not fragment_item:
         raise HTTPException(404, "Предмет «Фрагмент ковбокса» не найден")
@@ -385,15 +397,26 @@ def assemble_fragments(
 
     # Consume 3 fragments
     inv.quantity -= 3
+    remaining_fragments = max(0, inv.quantity)
     if inv.quantity <= 0:
         db.delete(inv)
 
-    # Give random lootbox (weighted: common > rare > epic > legendary)
-    lootbox_codes = ["lootbox_common"] * 60 + ["lootbox_rare"] * 25 + ["lootbox_epic"] * 12 + ["lootbox_legendary"] * 3
-    chosen_code = _random.choice(lootbox_codes)
-    lootbox_item = db.query(models.Item).filter(models.Item.code == chosen_code).first()
-    if not lootbox_item:
-        lootbox_item = db.query(models.Item).filter(models.Item.code == "lootbox_common").first()
+    # Choose only among actually configured, active lootbox rarities.  An item
+    # is active when it points to a non-empty, positively weighted pool.
+    candidates = []
+    weights_by_code = {
+        "lootbox_common": 60,
+        "lootbox_rare": 25,
+        "lootbox_epic": 12,
+        "lootbox_legendary": 3,
+    }
+    for lootbox in db.query(models.Item).filter(models.Item.code.in_(weights_by_code)).all():
+        pool = db.query(models.LootboxPool).filter(models.LootboxPool.code == lootbox.lootbox_pool_code).first()
+        if pool and any((entry.weight or 0) > 0 for entry in pool.entries):
+            candidates.append(lootbox)
+    if not candidates:
+        raise HTTPException(503, "Нет активных ковбоксов для сборки")
+    lootbox_item = _random.choices(candidates, weights=[weights_by_code[x.code] for x in candidates], k=1)[0]
 
     target_inv = db.query(models.InventoryItem).filter(
         models.InventoryItem.user_id == user.id,
@@ -406,4 +429,9 @@ def assemble_fragments(
 
     db.commit()
     db.refresh(user)
-    return {"ok": True, "item_name": lootbox_item.name, "item_icon": lootbox_item.icon}
+    return {
+        "ok": True,
+        "item_name": lootbox_item.name,
+        "item_icon": lootbox_item.icon,
+        "remaining_fragments": remaining_fragments,
+    }

@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=226";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=227";
 
-import { playUISound } from "/static/pages/settings.js?v=226";
+import { playUISound } from "/static/pages/settings.js?v=227";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -99,7 +99,7 @@ export async function renderProfile(root) {
       </div>
       <div class="wallet-xp-row">
         <img src="/static/img/item_icons/xp.svg" alt="" class="wallet-xp-icon"/>
-        <div class="wallet-xp-text">Уровень ${Math.floor(user.xp / 100)} · ${user.xp % 100} / 100 XP</div>
+        <div class="wallet-xp-text">Пропуск: ур. ${data.bp_level || 0} · ${user.xp} XP</div>
       </div>
     </div>
 
@@ -231,7 +231,7 @@ async function loadOnlineAvatars(root) {
               ${profile.username ? '<div style="color:var(--text-muted);font-size:13px">@' + escapeHtml(profile.username) + '</div>' : ''}
               <div style="margin-top:10px;font-size:13px;display:flex;gap:14px;justify-content:center;align-items:center;flex-wrap:wrap">
                 <span><strong>${profile.balance || 0}</strong> К</span>
-                <span style="color:var(--primary);font-weight:600">Пропуск ур. ${profile.bp_level || 1}</span>
+                <span style="color:var(--primary);font-weight:600">Пропуск ур. ${profile.bp_level ?? 0}</span>
               </div>
               <div style="margin-top:4px;font-size:12px;color:${online ? '#4CAF50' : 'var(--text-muted)'}">${online ? '● онлайн' : 'не в сети'}</div>
             </div>
@@ -470,11 +470,11 @@ function openItemActionsDialog(row) {
       <button class="btn" id="ia-open-lootbox">
         <img src="/static/img/ui/box.svg" alt="" class="icon icon-md"/>
         <span>Открыть</span>
-      </button>` : `
+      </button>` : item.can_activate ? `
       <button class="btn" id="ia-activate">
         <img src="/static/img/ui/spark.svg" alt="" class="icon icon-md"/>
         <span>Активировать</span>
-      </button>`}
+      </button>` : ""}
     </div>
   `);
 

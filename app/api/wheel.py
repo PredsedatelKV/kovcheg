@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.api._helpers import award_xp, ensure_wallet
 from app.auth import current_user
-from app.db import get_db
+from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/wheel", tags=["wheel"])
 
@@ -70,6 +70,7 @@ def status(user: models.User = Depends(current_user), db: Session = Depends(get_
 
 @router.post("/spin")
 def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    begin_game_write(db)
     last = (
         db.query(models.WheelSpin)
         .filter(models.WheelSpin.user_id == user.id)
