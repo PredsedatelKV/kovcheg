@@ -29,6 +29,13 @@ log = logging.getLogger(__name__)
 _bot: Bot | None = None
 _dp: Dispatcher | None = None
 _last_assistant_requests: dict[int, datetime] = {}
+WEBAPP_RELEASE = "228"
+
+
+def _versioned_webapp_url(public_url: str) -> str:
+    """Change Telegram's WebApp URL when a new client release is deployed."""
+    separator = "&" if "?" in public_url else "?"
+    return f"{public_url.rstrip('/')}{separator}app_version={WEBAPP_RELEASE}"
 
 
 def get_bot() -> Bot:
@@ -51,17 +58,19 @@ def get_dispatcher() -> Dispatcher:
 
 
 def _webapp_keyboard(public_url: str) -> ReplyKeyboardMarkup:
+    webapp_url = _versioned_webapp_url(public_url)
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🌍 Открыть Ковчег", web_app=WebAppInfo(url=public_url))]
+            [KeyboardButton(text="🌍 Открыть Ковчег", web_app=WebAppInfo(url=webapp_url))]
         ],
         resize_keyboard=True,
     )
 
 
 def _inline_webapp_kb(public_url: str) -> InlineKeyboardMarkup:
+    webapp_url = _versioned_webapp_url(public_url)
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="🌍 Открыть Ковчег", web_app=WebAppInfo(url=public_url))]]
+        inline_keyboard=[[InlineKeyboardButton(text="🌍 Открыть Ковчег", web_app=WebAppInfo(url=webapp_url))]]
     )
 
 
@@ -397,7 +406,9 @@ async def set_menu_button(public_url: str) -> None:
     from aiogram.types import MenuButtonWebApp
 
     bot = get_bot()
-    try:
-        await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="Ковчег", web_app=WebAppInfo(url=public_url)))
-    except Exception:
-        pass
+    await bot.set_chat_menu_button(
+        menu_button=MenuButtonWebApp(
+            text="Ковчег",
+            web_app=WebAppInfo(url=_versioned_webapp_url(public_url)),
+        )
+    )
