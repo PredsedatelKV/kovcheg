@@ -1,0 +1,4 @@
+federation-of-kovcheg.tech, www.federation-of-kovcheg.tech {
+    encode zstd gzip
+    reverse_proxy kovcheg:8000
+}

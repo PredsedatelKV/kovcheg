@@ -1,38 +1,40 @@
-
 services:
   kovcheg:
     build: .
     container_name: kovcheg-app
     restart: unless-stopped
-    # На VPS приложение слушает только localhost, nginx проксирует снаружи
+    # The application is available only locally; Caddy handles public HTTPS.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
     volumes:
-      # Персистентность данных (база SQLite, хранилище знаний)
+      # Persistent data (SQLite database and knowledge storage).
       - ./data:/app/data
-      # Если хочешь править статику без пересборки образа:
+      # Static assets may be edited without rebuilding the image.
       - ./static:/app/static
     networks:
       - kovcheg-net
 
-  # Nginx — раскомментируй после настройки SSL (см. DEPLOY_VPS.md)
-  # nginx:
-  #   image: nginx:alpine
-  #   container_name: kovcheg-nginx
-  #   restart: unless-stopped
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   volumes:
-  #     - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-  #     - ./certbot/conf:/etc/letsencrypt:ro
-  #     - ./certbot/www:/var/www/certbot:ro
-  #   depends_on:
-  #     - kovcheg
-  #   networks:
-  #     - kovcheg-net
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: kovcheg-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - kovcheg
+    networks:
+      - kovcheg-net
 
 networks:
   kovcheg-net:
+
+volumes:
+  caddy_data:
+  caddy_config:
