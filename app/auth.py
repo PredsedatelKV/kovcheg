@@ -3,17 +3,24 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import secrets
 import time
+from datetime import timedelta
 from typing import Any
 from urllib.parse import parse_qsl
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app import models
 from app.config import get_settings
 from app.db import get_db
 from app.players import binding_for, is_bound_admin
+
+
+WEB_SESSION_COOKIE = "kovcheg_session"
+WEB_LOGIN_TTL = timedelta(minutes=10)
+WEB_SESSION_TTL = timedelta(days=30)
 
 
 def is_admin(user: models.User) -> bool:
@@ -126,20 +133,85 @@ def upsert_user(db: Session, tg_user: dict[str, Any]) -> models.User | None:
     return None
 
 
+def create_web_login_request(db: Session) -> models.WebLoginRequest:
+    """Create a short-lived token to be confirmed through the Telegram bot."""
+    request = models.WebLoginRequest(
+        token=secrets.token_urlsafe(24),
+        expires_at=models.now_utc() + WEB_LOGIN_TTL,
+    )
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+    return request
+
+
+def approve_web_login(db: Session, token: str, tg_user: dict[str, Any]) -> models.User | None:
+    """Attach an approved Telegram user to a pending browser login request."""
+    request = db.get(models.WebLoginRequest, token)
+    if request is None or request.expires_at <= models.now_utc():
+        return None
+    user = upsert_user(db, tg_user)
+    if user is None:
+        return None
+    request.user_id = user.id
+    return user
+
+
+def consume_web_login(db: Session, token: str) -> str | None:
+    """Exchange one approved login token for a persistent opaque browser session."""
+    request = db.get(models.WebLoginRequest, token)
+    if request is None or request.expires_at <= models.now_utc() or request.user_id is None:
+        return None
+    session_token = secrets.token_urlsafe(32)
+    db.add(
+        models.WebSession(
+            token_hash=hashlib.sha256(session_token.encode()).hexdigest(),
+            user_id=request.user_id,
+            expires_at=models.now_utc() + WEB_SESSION_TTL,
+        )
+    )
+    db.delete(request)
+    db.commit()
+    return session_token
+
+
+def web_session_user(db: Session, session_token: str | None) -> models.User | None:
+    if not session_token:
+        return None
+    token_hash = hashlib.sha256(session_token.encode()).hexdigest()
+    session = db.query(models.WebSession).filter(models.WebSession.token_hash == token_hash).one_or_none()
+    if session is None or session.expires_at <= models.now_utc():
+        return None
+    return db.get(models.User, session.user_id)
+
+
+def revoke_web_session(db: Session, session_token: str | None) -> None:
+    if not session_token:
+        return
+    token_hash = hashlib.sha256(session_token.encode()).hexdigest()
+    db.query(models.WebSession).filter(models.WebSession.token_hash == token_hash).delete()
+    db.commit()
+
+
 def current_user(
     x_telegram_init_data: str | None = Header(default=None, alias="X-Telegram-Init-Data"),
+    web_session_token: str | None = Cookie(default=None, alias=WEB_SESSION_COOKIE),
     db: Session = Depends(get_db),
 ) -> models.User:
     settings = get_settings()
-    if settings.skip_init_data_check and x_telegram_init_data == "DEV":
+    if not x_telegram_init_data:
+        user = web_session_user(db, web_session_token)
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Войдите через Telegram")
+    elif settings.skip_init_data_check and x_telegram_init_data == "DEV":
         tg_user = {"id": 849162365, "username": "omarbutuev", "first_name": "Омар"}
+        user = upsert_user(db, tg_user)
     else:
         if not settings.telegram_bot_token:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="bot token not configured")
-        parsed = validate_init_data(x_telegram_init_data or "", settings.telegram_bot_token)
+        parsed = validate_init_data(x_telegram_init_data, settings.telegram_bot_token)
         tg_user = parsed["user"]
-
-    user = upsert_user(db, tg_user)
+        user = upsert_user(db, tg_user)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

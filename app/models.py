@@ -42,6 +42,29 @@ class User(Base):
     )
 
 
+class WebLoginRequest(Base):
+    """One-time browser login confirmation, approved by the Telegram bot."""
+
+    __tablename__ = "web_login_requests"
+
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class WebSession(Base):
+    """Persistent, revocable browser session. Only a SHA-256 token digest is stored."""
+
+    __tablename__ = "web_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 class Wallet(Base):
     __tablename__ = "wallets"
 

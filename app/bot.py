@@ -73,6 +73,25 @@ def _register_handlers(dp: Dispatcher) -> None:
     @dp.message(CommandStart())
     async def cmd_start(message: Message) -> None:
         settings = get_settings()
+        start_arg = (message.text or "").partition(" ")[2].strip()
+        if start_arg.startswith("web_"):
+            if not message.from_user:
+                return
+            from app.auth import approve_web_login
+
+            tg_user = {
+                "id": message.from_user.id,
+                "username": message.from_user.username,
+                "first_name": message.from_user.first_name,
+                "last_name": message.from_user.last_name,
+            }
+            with session_scope() as db:
+                user = approve_web_login(db, start_arg.removeprefix("web_"), tg_user)
+            if user is None:
+                await message.answer("Не удалось подтвердить вход. Вернитесь на сайт и запросите новую ссылку.")
+                return
+            await message.answer("✅ Вход подтверждён. Вернитесь в браузер — Ковчег откроется автоматически.")
+            return
         if not settings.public_url:
             await message.answer(
                 "Привет! Мини-аппа ещё не настроена (нет публичного URL). Скажи админу запустить деплой."

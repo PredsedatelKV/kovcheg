@@ -24,6 +24,7 @@ from app.api import shop as shop_api
 from app.api import tasks as tasks_api
 from app.api import wheel as wheel_api
 from app.assistant.api import router as assistant_api
+from app import web_auth
 from app.bot import configure_webhook, feed_update, set_menu_button
 from app.config import get_settings
 from app.db import Base, engine, session_scope
@@ -91,6 +92,7 @@ app.include_router(battlepass_api.router)
 app.include_router(admin_api.router)
 app.include_router(game_api.router)
 app.include_router(assistant_api)
+app.include_router(web_auth.router)
 
 
 @app.get("/healthz")

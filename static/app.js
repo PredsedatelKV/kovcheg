@@ -6,7 +6,7 @@ import { renderAdmin } from "/static/pages/admin.js?v=226";
 import { renderBattlePass } from "/static/pages/battlepass.js?v=226";
 import { initSettings, playUISound } from "/static/pages/settings.js?v=226";
 import { initMultiplayer } from "/static/pages/multiplayer.js?v=226";
-import { get } from "/static/api.js?v=226";
+import { get, post } from "/static/api.js?v=226";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -177,6 +177,43 @@ window.closeModal = function () {
   document.getElementById("modal-root").innerHTML = "";
 };
 
+async function renderBrowserLogin() {
+  tabButtons.forEach((button) => { button.disabled = true; });
+  viewEl.innerHTML = `
+    <div class="card" style="max-width:560px;margin:24px auto;padding:28px;text-align:center">
+      <h2 style="margin-top:0">Войти в Ковчег</h2>
+      <p>Подтвердите свою личность через Telegram. После этого сайт откроет тот же профиль и все возможности, что и Mini App.</p>
+      <a id="browser-login" class="btn primary" target="_blank" rel="noopener" style="display:inline-flex;margin:12px 0">Открыть бота в Telegram</a>
+      <p id="browser-login-status" style="margin-bottom:0;color:var(--muted)">Подготавливаем защищённый вход…</p>
+    </div>`;
+  const link = document.getElementById("browser-login");
+  const status = document.getElementById("browser-login-status");
+  try {
+    const login = await post("/auth/web/start");
+    link.href = login.login_url;
+    status.textContent = "Нажмите кнопку, затем в Telegram нажмите «Старт». Сайт откроется автоматически.";
+    const timer = setInterval(async () => {
+      try {
+        const result = await post("/auth/web/complete", { token: login.token });
+        if (result.authenticated) {
+          clearInterval(timer);
+          status.textContent = "Вход подтверждён. Загружаем Ковчег…";
+          location.reload();
+        }
+      } catch (_) {
+        // Temporary network failures should not interrupt the waiting screen.
+      }
+    }, 2500);
+    setTimeout(() => {
+      clearInterval(timer);
+      if (!document.hidden) status.textContent = "Ссылка истекла. Обновите страницу и запросите новую.";
+    }, (login.expires_in || 600) * 1000);
+  } catch (error) {
+    link.remove();
+    status.textContent = `Не удалось начать вход: ${error.message}`;
+  }
+}
+
 (async () => {
   try {
     const me = await get("/api/profile/me");
@@ -190,7 +227,7 @@ window.closeModal = function () {
   }
   // Без подтверждённой личности Telegram приложение не запускаем (иначе доступ к чужому профилю).
   if (!window.kov.me) {
-    document.getElementById('view').innerHTML = '<div class="card"><p style="padding:20px;text-align:center">Откройте «Ковчег» через Telegram — нажмите кнопку меню (🎮) у бота. Прямая ссылка в браузере не работает.</p></div>';
+    await renderBrowserLogin();
     return;
   }
   const initial = "home"; // при входе всегда открывается «Главная»
