@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=227";
+import { post, get } from "/static/api.js?v=229";
 
-import { playUISound } from "/static/pages/settings.js?v=227";
+import { playUISound } from "/static/pages/settings.js?v=229";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -73,15 +73,31 @@ function getBetValue(id) {
 // Реестр очистки активной игры: при закрытии модалки или потере видимости
 // вкладки гарантированно глушим все интервалы / rAF / звуки игры.
 let _activeGameCleanup = null;
+let _activeGameVisibility = null;
 // Флаг "идёт раунд казино" — пока true, модалку нельзя закрывать/сворачивать.
 let _casinoRoundLocked = false;
+let _modalBeforeCloseUnsubscribe = null;
 
-function registerGameCleanup(fn) {
+function ensureArcadeModalLifecycle() {
+  if (_modalBeforeCloseUnsubscribe || !window.kov || !window.kov.onModalBeforeClose) return;
+  _modalBeforeCloseUnsubscribe = window.kov.onModalBeforeClose(() => {
+    if (_casinoRoundLocked) {
+      if (window.kov && window.kov.toast) window.kov.toast("Дождитесь завершения раунда");
+      return false;
+    }
+    runGameCleanup();
+    return true;
+  });
+}
+
+function registerGameCleanup(fn, onVisibilityChange = null) {
+  ensureArcadeModalLifecycle();
   // Если предыдущая игра не была очищена (закрыли иным путём) — чистим её сейчас.
   if (_activeGameCleanup) {
     try { _activeGameCleanup(); } catch (_) {}
   }
   _activeGameCleanup = fn;
+  _activeGameVisibility = onVisibilityChange;
   _casinoRoundLocked = false;
 }
 
@@ -89,6 +105,7 @@ function runGameCleanup() {
   if (_activeGameCleanup) {
     const fn = _activeGameCleanup;
     _activeGameCleanup = null;
+    _activeGameVisibility = null;
     _casinoRoundLocked = false;
     try { fn(); } catch (_) {}
   }
@@ -104,20 +121,17 @@ function setCasinoRoundLocked(locked) {
   }
 }
 
-// Однократно патчим глобальный closeModal: блокируем закрытие во время раунда
-// казино и прогоняем очистку активной игры при штатном закрытии.
-if (!window.__arcadeClosePatched) {
-  window.__arcadeClosePatched = true;
-  const _origCloseModal = window.closeModal;
-  window.closeModal = function () {
-    if (_casinoRoundLocked) return; // нельзя закрывать посреди раунда
-    runGameCleanup();
-    if (typeof _origCloseModal === "function") _origCloseModal();
-    else document.getElementById("modal-root").innerHTML = "";
-  };
-  // При сворачивании вкладки / потере видимости — глушим циклы и звуки игры.
+// Игры с безопасным pause/resume получают событие видимости; остальные по-
+// прежнему полностью очищаются, чтобы не оставлять таймеры в фоне. Модальное
+// закрытие обслуживает единый lifecycle shell-а, установленный лениво выше.
+if (!window.__arcadeVisibilityLifecycleInstalled) {
+  window.__arcadeVisibilityLifecycleInstalled = true;
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) runGameCleanup();
+    if (_activeGameVisibility) {
+      try { _activeGameVisibility(document.hidden); } catch (_) {}
+    } else if (document.hidden) {
+      runGameCleanup();
+    }
   });
 }
 
@@ -271,7 +285,7 @@ function gameWhereIsMoshonka(container) {
         if (isWin) {
           result.innerHTML = `<div class="game-win">Угадал! +${10 * round}</div>`;
           playUISound("win");
-          awardFirstWin("moshonka");
+          awardFirstWin("moshonka", { player_score: score + 10 * round, opponent_score: 0 });
           score += 10 * round;
           round++;
           scoreEl.textContent = score;
@@ -425,7 +439,7 @@ function gameTicTacToe(container) {
           resultEl.innerHTML = `<div class="game-win">Победа!</div>`;
           animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
           playUISound("win");
-          awardFirstWin("tictactoe");
+          awardFirstWin("tictactoe", { player_score: 1, opponent_score: 0 });
         } else if (winner === "draw") {
           resultEl.innerHTML = `<div class="game-neutral">Ничья!</div>`;
         } else {
@@ -576,7 +590,7 @@ function gameMinesweeper() {
       resultEl.innerHTML = `<div class="game-win">Все безопасные клетки найдены!</div>`;
       animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
       playUISound("win");
-      awardFirstWin("minesweeper");
+      awardFirstWin("minesweeper", { player_score: safeCount, opponent_score: mineCount });
       modal.querySelector("#mine-again").style.visibility = "visible";
     }
   }
@@ -694,7 +708,7 @@ function gameHarvest() {
       if (score >= 10) {
         modal.querySelector("#harvest-result").innerHTML = `<div class="game-win">Урожай собран! Тыкв: ${score}.</div>`;
         playUISound("win");
-        awardFirstWin("harvest");
+        awardFirstWin("harvest", { player_score: score, opponent_score: 0 });
       } else if (score >= 5) {
         modal.querySelector("#harvest-result").innerHTML = `<div class="game-neutral">Неплохо! Тыкв: ${score}.</div>`;
       } else {
@@ -1047,7 +1061,11 @@ function gameCheckers() {
       if (state[i]) { if (state[i].color === "white") w++; else b++; }
     }
     if (w === 0) { resultEl.innerHTML = '<div class="game-lose">Мошонка победил!</div>'; }
-    else if (b === 0) { resultEl.innerHTML = '<div class="game-win">Ты победил!</div>'; playUISound("win"); awardFirstWin("checkers"); }
+    else if (b === 0) {
+      resultEl.innerHTML = '<div class="game-win">Ты победил!</div>';
+      playUISound("win");
+      awardFirstWin("checkers", { player_score: w, opponent_score: 0 });
+    }
     status.textContent = turn === "white" ? "Твой ход" : "Ход Мошонки...";
   }
 
@@ -1056,64 +1074,361 @@ function gameCheckers() {
 }
 
 function gamePingPong() {
-  const W = 300, H = 400, PW = 60, PH = 10, BS = 8;
+  const W = 300, H = 400;
+  const PADDLE_W = 62, PADDLE_H = 10, BALL_R = 7;
+  const TOP_PADDLE_Y = 16, BOTTOM_PADDLE_Y = H - 26;
+  const INITIAL_BALL_SPEED = 245, MAX_BALL_SPEED = 430;
+  const AI_MAX_SPEED = 220, AI_ACCELERATION = 920;
+  const FIXED_STEP = 1 / 120, MAX_FRAME_TIME = 0.05;
+  const GOAL_PAUSE_SECONDS = 0.65;
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <h2>Пинг-понг</h2>
     <p class="card-sub">Игра до 5 очков</p>
-    <canvas id="pp-canvas" width="${W}" height="${H}" style="background:#1a1a2e;border-radius:8px;display:block;margin:10px auto;touch-action:none"></canvas>
+    <canvas id="pp-canvas" width="${W}" height="${H}" aria-label="Поле для пинг-понга"
+      style="background:#1a1a2e;border-radius:8px;display:block;margin:10px auto;touch-action:none;width:min(100%,300px);height:auto;aspect-ratio:3/4;user-select:none"></canvas>
     <div id="pp-score" style="text-align:center;font-weight:700;font-size:18px">0 : 0</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;min-height:34px;margin-top:6px">
+      <button class="btn btn-sm" id="pp-pause" type="button">Пауза</button>
+      <span class="card-sub" id="pp-state" aria-live="polite">Веди ракетку пальцем или мышью</span>
+    </div>
     <div class="game-result" id="pp-result"></div>
   `);
   const canvas = modal.querySelector("#pp-canvas");
   const ctx = canvas.getContext("2d");
   const scoreEl = modal.querySelector("#pp-score");
+  const pauseButton = modal.querySelector("#pp-pause");
+  const stateEl = modal.querySelector("#pp-state");
   const resultEl = modal.querySelector("#pp-result");
-  let px = W / 2 - PW / 2, ai = W / 2 - PW / 2;
-  let bx = W / 2, by = H - 30, bvx = 3, bvy = -3;
-  let ps = 0, as = 0, running = true;
+  const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // Очистка: при закрытии/сворачивании останавливаем rAF-цикл.
-  registerGameCleanup(() => { running = false; });
+  let playerX = W / 2 - PADDLE_W / 2;
+  let playerVelocity = 0;
+  let aiX = W / 2 - PADDLE_W / 2;
+  let aiVelocity = 0;
+  let aiTarget = aiX;
+  let aiThinkRemaining = 0;
+  let aiTrackingApproach = false, aiAimBias = 0, aiAttackBias = 0;
+  let ballX = W / 2, ballY = H / 2;
+  let ballVX = INITIAL_BALL_SPEED * 0.35, ballVY = -INITIAL_BALL_SPEED * 0.94;
+  let playerScore = 0, aiScore = 0;
+  let running = true, manualPaused = false, visibilityPaused = false;
+  let goalPauseRemaining = 0.5;
+  let activeMatchSeconds = 0;
+  let accumulator = 0, lastFrameTime = null, rafId = null;
+  let activePointer = null, lastPointerX = null, lastPointerTime = null;
+
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+  function isPaused() {
+    return manualPaused || visibilityPaused;
+  }
+
+  function cancelFrame() {
+    if (rafId !== null) cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+
+  function requestFrame() {
+    if (running && !isPaused() && rafId === null) rafId = requestAnimationFrame(frame);
+  }
+
+  function refreshPauseUI() {
+    pauseButton.textContent = manualPaused ? "Продолжить" : "Пауза";
+    if (visibilityPaused) stateEl.textContent = "Пауза — приложение свёрнуто";
+    else if (manualPaused) stateEl.textContent = "Игра на паузе";
+    else stateEl.textContent = "Веди ракетку пальцем или мышью";
+  }
+
+  function setVisibilityPaused(hidden) {
+    if (!running) return;
+    visibilityPaused = hidden;
+    lastFrameTime = null;
+    accumulator = 0;
+    if (hidden) cancelFrame();
+    else requestFrame();
+    refreshPauseUI();
+  }
+
+  registerGameCleanup(() => {
+    running = false;
+    cancelFrame();
+  }, setVisibilityPaused);
 
   function draw() {
     ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.16)";
+    ctx.setLineDash([7, 7]);
+    ctx.beginPath();
+    ctx.moveTo(0, H / 2);
+    ctx.lineTo(W, H / 2);
+    ctx.stroke();
+    ctx.restore();
+
     ctx.fillStyle = "#6cb6fb";
-    ctx.fillRect(px, H - 20, PW, PH);
+    ctx.fillRect(playerX, BOTTOM_PADDLE_Y, PADDLE_W, PADDLE_H);
     ctx.fillStyle = "#e55454";
-    ctx.fillRect(ai, 10, PW, PH);
+    ctx.fillRect(aiX, TOP_PADDLE_Y, PADDLE_W, PADDLE_H);
+    ctx.save();
     ctx.fillStyle = "#ffd700";
-    ctx.beginPath(); ctx.arc(bx, by, BS, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowColor = "rgba(255,215,0,0.45)";
+    ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(ballX, ballY, BALL_R, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
 
-  function update() {
-    if (!running) return;
-    // Если canvas отсоединён от DOM (модалка закрыта) — прекращаем цикл.
-    if (!canvas.isConnected) { running = false; return; }
-    bx += bvx; by += bvy;
-    if (bx < BS || bx > W - BS) bvx = -bvx;
-    if (by < 10 + PH + BS && bx > ai && bx < ai + PW) { bvy = Math.abs(bvy); bvx += (bx - (ai + PW / 2)) * 0.1; }
-    if (by > H - 20 - BS && bx > px && bx < px + PW) { bvy = -Math.abs(bvy); bvx += (bx - (px + PW / 2)) * 0.1; }
-    if (by < 0) { ps++; scoreEl.textContent = ps + " : " + as; resetBall(); if (ps >= 5) { running = false; resultEl.innerHTML = '<div class="game-win">Ты победил!</div>'; playUISound("win"); awardFirstWin("pingpong"); return; } }
-    if (by > H) { as++; scoreEl.textContent = ps + " : " + as; resetBall(); if (as >= 5) { running = false; resultEl.innerHTML = '<div class="game-lose">Мошонка победил</div>'; return; } }
-    const target = bx - PW / 2;
-    ai += (target - ai) * 0.06;
+  // Mirror a projected X coordinate between the two side walls.  The AI uses
+  // only the current visible position/velocity, like a player estimating the
+  // next bounce; it does not inspect future random values.
+  function reflectedX(projectedX) {
+    const span = W - BALL_R * 2;
+    const period = span * 2;
+    let offset = (projectedX - BALL_R) % period;
+    if (offset < 0) offset += period;
+    if (offset > span) offset = period - offset;
+    return BALL_R + offset;
+  }
+
+  function predictAiIntersection() {
+    const contactY = TOP_PADDLE_Y + PADDLE_H + BALL_R;
+    if (ballVY >= -1 || ballY <= contactY) return W / 2;
+    const seconds = (ballY - contactY) / -ballVY;
+    return reflectedX(ballX + ballVX * seconds);
+  }
+
+  function updateAiPlan() {
+    const ballApproaching = ballVY < 0;
+    if (!ballApproaching) {
+      // Recover towards a useful neutral position rather than following the
+      // ball all the way to the player's side.
+      aiTrackingApproach = false;
+      aiTarget = clamp(W / 2 - PADDLE_W / 2 + (ballX - W / 2) * 0.12, 0, W - PADDLE_W);
+      aiThinkRemaining = 0.18 + Math.random() * 0.08;
+      return;
+    }
+
+    const predicted = predictAiIntersection();
+    const speed = Math.hypot(ballVX, ballVY);
+    const closeThreat = ballY < H * 0.42;
+    const defensive = closeThreat || speed > 350 || aiScore > playerScore;
+    if (!aiTrackingApproach) {
+      const errorRadius = defensive ? 9 : 15;
+      aiAimBias = (Math.random() + Math.random() - 1) * errorRadius;
+      // A small, controlled chance of a pressured mistake keeps the hard AI
+      // beatable.  Bias remains stable for the rally, so the paddle does not
+      // jitter as the forecast is refreshed.
+      const mistakeChance = speed > 340 ? 0.09 : 0.055;
+      if (Math.random() < mistakeChance) {
+        aiAimBias += (Math.random() < 0.5 ? -1 : 1) * (40 + Math.random() * 14);
+      }
+      // When attacking, meet slightly off-centre to send a less uniform return.
+      aiAttackBias = defensive ? 0 : (Math.random() < 0.5 ? -1 : 1) * (7 + Math.random() * 7);
+      aiTrackingApproach = true;
+    }
+    aiTarget = clamp(predicted - PADDLE_W / 2 + aiAimBias + aiAttackBias, 0, W - PADDLE_W);
+    aiThinkRemaining = (closeThreat ? 0.09 : 0.13) + Math.random() * 0.08;
+  }
+
+  function moveAi(dt) {
+    aiThinkRemaining -= dt;
+    if (aiThinkRemaining <= 0) updateAiPlan();
+
+    const distance = aiTarget - aiX;
+    const desiredVelocity = Math.abs(distance) < 2
+      ? 0
+      : clamp(distance / 0.16, -AI_MAX_SPEED, AI_MAX_SPEED);
+    const velocityDelta = clamp(
+      desiredVelocity - aiVelocity,
+      -AI_ACCELERATION * dt,
+      AI_ACCELERATION * dt,
+    );
+    aiVelocity += velocityDelta;
+    if (Math.abs(distance) < 2.5) aiVelocity *= Math.exp(-12 * dt);
+    aiX = clamp(aiX + aiVelocity * dt, 0, W - PADDLE_W);
+    if ((aiX <= 0 && aiVelocity < 0) || (aiX >= W - PADDLE_W && aiVelocity > 0)) aiVelocity = 0;
+  }
+
+  function bounceFromPaddle(paddleX, paddleVelocity, verticalDirection, hitX) {
+    const relativeHit = clamp(
+      (hitX - (paddleX + PADDLE_W / 2)) / (PADDLE_W / 2 + BALL_R),
+      -1,
+      1,
+    );
+    const nextSpeed = Math.min(MAX_BALL_SPEED, Math.max(INITIAL_BALL_SPEED, Math.hypot(ballVX, ballVY) * 1.045));
+    const maxAngle = Math.PI * 0.34; // ~61°, avoids a nearly-horizontal stuck ball.
+    const angle = relativeHit * maxAngle;
+    let nextVX = nextSpeed * Math.sin(angle) + paddleVelocity * 0.11;
+    let nextVY = verticalDirection * Math.abs(nextSpeed * Math.cos(angle));
+    const normalizedSpeed = Math.hypot(nextVX, nextVY);
+    if (normalizedSpeed > MAX_BALL_SPEED) {
+      const scale = MAX_BALL_SPEED / normalizedSpeed;
+      nextVX *= scale;
+      nextVY *= scale;
+    }
+    ballVX = nextVX;
+    ballVY = nextVY;
+  }
+
+  function finishMatch(playerWon) {
+    running = false;
+    cancelFrame();
+    pauseButton.disabled = true;
+    stateEl.textContent = "Матч завершён";
+    if (playerWon) {
+      resultEl.innerHTML = '<div class="game-win">Ты победил!</div>';
+      playUISound("win");
+      awardFirstWin("pingpong", {
+        player_score: playerScore,
+        opponent_score: aiScore,
+        duration_ms: Math.round(activeMatchSeconds * 1000),
+      });
+    } else {
+      resultEl.innerHTML = '<div class="game-lose">Мошонка победил</div>';
+    }
+  }
+
+  function resetBall(verticalDirection) {
+    ballX = W / 2;
+    ballY = H / 2;
+    const horizontal = (Math.random() * 0.76 - 0.38) * INITIAL_BALL_SPEED;
+    ballVX = horizontal;
+    ballVY = verticalDirection * Math.sqrt(INITIAL_BALL_SPEED ** 2 - horizontal ** 2);
+    goalPauseRemaining = GOAL_PAUSE_SECONDS;
+    aiThinkRemaining = 0;
+    aiTrackingApproach = false;
+  }
+
+  function scorePoint(playerWon) {
+    if (playerWon) playerScore += 1;
+    else aiScore += 1;
+    scoreEl.textContent = `${playerScore} : ${aiScore}`;
+    if (playerScore >= 5 || aiScore >= 5) {
+      finishMatch(playerScore >= 5);
+      return;
+    }
+    // The player who conceded receives the next serve.
+    resetBall(playerWon ? 1 : -1);
+  }
+
+  function moveBall(dt) {
+    const previousX = ballX;
+    const previousY = ballY;
+    ballX += ballVX * dt;
+    ballY += ballVY * dt;
+
+    if (ballX < BALL_R) {
+      ballX = BALL_R + (BALL_R - ballX);
+      ballVX = Math.abs(ballVX);
+    } else if (ballX > W - BALL_R) {
+      ballX = W - BALL_R - (ballX - (W - BALL_R));
+      ballVX = -Math.abs(ballVX);
+    }
+
+    const topContactY = TOP_PADDLE_Y + PADDLE_H + BALL_R;
+    if (ballVY < 0 && previousY >= topContactY && ballY <= topContactY) {
+      const travel = previousY - ballY;
+      const ratio = travel > 0 ? (previousY - topContactY) / travel : 0;
+      const hitX = previousX + (ballX - previousX) * ratio;
+      if (hitX >= aiX - BALL_R && hitX <= aiX + PADDLE_W + BALL_R) {
+        ballX = hitX;
+        ballY = topContactY;
+        bounceFromPaddle(aiX, aiVelocity, 1, hitX);
+      }
+    }
+
+    const bottomContactY = BOTTOM_PADDLE_Y - BALL_R;
+    if (ballVY > 0 && previousY <= bottomContactY && ballY >= bottomContactY) {
+      const travel = ballY - previousY;
+      const ratio = travel > 0 ? (bottomContactY - previousY) / travel : 0;
+      const hitX = previousX + (ballX - previousX) * ratio;
+      if (hitX >= playerX - BALL_R && hitX <= playerX + PADDLE_W + BALL_R) {
+        ballX = hitX;
+        ballY = bottomContactY;
+        bounceFromPaddle(playerX, playerVelocity, -1, hitX);
+      }
+    }
+
+    if (ballY + BALL_R < 0) scorePoint(true);
+    else if (ballY - BALL_R > H) scorePoint(false);
+  }
+
+  function simulate(dt) {
+    activeMatchSeconds += dt;
+    playerVelocity *= Math.exp(-8 * dt);
+    moveAi(dt);
+    if (goalPauseRemaining > 0) {
+      goalPauseRemaining = Math.max(0, goalPauseRemaining - dt);
+      return;
+    }
+    moveBall(dt);
+  }
+
+  function frame(timestamp) {
+    rafId = null;
+    if (!running || !canvas.isConnected || isPaused()) return;
+    if (lastFrameTime === null) lastFrameTime = timestamp;
+    const frameSeconds = Math.min(MAX_FRAME_TIME, Math.max(0, (timestamp - lastFrameTime) / 1000));
+    lastFrameTime = timestamp;
+    accumulator += frameSeconds;
+    while (accumulator >= FIXED_STEP && running) {
+      simulate(FIXED_STEP);
+      accumulator -= FIXED_STEP;
+    }
     draw();
-    requestAnimationFrame(update);
+    requestFrame();
   }
 
-  function resetBall() { bx = W / 2; by = H / 2; bvx = (Math.random() > 0.5 ? 1 : -1) * 3; bvy = -3; }
+  function movePlayer(clientX, eventTime) {
+    const rect = canvas.getBoundingClientRect();
+    const logicalX = (clientX - rect.left) * W / rect.width;
+    const nextX = clamp(logicalX - PADDLE_W / 2, 0, W - PADDLE_W);
+    if (lastPointerX !== null && lastPointerTime !== null) {
+      const dt = Math.max(0.008, (eventTime - lastPointerTime) / 1000);
+      playerVelocity = clamp((nextX - lastPointerX) / dt, -650, 650);
+    }
+    playerX = nextX;
+    lastPointerX = nextX;
+    lastPointerTime = eventTime;
+  }
 
-  canvas.addEventListener("touchmove", e => { e.preventDefault(); px = e.touches[0].clientX - canvas.getBoundingClientRect().left - PW / 2; px = Math.max(0, Math.min(W - PW, px)); });
-  canvas.addEventListener("mousemove", e => { px = e.offsetX - PW / 2; px = Math.max(0, Math.min(W - PW, px)); });
+  canvas.addEventListener("pointerdown", (event) => {
+    if (!running) return;
+    activePointer = event.pointerId;
+    canvas.setPointerCapture(event.pointerId);
+    movePlayer(event.clientX, event.timeStamp);
+    event.preventDefault();
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (event.pointerType === "mouse" || event.pointerId === activePointer) {
+      movePlayer(event.clientX, event.timeStamp);
+      if (event.pointerType !== "mouse") event.preventDefault();
+    }
+  });
+  const releasePointer = (event) => {
+    if (event.pointerId === activePointer) activePointer = null;
+  };
+  canvas.addEventListener("pointerup", releasePointer);
+  canvas.addEventListener("pointercancel", releasePointer);
+  canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 
-  // При закрытии модалки останавливаем rAF-цикл, иначе утечка rAF и запись в отсоединённый canvas.
-  const closeBtn = modal.querySelector(".close");
-  if (closeBtn) closeBtn.addEventListener("click", () => { running = false; });
-  // Подстраховка: если canvas удалён из DOM (модалка закрыта иным способом), тоже останавливаемся.
+  pauseButton.addEventListener("click", () => {
+    if (!running) return;
+    manualPaused = !manualPaused;
+    lastFrameTime = null;
+    accumulator = 0;
+    if (manualPaused) cancelFrame();
+    else requestFrame();
+    refreshPauseUI();
+  });
 
+  resetBall(-1);
+  refreshPauseUI();
   draw();
-  update();
+  requestFrame();
 }
 
 function gameSlots() {
@@ -1121,7 +1436,7 @@ function gameSlots() {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <h2>Слоты</h2>
-    <p class="card-sub">3 одинаковых = x27</p>
+    <p class="card-sub">3 одинаковых = x29</p>
     <div class="game-balance">Баланс: <strong id="slots-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
     <div id="slots-reels" style="display:flex;gap:8px;justify-content:center;margin:16px 0;font-size:36px;min-height:50px">
       <span id="s1" style="background:rgba(255,255,255,0.05);padding:8px 16px;border-radius:8px;min-width:50px;text-align:center">?</span>
@@ -1212,16 +1527,114 @@ function gameRocket() {
   const resultEl = modal.querySelector("#rocket-result");
   const startBtn = modal.querySelector("#rocket-start");
   const cashBtn = modal.querySelector("#rocket-cashout");
-  let mult = 1, running = false, crashed = false, bet = 0, timer, serverRound = null;
+  let mult = 1;
+  let running = false;
+  let bet = 0;
+  let animationTimer = null;
+  let statusTimer = null;
+  let statusBusy = false;
+  let serverRound = null;
+  let startedAt = 0;
+  let growthPerSecond = 0.25;
+  let maxMultiplier = 5;
+
+  function stopTimers() {
+    if (animationTimer) clearInterval(animationTimer);
+    if (statusTimer) clearInterval(statusTimer);
+    animationTimer = null;
+    statusTimer = null;
+  }
+
+  function drawMultiplier() {
+    if (!running) return;
+    const elapsed = Math.max(0, (performance.now() - startedAt) / 1000);
+    mult = Math.min(maxMultiplier, 1 + elapsed * growthPerSecond);
+    multEl.textContent = "x" + mult.toFixed(2);
+  }
+
+  async function finishCrash(status) {
+    if (!running || !serverRound) return;
+    const token = serverRound.token;
+    running = false;
+    stopTimers();
+    cashBtn.disabled = true;
+    cashBtn.style.display = "none";
+    startBtn.style.display = "";
+    multEl.style.color = "#e55454";
+    multEl.textContent = "💥 ВЗРЫВ";
+    let crashMultiplier = Number(status && status.crash_multiplier);
+    try {
+      const settled = await post("/api/arcade/casino/settle", { token });
+      balance = settled.balance;
+      updateBalanceDisplay("rocket-balance", balance);
+      if (Number.isFinite(Number(settled.crash_multiplier))) {
+        crashMultiplier = Number(settled.crash_multiplier);
+      }
+    } catch (_) {
+      await syncBalance();
+    }
+    const suffix = Number.isFinite(crashMultiplier) ? " на x" + crashMultiplier.toFixed(2) : "";
+    resultEl.innerHTML = '<div class="game-lose">Ракета взорвалась' + suffix + "</div>";
+    playUISound("lose");
+    cashBtn.disabled = false;
+    startBtn.disabled = false;
+    setCasinoRoundLocked(false);
+  }
+
+  async function pollRocketStatus() {
+    if (!running || !serverRound || statusBusy) return;
+    const token = serverRound.token;
+    statusBusy = true;
+    try {
+      const status = await get(
+        "/api/arcade/casino/rocket/status?token=" + encodeURIComponent(token),
+        { cache: false },
+      );
+      // A cashout or a newer round may have completed while this poll travelled.
+      if (!running || !serverRound || serverRound.token !== token) return;
+      if (status.crashed) {
+        await finishCrash(status);
+        return;
+      }
+      const serverMultiplier = Number(status.current_multiplier);
+      if (Number.isFinite(serverMultiplier) && serverMultiplier > mult) {
+        mult = Math.min(maxMultiplier, serverMultiplier);
+        multEl.textContent = "x" + mult.toFixed(2);
+      }
+    } catch (_) {
+      // A temporary status error must not invent a win or end the round. The
+      // cashout endpoint still checks the authoritative server clock.
+    } finally {
+      statusBusy = false;
+    }
+  }
+
+  function startTimers() {
+    stopTimers();
+    animationTimer = setInterval(drawMultiplier, 50);
+    statusTimer = setInterval(pollRocketStatus, 250);
+    drawMultiplier();
+    pollRocketStatus();
+  }
+
+  registerGameCleanup(
+    () => {
+      stopTimers();
+      running = false;
+    },
+    (hidden) => {
+      // Telegram may throttle timers in the background; the server clock does
+      // not pause, so resynchronise immediately when the mini-app is restored.
+      if (!hidden && running) pollRocketStatus();
+    },
+  );
 
   startBtn.addEventListener("click", async () => {
     if (running) return;
     bet = getBetValue("rocket-bet");
     if (balance < bet) { resultEl.innerHTML = '<div class="game-lose">Недостаточно K</div>'; return; }
-    // Защита от двойного клика на время сетевого запроса.
     if (startBtn.disabled) return;
     startBtn.disabled = true;
-    // Надёжное списание: ждём ответ /bet, при ошибке не запускаем.
     try {
       serverRound = await post("/api/arcade/casino/start", { game: "rocket", amount: bet });
     } catch (_) {
@@ -1232,39 +1645,62 @@ function gameRocket() {
     startBtn.disabled = false;
     balance = serverRound.balance;
     updateBalanceDisplay("rocket-balance", balance);
-    mult = 1; running = true; crashed = false;
-    startBtn.style.display = "none"; cashBtn.style.display = "";
+    growthPerSecond = Number(serverRound.outcome && serverRound.outcome.growth_per_second) || 0.25;
+    maxMultiplier = Number(serverRound.outcome && serverRound.outcome.max_multiplier) || 5;
+    startedAt = performance.now();
+    mult = 1;
+    running = true;
+    setCasinoRoundLocked(true);
+    startBtn.style.display = "none";
+    cashBtn.style.display = "";
+    cashBtn.disabled = false;
     multEl.style.color = "#6cb6fb";
+    multEl.textContent = "x1.00";
     resultEl.innerHTML = "";
-
-    timer = setInterval(() => {
-      mult += 0.025;
-      multEl.textContent = "x" + mult.toFixed(2);
-      if (mult >= Number(serverRound.outcome.crash_at)) {
-        clearInterval(timer); running = false; crashed = true;
-        multEl.style.color = "#e55454";
-        multEl.textContent = "💥 ВЗРЫВ";
-        resultEl.innerHTML = '<div class="game-lose">Ракета взорвалась на x' + mult.toFixed(2) + '</div>';
-        cashBtn.style.display = "none"; startBtn.style.display = "";
-        playUISound("lose");
-        post("/api/arcade/casino/settle", { token: serverRound.token, multiplier: mult }).then(r => { balance = r.balance; updateBalanceDisplay("rocket-balance", balance); }).catch(() => syncBalance());
-        syncBalance();
-      }
-    }, 100);
+    startTimers();
   });
 
   cashBtn.addEventListener("click", async () => {
-    if (!running) return;
-    clearInterval(timer); running = false;
-    const settled = await post("/api/arcade/casino/settle", { token: serverRound.token, multiplier: mult });
-    const win = settled.payout;
-    balance = settled.balance;
-    updateBalanceDisplay("rocket-balance", balance);
-    multEl.style.color = "#6bd995";
-    resultEl.innerHTML = '<div class="game-win">Забрал x' + mult.toFixed(2) + '! +' + win + ' K</div>';
-    cashBtn.style.display = "none"; startBtn.style.display = "";
-    playUISound("win");
-    syncBalance();
+    if (!running || cashBtn.disabled || !serverRound) return;
+    cashBtn.disabled = true;
+    running = false;
+    stopTimers();
+    try {
+      // The payout is derived only from the server clock; the client sends no
+      // multiplier that could be altered through DevTools or a direct request.
+      const settled = await post("/api/arcade/casino/settle", { token: serverRound.token });
+      balance = settled.balance;
+      updateBalanceDisplay("rocket-balance", balance);
+      if (settled.crashed) {
+        multEl.style.color = "#e55454";
+        multEl.textContent = "💥 ВЗРЫВ";
+        const crashAt = Number(settled.crash_multiplier);
+        const suffix = Number.isFinite(crashAt) ? " на x" + crashAt.toFixed(2) : "";
+        resultEl.innerHTML = '<div class="game-lose">Ракета взорвалась' + suffix + "</div>";
+        playUISound("lose");
+      } else {
+        const settledMultiplier = Number(settled.multiplier);
+        mult = Number.isFinite(settledMultiplier) ? settledMultiplier : mult;
+        multEl.textContent = "x" + mult.toFixed(2);
+        multEl.style.color = "#6bd995";
+        resultEl.innerHTML = '<div class="game-win">Забрал x' + mult.toFixed(2) + "! +" + settled.payout + " K</div>";
+        playUISound("win");
+      }
+      cashBtn.style.display = "none";
+      startBtn.style.display = "";
+      setCasinoRoundLocked(false);
+      syncBalance();
+    } catch (error) {
+      // Never claim a local payout when the server did not confirm it.
+      resultEl.innerHTML = '<div class="game-lose">Не удалось подтвердить вывод: ' + escapeHtml(error.message) + "</div>";
+      await syncBalance();
+      cashBtn.style.display = "none";
+      startBtn.style.display = "";
+      setCasinoRoundLocked(false);
+    } finally {
+      cashBtn.disabled = false;
+      startBtn.disabled = false;
+    }
   });
 }
 
@@ -1915,7 +2351,7 @@ export async function renderArcade(root) {
       <div class="game-tile casino" data-game="slots">
         <div class="game-tile-icon"><img src="/static/img/ui/slots.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Слоты</div>
-        <div class="game-tile-desc">3 одинаковых = x27</div>
+        <div class="game-tile-desc">3 одинаковых = x29</div>
       </div>
       <div class="game-tile casino" data-game="rocket">
         <div class="game-tile-icon"><img src="/static/img/ui/rocket.svg" alt="" class="game-icon-lg"/></div>
@@ -1974,7 +2410,10 @@ const _firstWinRounds = new Map();
 
 function startFirstWinRound(game) {
   if (!MINI_GAMES.includes(game)) return;
-  _firstWinRounds.set(game, post("/api/arcade/round/start", { game }).then(r => r.token));
+  _firstWinRounds.set(game, post("/api/arcade/round/start", { game }).then(r => ({
+    token: r.token,
+    startedAt: performance.now(),
+  })));
 }
 
 function _kovbaksWord(n) {
@@ -1988,12 +2427,16 @@ function _kovbaksWord(n) {
 
 // Начислить награду за первую победу дня в конкретной мини-игре.
 // Сервер сам решает, положена ли награда (идемпотентно, не чаще 1 раза в сутки на игру).
-async function awardFirstWin(game) {
+async function awardFirstWin(game, result = {}) {
   try {
     const pending = _firstWinRounds.get(game);
     if (!pending) return;
-    const roundToken = await pending;
-    const res = await post("/api/arcade/first-win", { game, round_token: roundToken });
+    const round = await pending;
+    const telemetry = {
+      ...result,
+      duration_ms: result.duration_ms ?? Math.max(0, Math.round(performance.now() - round.startedAt)),
+    };
+    const res = await post("/api/arcade/first-win", { game, round_token: round.token, ...telemetry });
     _firstWinRounds.delete(game);
     if (res && res.ok && res.reward) {
       window.kov.toast("🏆 +" + res.reward + " " + _kovbaksWord(res.reward) + " за первую победу!");
@@ -2006,7 +2449,12 @@ async function awardFirstWin(game) {
       const arcRoot = document.querySelector('.tab-content .game-grid');
       if (arcRoot) loadFirstWinBadges(arcRoot.closest('.tab-content') || document);
     }
-  } catch (_) { /* награда некритична — молча игнорируем */ }
+  } catch (error) {
+    console.warn("Не удалось подтвердить награду за первую победу", error);
+    if (game === "pingpong") {
+      window.kov.toast("Не удалось проверить награду за победу. Попробуй ещё раз позже.");
+    }
+  }
 }
 
 function _msToNextMskMidnight() {
@@ -2028,6 +2476,7 @@ function _fmtFwTimer(ms) {
 
 let _fwTimer = null;
 let _fwResetAt = 0;
+let _fwResetRefreshPromise = null;
 
 function _updateFwTimers(scope) {
   const badges = (scope || document).querySelectorAll(".fw-badge.claimed");
@@ -2035,14 +2484,28 @@ function _updateFwTimers(scope) {
   badges.forEach((b) => { b.textContent = _fmtFwTimer(ms); });
 }
 
-async function loadFirstWinBadges(root) {
+function _refreshFirstWinAtReset(root) {
+  if (_fwResetRefreshPromise) return _fwResetRefreshPromise;
+  _fwResetRefreshPromise = loadFirstWinBadges(root, true)
+    .then((loaded) => {
+      // A transient failure must not create a request on every one-second tick.
+      if (!loaded) _fwResetAt = Date.now() + 5000;
+      return loaded;
+    })
+    .finally(() => { _fwResetRefreshPromise = null; });
+  return _fwResetRefreshPromise;
+}
+
+async function loadFirstWinBadges(root, force = false) {
   if (!root || !root.querySelector) return;
   let status;
   try {
-    status = await get("/api/arcade/first-win-status");
-  } catch (_) { return; }
+    status = await get("/api/arcade/first-win-status", force ? { force: true } : {});
+  } catch (_) { return false; }
   const won = new Set(status.won_games || []);
-  _fwResetAt = Date.now() + Math.max(0, Number(status.next_reset_seconds || 0)) * 1000;
+  // Server returns whole seconds (floored). The small margin guarantees that
+  // the one forced refresh happens after, not just before, Moscow midnight.
+  _fwResetAt = Date.now() + Math.max(0, Number(status.next_reset_seconds || 0)) * 1000 + 1250;
   const reward = status.reward || 3;
   MINI_GAMES.forEach((g) => {
     const tile = root.querySelector('.game-tile[data-game="' + g + '"]');
@@ -2066,9 +2529,14 @@ async function loadFirstWinBadges(root) {
   if (_fwTimer) clearInterval(_fwTimer);
   _fwTimer = setInterval(() => {
     if (!document.body.contains(root)) { clearInterval(_fwTimer); _fwTimer = null; return; }
+    if (_fwResetAt && Date.now() >= _fwResetAt) {
+      _refreshFirstWinAtReset(root);
+      return;
+    }
     _updateFwTimers(root);
   }, 1000);
   if (window.kov && window.kov.onTabChange) {
     window.kov.onTabChange("arcade", () => { if (_fwTimer) { clearInterval(_fwTimer); _fwTimer = null; } });
   }
+  return true;
 }

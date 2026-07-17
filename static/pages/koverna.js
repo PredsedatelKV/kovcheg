@@ -1,19 +1,21 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=227";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=229";
 
-import { playUISound } from "/static/pages/settings.js?v=227";
+import { playUISound } from "/static/pages/settings.js?v=229";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 let state = {
   mode: "shop", // shop | market
 };
+const shopLoadVersions = new WeakMap();
+const marketLoadVersions = new WeakMap();
 
 export async function renderKoverna(root) {
   root.innerHTML = `
     <section class="page-header">
       <div>
         <h1>Коверна</h1>
-        <div class="subtitle" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${state.mode === "shop" ? "Товары Ковчега с доставкой в инвентарь" : "Покупайте предметы у других граждан"}</div>
+        <div class="subtitle" id="koverna-subtitle" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${state.mode === "shop" ? "Товары Ковчега с доставкой в инвентарь" : "Покупайте предметы у других граждан"}</div>
       </div>
       <div class="hero-art"><img src="/static/img/koverna_hero.svg" alt="Коверна" class="hero-img"/></div>
     </section>
@@ -28,9 +30,18 @@ export async function renderKoverna(root) {
   `;
 
   root.querySelectorAll("#mode-toggle button").forEach((b) =>
-    b.addEventListener("click", () => {
+    b.addEventListener("click", async () => {
+      if (state.mode === b.dataset.mode) return;
       state.mode = b.dataset.mode;
-      renderKoverna(root);
+      root.querySelectorAll("#mode-toggle button").forEach((button) => {
+        button.classList.toggle("active", button.dataset.mode === state.mode);
+      });
+      const subtitle = root.querySelector("#koverna-subtitle");
+      if (subtitle) subtitle.textContent = state.mode === "shop"
+        ? "Товары Ковчега с доставкой в инвентарь"
+        : "Покупайте предметы у других граждан";
+      if (state.mode === "shop") await renderShop(root, true);
+      else await renderMarket(root, true);
     }),
   );
 
@@ -41,16 +52,21 @@ export async function renderKoverna(root) {
   }
 }
 
-async function renderShop(root) {
+async function renderShop(root, background) {
+  const tools = root.querySelector("#market-tools");
+  if (tools) tools.innerHTML = "";
   const content = root.querySelector("#content");
-  if (content) content.innerHTML = `<div class="empty">Загрузка…</div>`;
+  const requestVersion = (shopLoadVersions.get(root) || 0) + 1;
+  shopLoadVersions.set(root, requestVersion);
+  if (content && !background) content.innerHTML = `<div class="empty">Загрузка…</div>`;
   let products;
   try {
     products = await get("/api/shop/products");
   } catch (e) {
-    if (content) content.innerHTML = `<div class="empty">Ошибка загрузки: ${escapeHtml(e.message)}</div>`;
+    if (content && shopLoadVersions.get(root) === requestVersion) content.innerHTML = `<div class="empty">Ошибка загрузки: ${escapeHtml(e.message)}</div>`;
     return;
   }
+  if (state.mode !== "shop" || shopLoadVersions.get(root) !== requestVersion || root.querySelector("#content") !== content) return;
   content.innerHTML =
     products.length === 0
       ? `<div class="empty">В магазине пока пусто</div>`
@@ -78,7 +94,7 @@ async function renderShop(root) {
           window.kov.me.balance = buyResult.balance;
           if (window.kov.emit) window.kov.emit("balance:update", { balance: buyResult.balance });
         }
-        await renderShop(root);
+        await renderShop(root, true);
       } catch (e) {
         b.disabled = false;
         window.kov.toast(e.message);
@@ -87,26 +103,30 @@ async function renderShop(root) {
   );
 }
 
-async function renderMarket(root) {
+async function renderMarket(root, background) {
+  const requestVersion = (marketLoadVersions.get(root) || 0) + 1;
+  marketLoadVersions.set(root, requestVersion);
   const tools = root.querySelector("#market-tools");
+  if (!tools) return;
   tools.innerHTML = `
     <div class="market-tools">
       <button class="btn btn-outline" id="sell-btn">＋ Продать</button>
       <button class="btn btn-secondary" id="my-listings-btn">Мои объявления</button>
     </div>
   `;
-  tools.querySelector("#sell-btn").addEventListener("click", openSellDialog);
-  tools.querySelector("#my-listings-btn").addEventListener("click", openMyListings);
+  tools.querySelector("#sell-btn").addEventListener("click", () => openSellDialog(root));
+  tools.querySelector("#my-listings-btn").addEventListener("click", () => openMyListings(root));
 
   const content = root.querySelector("#content");
-  if (content) content.innerHTML = `<div class="empty">Загрузка…</div>`;
+  if (content && !background) content.innerHTML = `<div class="empty">Загрузка…</div>`;
   let listings;
   try {
     listings = await get("/api/market/listings");
   } catch (e) {
-    if (content) content.innerHTML = `<div class="empty">Ошибка загрузки: ${escapeHtml(e.message)}</div>`;
+    if (content && marketLoadVersions.get(root) === requestVersion) content.innerHTML = `<div class="empty">Ошибка загрузки: ${escapeHtml(e.message)}</div>`;
     return;
   }
+  if (state.mode !== "market" || marketLoadVersions.get(root) !== requestVersion || root.querySelector("#content") !== content) return;
   content.innerHTML =
     listings.length === 0
       ? `<div class="empty">На рынке пока ничего — выставь товар, чтобы начать!</div>`
@@ -135,7 +155,7 @@ async function renderMarket(root) {
           window.kov.me.balance = buyResult.balance;
           if (window.kov.emit) window.kov.emit("balance:update", { balance: buyResult.balance });
         }
-        await renderMarket(root);
+        await renderMarket(root, true);
       } catch (e) {
         b.disabled = false;
         window.kov.toast(e.message);
@@ -144,7 +164,7 @@ async function renderMarket(root) {
   );
 }
 
-async function openSellDialog() {
+async function openSellDialog(root) {
   let inv;
   try {
     inv = await get("/api/market/inventory");
@@ -152,6 +172,7 @@ async function openSellDialog() {
     window.kov.toast(e.message);
     return;
   }
+  inv = inv.filter((row) => row.item.can_gift);
   if (!inv.length) {
     window.kov.toast("Инвентарь пуст — нечего продавать");
     return;
@@ -169,23 +190,29 @@ async function openSellDialog() {
     <input class="input" id="price" type="number" min="1" />
     <button class="btn" id="list-btn" style="margin-top:14px">Выставить</button>
   `);
-  modal.querySelector("#list-btn").addEventListener("click", async () => {
+  modal.querySelector("#list-btn").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
     const item_id = Number(modal.querySelector("#item").value);
     const quantity = Number(modal.querySelector("#qty").value);
     const price = Number(modal.querySelector("#price").value);
     if (!item_id || !quantity || !price) return window.kov.toast("Заполни поля");
+    button.disabled = true;
+    button.textContent = "Выставляем…";
     try {
       await post("/api/market/list", { item_id, quantity, price });
       window.kov.toast("Выставлено!");
       window.closeModal();
-      window.kov.rerender("koverna");
+      await renderMarket(root, true);
     } catch (e) {
+      button.disabled = false;
+      button.textContent = "Выставить";
       window.kov.toast(e.message);
     }
   });
 }
 
-async function openMyListings() {
+async function openMyListings(root) {
   let mine;
   try {
     mine = await get("/api/market/my");
@@ -218,12 +245,18 @@ async function openMyListings() {
   `);
   modal.querySelectorAll("[data-unlist]").forEach((b) =>
     b.addEventListener("click", async () => {
+      if (b.disabled) return;
+      b.disabled = true;
+      const oldText = b.textContent;
+      b.textContent = "Снимаем…";
       try {
         await post(`/api/market/unlist/${b.dataset.unlist}`);
         window.kov.toast("Снято с продажи");
         window.closeModal();
-        window.kov.rerender("koverna");
+        await renderMarket(root, true);
       } catch (e) {
+        b.disabled = false;
+        b.textContent = oldText;
         window.kov.toast(e.message);
       }
     }),

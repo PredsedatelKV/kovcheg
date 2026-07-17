@@ -1,8 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
-  <rect x="12" y="28" width="56" height="40" rx="6" fill="#bdbdbd" stroke="#9e9e9e" stroke-width="2"/>
-  <path d="M12 34 L40 18 L68 34" fill="#d6d6d6" stroke="#9e9e9e" stroke-width="2"/>
-  <rect x="30" y="36" width="20" height="16" rx="3" fill="#757575" stroke="#9e9e9e" stroke-width="1.5"/>
-  <circle cx="40" cy="44" r="4" fill="#e0e0e0" opacity="0.6"/>
-  <rect x="20" y="52" width="6" height="10" rx="2" fill="#9e9e9e"/>
-  <rect x="54" y="52" width="6" height="10" rx="2" fill="#9e9e9e"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="c-top" x1="16" y1="18" x2="64" y2="39" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EEF2F5"/><stop offset="1" stop-color="#77838D"/>
+    </linearGradient>
+    <linearGradient id="c-face" x1="18" y1="35" x2="61" y2="68" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#AEB8BF"/><stop offset="1" stop-color="#46525B"/>
+    </linearGradient>
+    <filter id="c-shadow" x="4" y="8" width="72" height="68" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="3" flood-color="#111820" flood-opacity=".45"/>
+    </filter>
+  </defs>
+  <g filter="url(#c-shadow)" stroke-linejoin="round">
+    <path d="M13 32 27 18h26l14 14-7 9H20l-7-9Z" fill="url(#c-top)" stroke="#303A42" stroke-width="2"/>
+    <path d="M16 36h48v25c0 4-3 7-7 7H23c-4 0-7-3-7-7V36Z" fill="url(#c-face)" stroke="#303A42" stroke-width="2"/>
+    <path d="M16 43h48M27 18l4 18M53 18l-4 18" stroke="#DDE3E7" stroke-width="2" opacity=".7"/>
+    <path d="M34 35h12v17H34z" fill="#263139" stroke="#E5E9EC" stroke-width="1.5"/>
+    <path d="M37 41a3 3 0 1 1 6 0v4h-6v-4Z" fill="#AEB8BF"/>
+    <circle cx="23" cy="52" r="2" fill="#D9DEE2"/><circle cx="57" cy="52" r="2" fill="#D9DEE2"/>
+  </g>
 </svg>

@@ -1,11 +1,13 @@
-import { get, post, iconHtml } from "/static/api.js?v=227";
+import { get, post, iconHtml } from "/static/api.js?v=229";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=227";
+import { openAssistantChat } from "/static/pages/assistant.js?v=229";
 
-import { playUISound } from "/static/pages/settings.js?v=227";
+import { playUISound } from "/static/pages/settings.js?v=229";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const dailyLoadVersions = new WeakMap();
 
 const fmtDate = (iso) =>
   new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
@@ -123,6 +125,15 @@ function tasksList(tasks, userTasks) {
 }
 
 export async function renderHome(root) {
+  if (typeof root._homeDispose === "function") root._homeDispose();
+  const homeDisposers = [];
+  const addHomeDisposer = (fn) => homeDisposers.push(fn);
+  root._homeDispose = function() {
+    while (homeDisposers.length) {
+      try { homeDisposers.pop()(); } catch (_) {}
+    }
+    root._homeDispose = null;
+  };
   root.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
   var data;
   try {
@@ -153,16 +164,18 @@ ${bannerCarousel(data.banners)}
       ${bigSquareCard({ id: "news-card", type: "news", title: "Новости", slides: data.news || [], cssClass: "news-square" })}
     </div>
 
-    <div class="card daily-reward-card" id="daily-reward-card" style="display:none">
+    <div class="card daily-reward-card" id="daily-reward-card" aria-busy="true">
       <div class="daily-reward-head">
         <img src="/static/img/ui/coin.svg" alt="" class="daily-reward-icon"/>
         <div class="daily-reward-meta">
           <div class="daily-reward-title">Ежедневная награда</div>
-          <div class="daily-reward-desc" id="daily-reward-desc">Забери награду за вход</div>
+          <div class="daily-reward-desc" id="daily-reward-desc">Загружаем статус…</div>
         </div>
-        <button class="btn btn-sm" id="daily-reward-btn">Забрать</button>
+        <button class="btn btn-sm" id="daily-reward-btn" disabled>Загрузка…</button>
       </div>
-      <div class="daily-streak-dots" id="daily-streak-dots"></div>
+      <div class="daily-streak-dots" id="daily-streak-dots">
+        ${[1, 2, 3, 4, 5, 6, 7].map((day) => `<span class="daily-dot"><b>${day}</b></span>`).join("")}
+      </div>
     </div>
 
     <div class="card quiz-card" id="quiz-card">
@@ -196,10 +209,12 @@ ${bannerCarousel(data.banners)}
     </div>
   `;
 
-  // Load Battle Pass mini card
-  get("/api/battlepass").then(function(bp) {
+  // The compact pass card is optional. Do not issue a request when the active
+  // home layout does not contain its mount (the old legacy layout did).
+  const bpMiniMount = root.querySelector("#bp-mini-card");
+  if (bpMiniMount) get("/api/battlepass").then(function(bp) {
     if (!bp || !bp.season) return;
-    var el = document.getElementById("bp-mini-card");
+    var el = root.querySelector("#bp-mini-card");
     if (!el) return;
     var s = bp.season;
     var lvl = Math.min(bp.current_level || 0, (s.total_levels || 1) - 1) + 1;
@@ -289,7 +304,11 @@ ${bannerCarousel(data.banners)}
 
     // --- autoplay (smooth, single timer, reuses cleanup pattern below) ---
     let bnTimer = null;
-    const startAuto = () => { stopAuto(); bnTimer = setInterval(() => go(1), 4500); };
+    const startAuto = () => {
+      stopAuto();
+      if (window.kov && window.kov.getTab && window.kov.getTab() !== "home") return;
+      bnTimer = setInterval(() => go(1), 4500);
+    };
     function stopAuto() { if (bnTimer) { clearInterval(bnTimer); bnTimer = null; } }
 
     // --- drag / swipe ---
@@ -340,25 +359,47 @@ ${bannerCarousel(data.banners)}
     }, true);
     // Mouse (десктоп): всегда трактуем как горизонтальный drag.
     bnTrack.addEventListener("mousedown", (e) => { e.preventDefault(); beginDrag(e.clientX, e.clientY); horiz = true; });
-    window.addEventListener("mousemove", (e) => {
+    const handleMouseMove = (e) => {
       if (!dragging || horiz === false) return;
       bnTrack.style.transform = `translateX(${startTf + (e.clientX - startX)}px)`;
-    });
-    window.addEventListener("mouseup", (e) => finishDrag(e.clientX));
+    };
+    const handleMouseUp = (e) => finishDrag(e.clientX);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
 
     // Keep centering correct on resize / orientation change.
-    window.addEventListener("resize", () => applyTransform(false));
+    const handleResize = () => applyTransform(false);
+    window.addEventListener("resize", handleResize);
     // Карусель пре-рендерится в скрытой вкладке (ширина 0). Пересчитываем центрирование,
     // как только вьюпорт получает реальные размеры (становится видимым).
+    let ro = null;
     if (window.ResizeObserver) {
-      const ro = new ResizeObserver(() => { if (!dragging) applyTransform(false); });
+      ro = new ResizeObserver(() => { if (!dragging) applyTransform(false); });
       ro.observe(bnTrack.parentElement);
     }
+    addHomeDisposer(() => {
+      stopAuto();
+      if (animTimer) clearTimeout(animTimer);
+      animTimer = null;
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("resize", handleResize);
+      if (ro) ro.disconnect();
+    });
 
     requestAnimationFrame(() => { applyTransform(false); syncDots(); startAuto(); });
 
     if (window.kov && window.kov.onTabChange) {
       window.kov.onTabChange("home", () => stopAuto());
+    }
+    if (window.kov && window.kov.onTabShow) {
+      window.kov.onTabShow("home", () => {
+        requestAnimationFrame(() => {
+          applyTransform(false);
+          syncDots();
+          startAuto();
+        });
+      });
     }
   }
 
@@ -366,7 +407,8 @@ ${bannerCarousel(data.banners)}
   const newsTitleEl = root.querySelector("#news-card .big-square-title");
   if (newsSlides.length > 1) {
     let currentSlide = 0;
-    const newsTimer = setInterval(() => {
+    let newsTimer = null;
+    const advanceNews = () => {
       newsSlides[currentSlide].classList.remove("active");
       currentSlide = (currentSlide + 1) % newsSlides.length;
       newsSlides[currentSlide].classList.add("active");
@@ -374,9 +416,23 @@ ${bannerCarousel(data.banners)}
       if (newsTitleEl && data.news && data.news[idx]) {
         newsTitleEl.textContent = data.news[idx].title;
       }
-    }, 5000);
+    };
+    const stopNews = () => {
+      if (newsTimer) clearInterval(newsTimer);
+      newsTimer = null;
+    };
+    const startNews = () => {
+      stopNews();
+      if (window.kov && window.kov.getTab && window.kov.getTab() !== "home") return;
+      newsTimer = setInterval(advanceNews, 5000);
+    };
+    startNews();
+    addHomeDisposer(stopNews);
     if (window.kov && window.kov.onTabChange) {
-      window.kov.onTabChange("home", function() { clearInterval(newsTimer); });
+      window.kov.onTabChange("home", stopNews);
+    }
+    if (window.kov && window.kov.onTabShow) {
+      window.kov.onTabShow("home", startNews);
     }
   }
 
@@ -424,7 +480,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=227").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=229").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {
@@ -444,18 +500,41 @@ ${bannerCarousel(data.banners)}
   }
   var clockEl = root.querySelector("#home-clock");
   if (clockEl) {
-    clockEl.textContent = mskClock();
-    var clockTimer = setInterval(function() {
-      if (!document.body.contains(clockEl)) { clearInterval(clockTimer); return; }
+    var clockTimer = null;
+    function stopClock() {
+      if (clockTimer) clearInterval(clockTimer);
+      clockTimer = null;
+    }
+    function startClock() {
+      stopClock();
+      if (!document.body.contains(clockEl)) return;
       clockEl.textContent = mskClock();
-    }, 1000);
+      if (window.kov && window.kov.getTab && window.kov.getTab() !== "home") return;
+      clockTimer = setInterval(function() {
+        if (!document.body.contains(clockEl)) { stopClock(); return; }
+        clockEl.textContent = mskClock();
+      }, 1000);
+    }
+    startClock();
+    addHomeDisposer(stopClock);
     if (window.kov && window.kov.onTabChange) {
-      window.kov.onTabChange("home", function() { clearInterval(clockTimer); });
+      window.kov.onTabChange("home", stopClock);
+    }
+    if (window.kov && window.kov.onTabShow) {
+      window.kov.onTabShow("home", startClock);
     }
   }
 
   // Daily reward card
+  var dailyLoadedAt = Date.now();
   loadDailyReward(root);
+  if (window.kov && window.kov.onTabShow) {
+    window.kov.onTabShow("home", function() {
+      if (Date.now() - dailyLoadedAt < 5000) return;
+      dailyLoadedAt = Date.now();
+      loadDailyReward(root, true);
+    });
+  }
 }
 
 function kovbaksWord(n) {
@@ -467,12 +546,16 @@ function kovbaksWord(n) {
   return "ковбаксов";
 }
 
-async function loadDailyReward(root) {
+async function loadDailyReward(root, force) {
   var card = root.querySelector("#daily-reward-card");
   if (!card) return;
+  var requestVersion = (dailyLoadVersions.get(root) || 0) + 1;
+  dailyLoadVersions.set(root, requestVersion);
   try {
-    var dr = await get("/api/home/daily-reward");
+    var dr = await get("/api/home/daily-reward", force ? { force: true } : {});
+    if (dailyLoadVersions.get(root) !== requestVersion || !document.body.contains(root)) return;
     card.style.display = "";
+    card.removeAttribute("aria-busy");
     var desc = root.querySelector("#daily-reward-desc");
     var btn = root.querySelector("#daily-reward-btn");
     var dots = root.querySelector("#daily-streak-dots");
@@ -502,6 +585,7 @@ async function loadDailyReward(root) {
       desc.textContent = "День " + reward + " · +" + reward + " " + kovbaksWord(reward);
       btn.addEventListener("click", async function() {
         btn.disabled = true;
+        btn.textContent = "Получаем…";
         try {
           var res = await post("/api/home/daily-reward/claim");
           window.kov.toast("+" + res.reward + " " + kovbaksWord(res.reward) + "! Серия: " + res.streak + " дн.");
@@ -510,12 +594,29 @@ async function loadDailyReward(root) {
           loadDailyReward(root);
         } catch (e) {
           btn.disabled = false;
+          btn.textContent = "Забрать";
           window.kov.toast(e.message);
         }
       });
     }
   } catch (e) {
-    card.style.display = "none";
+    if (dailyLoadVersions.get(root) !== requestVersion || !document.body.contains(root)) return;
+    card.style.display = "";
+    card.removeAttribute("aria-busy");
+    var desc = root.querySelector("#daily-reward-desc");
+    var btn = root.querySelector("#daily-reward-btn");
+    if (desc) desc.textContent = "Не удалось обновить статус";
+    if (btn) {
+      var retryBtn = btn.cloneNode(true);
+      btn.parentNode.replaceChild(retryBtn, btn);
+      retryBtn.disabled = false;
+      retryBtn.textContent = "Повторить";
+      retryBtn.addEventListener("click", function() {
+        retryBtn.disabled = true;
+        retryBtn.textContent = "Загрузка…";
+        loadDailyReward(root, true);
+      });
+    }
   }
 }
 
@@ -821,24 +922,27 @@ async function loadQuizzes(root) {
       container.innerHTML = `<div class="empty">Нет доступных тестов</div>`;
       return;
     }
-    const passed = quizzes.find((q) => q.already_passed);
-    if (passed) {
-      container.innerHTML = `<div class="empty">Тестирование пройдено</div>`;
-      return;
-    }
     container.innerHTML = quizzes.map((q) => `
-      <div class="quiz-row" data-quiz-id="${q.id}">
+      <div class="quiz-row${q.already_passed ? " quiz-row-passed" : ""}"
+           data-quiz-id="${q.id}" data-passed="${q.already_passed ? "true" : "false"}"
+           ${q.already_passed ? 'aria-disabled="true"' : 'role="button" tabindex="0"'}
+           ${q.already_passed ? 'style="opacity:.68;cursor:default"' : ""}>
         <div class="quiz-row-info">
           <h4>${escapeHtml(q.title)}</h4>
-          <p>${escapeHtml(q.description || "")} ${q.question_count} вопросов · Приз: ${escapeHtml(q.prize_label)}</p>
+          <p>${escapeHtml(q.description || "")} ${q.question_count} вопросов · ${q.already_passed ? "Пройдено" : `Приз: ${escapeHtml(q.prize_label)}`}</p>
         </div>
-        <div class="quiz-row-badge">▶</div>
+        <div class="quiz-row-badge" aria-hidden="true">${q.already_passed ? "✓" : "▶"}</div>
       </div>
     `).join("");
 
-    container.querySelectorAll(".quiz-row").forEach((row) => {
-      row.addEventListener("click", () => {
-        openQuiz(Number(row.dataset.quizId));
+    container.querySelectorAll('.quiz-row[data-passed="false"]').forEach((row) => {
+      const launch = () => openQuiz(Number(row.dataset.quizId), root);
+      row.addEventListener("click", launch);
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          launch();
+        }
       });
     });
   } catch (err) {
@@ -846,10 +950,13 @@ async function loadQuizzes(root) {
   }
 }
 
-async function openQuiz(quizId) {
+async function openQuiz(quizId, quizRoot = null) {
   let questions = [];
+  let runToken = "";
   try {
-    questions = await get(`/api/quiz/${quizId}/start`);
+    const started = await post(`/api/quiz/${quizId}/start`);
+    questions = started.questions || [];
+    runToken = started.run_token || "";
   } catch (err) {
     window.kov.toast(err.message);
     return;
@@ -879,7 +986,9 @@ async function openQuiz(quizId) {
     </div>
   `).join("");
 
-  modal.querySelector("#quiz-submit").addEventListener("click", async () => {
+  modal.querySelector("#quiz-submit").addEventListener("click", async (event) => {
+    const submitButton = event.currentTarget;
+    if (submitButton.disabled) return;
     const answers = {};
     questions.forEach((q) => {
       const sel = modal.querySelector(`input[name="q-${q.id}"]:checked`);
@@ -889,12 +998,15 @@ async function openQuiz(quizId) {
       window.kov.toast("Ответь на все вопросы");
       return;
     }
+    submitButton.disabled = true;
+    submitButton.textContent = "Проверяем…";
     try {
-      const result = await post("/api/quiz/submit", { quiz_id: quizId, answers });
+      const result = await post("/api/quiz/submit", { quiz_id: quizId, run_token: runToken, answers });
       if (result && result.xp_to_coins > 0) {
         window.kov.toast("Достигнут максимум XP — излишек перешёл в " + result.xp_to_coins + " ковбаксов");
       }
       window.closeModal();
+      if (quizRoot && quizRoot.isConnected) loadQuizzes(quizRoot);
       const gradeLabels = { bad: "Не сдан", good: "Хорошо", excellent: "Отлично" };
       window.kov.showModal(`
         <button class="close" onclick="closeModal()">×</button>
@@ -911,6 +1023,8 @@ async function openQuiz(quizId) {
       `);
     } catch (err) {
       window.kov.toast(err.message);
+      submitButton.disabled = false;
+      submitButton.textContent = "Ответить";
     }
   });
 }

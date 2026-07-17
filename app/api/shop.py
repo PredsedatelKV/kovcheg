@@ -10,6 +10,7 @@ from app.auth import current_user
 from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/shop", tags=["shop"])
+MAX_PRODUCT_PRICE = 1_000_000_000
 
 
 @router.get("/products", response_model=list[schemas.ShopProductOut])
@@ -30,6 +31,8 @@ def buy(
     )
     if product is None:
         raise HTTPException(status_code=404, detail="Товар не найден")
+    if product.price <= 0 or product.price > MAX_PRODUCT_PRICE or product.stock < -1:
+        raise HTTPException(status_code=503, detail="Товар настроен некорректно")
     if product.stock == 0:
         raise HTTPException(status_code=400, detail="Товар закончился")
     wallet = ensure_wallet(db, user)
@@ -44,6 +47,8 @@ def buy(
     if inv is None:
         db.add(models.InventoryItem(user_id=user.id, item_id=product.item_id, quantity=1))
     else:
+        if inv.quantity < 0 or inv.quantity >= 2_000_000_000:
+            raise HTTPException(status_code=409, detail="Достигнут максимальный размер стака предмета")
         inv.quantity += 1
     if product.stock > 0:
         product.stock -= 1

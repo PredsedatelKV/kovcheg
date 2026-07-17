@@ -1,8 +1,8 @@
 // Сетевой мультиплеер: глобальный поллер приглашений/сессий + игры в модалке.
 // Запускается у обоих игроков без перезагрузки страницы. Поддержка:
 // крестики-нолики, шашки, пинг-понг.
-import { get, post } from "/static/api.js?v=227";
-import { playUISound } from "/static/pages/settings.js?v=227";
+import { get, post } from "/static/api.js?v=229";
+import { playUISound } from "/static/pages/settings.js?v=229";
 
 const esc = (s = "") =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -67,7 +67,8 @@ function showInvite(inv) {
   try { playUISound("win"); } catch (e) {}
   const decline = async () => {
     _dismissed.add(inv.id);
-    try { await post("/api/game/decline", { invite_id: inv.id }); } catch (e) {}
+    try { await post("/api/game/decline", { invite_id: inv.id }); }
+    catch (e) { window.kov?.toast?.(e.message || "Не удалось отклонить приглашение"); }
     closeModal();
   };
   modal.querySelector("#mp-accept").addEventListener("click", async () => {
@@ -84,7 +85,11 @@ function showInvite(inv) {
 function leaveSession(sessionId) {
   if (sessionId != null) _dismissed.add(sessionId);
   if (_activeSession === sessionId) _activeSession = null;
-  if (_cleanup) { try { _cleanup(); } catch (e) {} _cleanup = null; }
+  if (_cleanup) {
+    try { _cleanup(); }
+    catch (e) { console.warn("Multiplayer cleanup failed", e); }
+    _cleanup = null;
+  }
 }
 
 function launchGame(sessionId, game) {
@@ -304,14 +309,23 @@ function renderPong(root, sessionId) {
     <div id="pong-end"></div>`;
   const cv = root.querySelector("#pong-cv");
   const ctx = cv.getContext("2d");
+  let dragging = false;
 
   function setPaddle(clientX) {
     const rect = cv.getBoundingClientRect();
     myPaddle = Math.max(0.08, Math.min(0.92, (clientX - rect.left) / rect.width));
   }
-  cv.addEventListener("mousemove", (e) => { if (e.buttons) setPaddle(e.clientX); });
-  cv.addEventListener("touchmove", (e) => { e.preventDefault(); if (e.touches[0]) setPaddle(e.touches[0].clientX); }, { passive: false });
-  cv.addEventListener("click", (e) => setPaddle(e.clientX));
+  cv.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    cv.setPointerCapture?.(e.pointerId);
+    setPaddle(e.clientX);
+  });
+  cv.addEventListener("pointermove", (e) => { if (dragging) setPaddle(e.clientX); });
+  cv.addEventListener("pointerup", (e) => {
+    dragging = false;
+    cv.releasePointerCapture?.(e.pointerId);
+  });
+  cv.addEventListener("pointercancel", () => { dragging = false; });
 
   function render(now) {
     const W = cv.width, H = cv.height;
@@ -351,30 +365,44 @@ function renderPong(root, sessionId) {
     }
   }
 
-  function hostStep() {
+  let roundPauseUntil = 0;
+  function hostStep(dtFrames, now) {
     // px — это моя (хоста) ракетка снизу; po — ракетка гостя сверху (интерполируется в render)
     px = myPaddle;
-    if (countdown >= 0) {                   // во время отсчёта мяч стоит в центре
+    if (countdown >= 0 || now < roundPauseUntil) { // во время отсчёта/после гола мяч стоит в центре
       ball.x = 0.5; ball.y = 0.5;
       return;
     }
     const poX = interp.po.disp;            // используем сглаженную позицию гостя для коллизий
-    ball.x += ball.vx; ball.y += ball.vy;
-    if (ball.x < 0.02 || ball.x > 0.98) ball.vx *= -1;
-    // верх (соперник, po)
-    if (ball.y < 0.05) {
-      if (Math.abs(ball.x - poX) < 0.16) { ball.vy = Math.abs(ball.vy); ball.vx += (ball.x - poX) * 0.02; }
-      else { sx += 1; resetBall(-1); }
-    }
-    // низ (хост, px)
-    if (ball.y > 0.95) {
-      if (Math.abs(ball.x - px) < 0.16) { ball.vy = -Math.abs(ball.vy); ball.vx += (ball.x - px) * 0.02; }
-      else { so += 1; resetBall(1); }
+    // Подшаги не дают быстрому мячу пройти сквозь ракетку на низком FPS.
+    const steps = Math.max(1, Math.ceil(dtFrames));
+    const stepScale = dtFrames / steps;
+    for (let step = 0; step < steps; step += 1) {
+      const prevY = ball.y;
+      ball.x += ball.vx * stepScale;
+      ball.y += ball.vy * stepScale;
+      if (ball.x < 0.02) { ball.x = 0.02; ball.vx = Math.abs(ball.vx); }
+      else if (ball.x > 0.98) { ball.x = 0.98; ball.vx = -Math.abs(ball.vx); }
+      // Учитываем пересечение линии ракетки, а не только координату текущего кадра.
+      if (prevY >= 0.05 && ball.y < 0.05) {
+        if (Math.abs(ball.x - poX) < 0.16) {
+          ball.y = 0.05;
+          ball.vy = Math.abs(ball.vy);
+          ball.vx += (ball.x - poX) * 0.02;
+        } else { sx += 1; resetBall(-1, now); break; }
+      } else if (prevY <= 0.95 && ball.y > 0.95) {
+        if (Math.abs(ball.x - px) < 0.16) {
+          ball.y = 0.95;
+          ball.vy = -Math.abs(ball.vy);
+          ball.vx += (ball.x - px) * 0.02;
+        } else { so += 1; resetBall(1, now); break; }
+      }
     }
     ball.vx = Math.max(-0.03, Math.min(0.03, ball.vx));
   }
-  function resetBall(dir) {
+  function resetBall(dir, now = performance.now()) {
     ball = { x: 0.5, y: 0.5, vx: (Math.random() - 0.5) * 0.02, vy: 0.011 * (dir || 1) };
+    roundPauseUntil = now + 650;
   }
 
   // Гость экстраполирует мяч локально между апдейтами хоста (dead reckoning).
@@ -396,7 +424,7 @@ function renderPong(root, sessionId) {
     const dtFrames = lastFrame ? Math.min(4, (now - lastFrame) / 16.6667) : 1;
     lastFrame = now;
     if (!finished) {
-      if (host) hostStep();
+      if (host) hostStep(dtFrames, now);
       else guestStep(dtFrames);
       render(now);
     }
@@ -413,6 +441,7 @@ function renderPong(root, sessionId) {
       const s = await post("/api/game/session/" + sessionId + "/pong", payload);
       applyRemote(s);
     } catch (e) {
+      console.warn("Pong synchronization failed", e);
     } finally {
       syncing = false;
     }
@@ -474,7 +503,10 @@ function renderPong(root, sessionId) {
     if (raf) cancelAnimationFrame(raf);
     if (sendTimer) clearInterval(sendTimer);
     if (cdTimer) clearInterval(cdTimer);
+    document.removeEventListener("visibilitychange", onVisibility);
   }
+  const onVisibility = () => { if (!document.hidden) lastFrame = 0; };
+  document.addEventListener("visibilitychange", onVisibility);
   _cleanup = stop;
 
   // Инициализация: узнаём, кто хост
@@ -493,7 +525,9 @@ function renderPong(root, sessionId) {
     sendTimer = setInterval(syncTick, SYNC_MS);
     startCountdown();              // у каждого клиента свой отсчёт 3→2→1→Старт!
     loop();
-  }).catch(() => {});
+  }).catch((error) => {
+    root.innerHTML = `<div class="empty">Не удалось открыть матч: ${esc(error.message || "ошибка")}</div>`;
+  });
 }
 
 // Реванш: создаём новое приглашение тому же сопернику в ту же игру.

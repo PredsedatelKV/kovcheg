@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=227";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=229";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -29,6 +29,7 @@ const SECTIONS = [
   { id: "tasks", label: "Задания", icon: "/static/img/tasks/scroll.svg" },
   { id: "quizzes", label: "Тесты", icon: "/static/img/ui/quiz.svg" },
   { id: "items", label: "Предметы", icon: "/static/img/ui/box.svg" },
+  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/ui/lootbox.svg" },
   { id: "legal", label: "Тексты", icon: "/static/img/ui/legal.svg" },
   { id: "battlepass", label: "Пропуск", icon: "/static/img/tabs/battlepass.svg" },
 ];
@@ -79,22 +80,25 @@ export async function renderAdmin(root) {
     btn.addEventListener("click", () => {
       const id = btn.dataset.section;
       localStorage.setItem("kovcheg.admin.section", id);
-      activate(id);
+      activate(id, true);
     });
   });
 
-  async function activate(id) {
+  async function activate(id, refreshMeta = true) {
     root.querySelectorAll(".admin-tab").forEach((b) => b.classList.toggle("active", b.dataset.section === id));
-    body.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
+    if (!body.hasChildNodes()) body.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
+    body.setAttribute("aria-busy", "true");
     try {
-      META = await get("/api/admin/meta");
+      if (refreshMeta) META = await get("/api/admin/meta");
       await SECTION_RENDERERS[id](body);
     } catch (err) {
       body.innerHTML = `<div class="card"><h3>Ошибка</h3><p>${escapeHtml(err.message)}</p></div>`;
+    } finally {
+      body.removeAttribute("aria-busy");
     }
   }
 
-  activate(initial);
+  activate(initial, false);
 }
 
 // ---------- helpers ----------
@@ -489,6 +493,7 @@ async function renderWheel(body) {
             <option value="coins">Ковбаксы</option>
             <option value="xp">XP</option>
             <option value="item">Предмет</option>
+            <option value="nothing">Ничего</option>
           </select>`,
         ),
         field("Количество", `<input class="input" id="w-value" type="number" value="0"/>`),
@@ -513,6 +518,7 @@ async function renderWheel(body) {
               <option value="coins" ${p.kind === "coins" ? "selected" : ""}>Ковбаксы</option>
               <option value="xp" ${p.kind === "xp" ? "selected" : ""}>XP</option>
               <option value="item" ${p.kind === "item" ? "selected" : ""}>Предмет</option>
+              <option value="nothing" ${p.kind === "nothing" ? "selected" : ""}>Ничего</option>
             </select>`,
           ),
           field("Значение", `<input class="input" data-k="value" type="number" value="${p.value}"/>`),
@@ -544,13 +550,13 @@ async function renderWheel(body) {
       else if (kind === "item") {
         const it = META.items.find((i) => i.code === itemCode);
         label = it ? it.name : "Предмет";
-      }
+      } else label = "Ничего";
     }
     const payload = {
       label,
       kind,
       value,
-      item_code: itemCode,
+      item_code: kind === "item" ? itemCode : null,
       icon: body.querySelector("#w-icon").value.trim(),
       weight: Number(body.querySelector("#w-weight").value) || 10,
       sort_order: 0,
@@ -571,7 +577,7 @@ async function renderWheel(body) {
         label: card.querySelector('[data-k="label"]').value,
         kind: card.querySelector('[data-k="kind"]').value,
         value: Number(card.querySelector('[data-k="value"]').value) || 0,
-        item_code: card.querySelector('[data-k="item_code"]').value || null,
+        item_code: card.querySelector('[data-k="kind"]').value === "item" ? (card.querySelector('[data-k="item_code"]').value || null) : null,
         icon: card.querySelector('[data-k="icon"]').value,
         weight: Number(card.querySelector('[data-k="weight"]').value) || 10,
         sort_order: 0,
@@ -601,7 +607,7 @@ async function renderShop(body) {
       "Новый товар в магазине",
       formGrid(
         field("Предмет", `<select class="input" id="s-item">${itemOptions()}</select>`),
-        field("Цена", `<input class="input" id="s-price" type="number" min="0" value="100"/>`),
+        field("Цена", `<input class="input" id="s-price" type="number" min="1" value="100"/>`),
         field("В наличии (−1 = безлимит)", `<input class="input" id="s-stock" type="number" min="-1" value="-1"/>`),
       ) + `<button class="btn btn-sm" id="s-create">Добавить</button>`,
     )}
@@ -612,7 +618,7 @@ async function renderShop(body) {
         <h3 class="admin-card-title"><img src="${escapeHtml(p.item.icon)}" class="icon icon-sm" alt=""/> ${escapeHtml(p.item.name)}</h3>
         ${formGrid(
           field("Предмет", `<select class="input" data-k="item_id">${itemOptions(p.item.id)}</select>`),
-          field("Цена", `<input class="input" data-k="price" type="number" min="0" value="${p.price}"/>`),
+          field("Цена", `<input class="input" data-k="price" type="number" min="1" value="${p.price}"/>`),
           field("В наличии (−1 = безлимит)", `<input class="input" data-k="stock" type="number" min="-1" value="${p.stock ?? -1}"/>`),
         )}
         <div class="admin-sub">${p.stock === -1 ? "Безлимит" : p.stock === 0 ? "Закончился" : `Осталось: ${p.stock}`}</div>
@@ -668,74 +674,17 @@ async function renderShop(body) {
 async function renderMarket(body) {
   const rows = await get("/api/admin/market");
   body.innerHTML = `
-    ${cardBlock(
-      "Новое объявление на рынке",
-      formGrid(
-        field("Продавец", `<select class="input" id="m-seller">${userOptions()}</select>`),
-        field("Предмет", `<select class="input" id="m-item">${itemOptions()}</select>`),
-        field("Кол-во", `<input class="input" id="m-qty" type="number" min="1" value="1"/>`),
-        field("Цена", `<input class="input" id="m-price" type="number" min="1" value="100"/>`),
-      ) + `<button class="btn btn-sm" id="m-create">Добавить</button>`,
-    )}
+    ${cardBlock("Рынок", '<div class="admin-sub">Рынок доступен только для просмотра. Активный лот создаётся и снимается игроком: сервер резервирует или возвращает предмет атомарно.</div>')}
     ${rows
       .map(
         (l) => `
       <div class="admin-card" data-id="${l.id}">
         <h3 class="admin-card-title"><img src="${escapeHtml(l.item.icon)}" class="icon icon-sm" alt=""/> ${escapeHtml(l.item.name)}</h3>
         <div class="admin-sub">Продаёт: ${escapeHtml(l.seller_name)}${l.target_user_name ? ` → ${escapeHtml(l.target_user_name)}` : ""} · ${l.quantity} шт · <img src="/static/img/ui/coin.svg" alt="" class="icon icon-sm inline-coin"/> ${l.price}</div>
-        ${formGrid(
-          field("Цена", `<input class="input" data-k="price" type="number" min="1" value="${l.price}"/>`),
-          field("Кол-во", `<input class="input" data-k="quantity" type="number" min="1" value="${l.quantity}"/>`),
-        )}
-        <div class="row gap">
-          <button class="btn btn-sm" data-action="save">Сохранить</button>
-          <button class="btn btn-sm btn-danger" data-action="delete">Снять</button>
-        </div>
       </div>`,
       )
       .join("")}
   `;
-  body.querySelector("#m-create").addEventListener("click", async () => {
-    const payload = {
-      seller_id: Number(body.querySelector("#m-seller").value),
-      item_id: Number(body.querySelector("#m-item").value),
-      quantity: Number(body.querySelector("#m-qty").value),
-      price: Number(body.querySelector("#m-price").value),
-      is_active: true,
-    };
-    try {
-      await post("/api/admin/market", payload);
-      window.kov.toast("Создано");
-      renderMarket(body);
-    } catch (err) {
-      window.kov.toast(err.message);
-    }
-  });
-  body.querySelectorAll('.admin-card[data-id]').forEach((card) => {
-    const id = card.dataset.id;
-    const row = rows.find((r) => r.id === Number(id));
-    card.querySelector('[data-action="save"]').addEventListener("click", async () => {
-      const payload = {
-        seller_id: row.seller_id,
-        item_id: row.item.id,
-        quantity: Number(card.querySelector('[data-k="quantity"]').value),
-        price: Number(card.querySelector('[data-k="price"]').value),
-        is_active: true,
-      };
-      try {
-        await patch(`/api/admin/market/${id}`, payload);
-        window.kov.toast("Сохранено");
-      } catch (err) {
-        window.kov.toast(err.message);
-      }
-    });
-    card.querySelector('[data-action="delete"]').addEventListener("click", () =>
-      confirmAction("Снять объявление?", async () => {
-        await del(`/api/admin/market/${id}`);
-        renderMarket(body);
-      }),
-    );
-  });
 }
 
 // ---------- TASKS ----------
@@ -749,6 +698,7 @@ async function renderTasks(body) {
         field("Название", `<input class="input" id="t-name"/>`),
         field("Описание", `<textarea class="input" id="t-desc" rows="3"></textarea>`),
         field("Награда (Ковбаксов)", `<input class="input" id="t-reward" type="number" value="10"/>`),
+        field("Награда (XP)", `<input class="input" id="t-xp-reward" type="number" min="0" value="0"/>`),
         field("Цель", `<input class="input" id="t-target" type="number" value="1"/>`),
         field("Тип", `<select class="input" id="t-plan"><option value="0">Задание</option><option value="1">Ежедневный план</option></select>`),
       ) + `<button class="btn btn-sm" id="t-create">Добавить</button>`,
@@ -762,6 +712,7 @@ async function renderTasks(body) {
           field("Название", `<input class="input" data-k="name" value="${escapeHtml(t.name)}"/>`),
           field("Описание", `<textarea class="input" data-k="description" rows="3">${escapeHtml(t.description || "")}</textarea>`),
           field("Награда", `<input class="input" data-k="reward" type="number" value="${t.reward}"/>`),
+          field("Награда XP", `<input class="input" data-k="xp_reward" type="number" min="0" value="${t.xp_reward || 0}"/>`),
           field("Цель", `<input class="input" data-k="target_progress" type="number" value="${t.target_progress}"/>`),
         )}
         <div class="row gap">
@@ -799,6 +750,7 @@ async function renderTasks(body) {
       name: body.querySelector("#t-name").value.trim(),
       description: body.querySelector("#t-desc").value,
       reward: Number(body.querySelector("#t-reward").value) || 0,
+      xp_reward: Number(body.querySelector("#t-xp-reward").value) || 0,
       target_progress: Number(body.querySelector("#t-target").value) || 1,
       is_active: true,
       is_daily_plan: body.querySelector("#t-plan").value === "1",
@@ -821,6 +773,7 @@ async function renderTasks(body) {
         name: card.querySelector('[data-k="name"]').value,
         description: card.querySelector('[data-k="description"]').value,
         reward: Number(card.querySelector('[data-k="reward"]').value),
+        xp_reward: Number(card.querySelector('[data-k="xp_reward"]').value) || 0,
         target_progress: Number(card.querySelector('[data-k="target_progress"]').value),
         is_active: true,
         is_daily_plan: original.is_daily_plan,
@@ -1101,11 +1054,11 @@ async function renderQuizzes(body) {
         field("Название", `<input class="input" id="q-title"/>`),
         field("Описание", `<textarea class="input" id="q-desc" rows="2"></textarea>`),
         field("Тип приза", `<select class="input" id="q-prize-kind"><option value="coins">Ковбаксы</option><option value="item">Предмет</option></select>`),
-        field("Значение приза", `<input class="input" id="q-prize-value" type="number" value="0"/>`),
+        field("Значение приза", `<input class="input" id="q-prize-value" type="number" min="1" value="1"/>`),
         field("Код предмета (если предмет)", `<input class="input" id="q-prize-item"/>`),
         field("Название приза (для отображения)", `<input class="input" id="q-prize-label"/>`),
-        field("Порог 'Хорошо' (правильных ответов)", `<input class="input" id="q-threshold-good" type="number" value="5"/>`),
-        field("Порог 'Отлично' (правильных ответов)", `<input class="input" id="q-threshold-excellent" type="number" value="8"/>`),
+        field("Порог 'Хорошо' (правильных ответов)", `<input class="input" id="q-threshold-good" type="number" min="1" value="1"/>`),
+        field("Порог 'Отлично' (правильных ответов)", `<input class="input" id="q-threshold-excellent" type="number" min="1" value="1"/>`),
       ) + `<button class="btn btn-sm" id="q-create">Создать тест</button>`,
     )}
     ${rows
@@ -1116,6 +1069,7 @@ async function renderQuizzes(body) {
         <div class="admin-sub">Приз: ${escapeHtml(q.prize_label)} · Хорошо: ${q.threshold_good}+ · Отлично: ${q.threshold_excellent}+ · Вопросов: ${q.questions.length}</div>
         <div class="row gap">
           <button class="btn btn-sm" data-action="edit-quiz">Редактировать</button>
+          <button class="btn btn-sm btn-secondary" data-action="toggle-quiz">${q.is_active ? "Отключить" : "Активировать"}</button>
           <button class="btn btn-sm" data-action="view-attempts">Попытки</button>
           <button class="btn btn-sm btn-danger" data-action="delete-quiz">Удалить</button>
         </div>
@@ -1146,17 +1100,17 @@ async function renderQuizzes(body) {
       title: body.querySelector("#q-title").value.trim(),
       description: body.querySelector("#q-desc").value,
       prize_kind: body.querySelector("#q-prize-kind").value,
-      prize_value: Number(body.querySelector("#q-prize-value").value) || 0,
+      prize_value: Number(body.querySelector("#q-prize-value").value) || 1,
       prize_item_code: body.querySelector("#q-prize-item").value.trim() || null,
       prize_label: body.querySelector("#q-prize-label").value.trim(),
       threshold_good: Number(body.querySelector("#q-threshold-good").value) || 5,
       threshold_excellent: Number(body.querySelector("#q-threshold-excellent").value) || 8,
-      is_active: true,
+      is_active: false,
     };
     if (!payload.title) return window.kov.toast("Название обязательно");
     try {
       await post("/api/admin/quizzes", payload);
-      window.kov.toast("Тест создан");
+      window.kov.toast("Черновик теста создан — добавьте вопросы и активируйте его");
       renderQuizzes(body);
     } catch (err) {
       window.kov.toast(err.message);
@@ -1171,6 +1125,37 @@ async function renderQuizzes(body) {
       if (!quiz) return;
       const qList = card.querySelector(".quiz-questions-list");
       qList.style.display = qList.style.display === "none" ? "block" : "none";
+    });
+  });
+
+  body.querySelectorAll('[data-action="toggle-quiz"]').forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (btn.disabled) return;
+      const card = btn.closest(".admin-card");
+      const quiz = rows.find((row) => row.id === Number(card.dataset.id));
+      if (!quiz) return;
+      btn.disabled = true;
+      const originalText = btn.textContent;
+      btn.textContent = quiz.is_active ? "Отключаем…" : "Проверяем…";
+      try {
+        await patch(`/api/admin/quizzes/${quiz.id}`, {
+          title: quiz.title,
+          description: quiz.description || "",
+          is_active: !quiz.is_active,
+          prize_kind: quiz.prize_kind,
+          prize_value: quiz.prize_value,
+          prize_item_code: quiz.prize_item_code || null,
+          prize_label: quiz.prize_label || "",
+          threshold_good: quiz.threshold_good,
+          threshold_excellent: quiz.threshold_excellent,
+        });
+        window.kov.toast(quiz.is_active ? "Тест отключён" : "Тест активирован");
+        renderQuizzes(body);
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        window.kov.toast(err.message);
+      }
     });
   });
 
@@ -1316,6 +1301,320 @@ function openQuestionEditor(body, quizId, existing) {
       window.kov.toast(err.message);
     }
   });
+}
+
+// ---------- KOVBOX EDITOR ----------
+const LOOTBOX_RARITIES = ["Обычный", "Редкий", "Эпический", "Легендарный"];
+const LOOTBOX_REWARD_LABELS = {
+  item: "Предмет",
+  kovbucks: "Ковбаксы",
+  kovcoins: "Ковкойны",
+  xp: "XP",
+};
+
+function lootboxDateValue(value) {
+  if (!value) return "";
+  // API stores naive UTC in SQLite.  Explicitly add Z so Moscow/local browser
+  // time is displayed correctly and round-trips back through toISOString().
+  const source = /(?:Z|[+-]\d\d:\d\d)$/.test(value) ? value : value + "Z";
+  const date = new Date(source);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function lootboxEntryTemplate(entry = {}) {
+  const kind = entry.reward_kind || "item";
+  const itemChoices = META.items
+    .filter((item) => !item.lootbox_pool_code)
+    .map((item) => `<option value="${item.id}" ${Number(entry.item_id) === item.id ? "selected" : ""}>${escapeHtml(item.name)}</option>`)
+    .join("");
+  return `
+    <div class="admin-card lootbox-entry" style="margin:8px 0;padding:10px">
+      <div class="admin-form-grid">
+        ${field("Тип", `<select class="input lb-entry-kind">${Object.entries(LOOTBOX_REWARD_LABELS).map(([value, label]) => `<option value="${value}" ${kind === value ? "selected" : ""}>${label}</option>`).join("")}</select>`)}
+        ${field("Предмет", `<select class="input lb-entry-item"><option value="">—</option>${itemChoices}</select>`)}
+        ${field("Мин.", `<input class="input lb-entry-min" type="number" min="1" max="1000000" value="${entry.amount_min || 1}"/>`)}
+        ${field("Макс.", `<input class="input lb-entry-max" type="number" min="1" max="1000000" value="${entry.amount_max || 1}"/>`)}
+        ${field("Вес", `<input class="input lb-entry-weight" type="number" min="1" max="1000000" value="${entry.weight || 10}"/>`)}
+        ${field("Порядок", `<input class="input lb-entry-order" type="number" value="${entry.sort_order || 0}"/>`)}
+        ${field("Гарантированно", `<select class="input lb-entry-guaranteed"><option value="false" ${!entry.is_guaranteed ? "selected" : ""}>Нет</option><option value="true" ${entry.is_guaranteed ? "selected" : ""}>Да</option></select>`)}
+        ${field("Активна", `<select class="input lb-entry-active"><option value="true" ${entry.is_active !== false ? "selected" : ""}>Да</option><option value="false" ${entry.is_active === false ? "selected" : ""}>Нет</option></select>`)}
+      </div>
+      <div class="row gap"><span class="admin-sub lb-entry-percent">—</span><button class="btn btn-sm btn-danger lb-entry-remove" type="button">Удалить строку</button></div>
+    </div>`;
+}
+
+function collectLootboxEntry(row) {
+  const kind = row.querySelector(".lb-entry-kind").value;
+  return {
+    reward_kind: kind,
+    item_id: kind === "item" ? Number(row.querySelector(".lb-entry-item").value) || null : null,
+    amount_min: Number(row.querySelector(".lb-entry-min").value),
+    amount_max: Number(row.querySelector(".lb-entry-max").value),
+    weight: Number(row.querySelector(".lb-entry-weight").value),
+    is_guaranteed: row.querySelector(".lb-entry-guaranteed").value === "true",
+    is_active: row.querySelector(".lb-entry-active").value === "true",
+    sort_order: Number(row.querySelector(".lb-entry-order").value) || 0,
+  };
+}
+
+function refreshLootboxProbabilities(overlay) {
+  const rows = Array.from(overlay.querySelectorAll(".lootbox-entry"));
+  const random = rows.map((row) => ({ row, entry: collectLootboxEntry(row) }))
+    .filter(({ entry }) => entry.is_active && !entry.is_guaranteed && Number.isFinite(entry.weight) && entry.weight > 0);
+  const guaranteed = rows.map((row) => ({ row, entry: collectLootboxEntry(row) }))
+    .filter(({ entry }) => entry.is_active && entry.is_guaranteed && Number.isFinite(entry.weight) && entry.weight > 0);
+  const total = random.reduce((sum, value) => sum + value.entry.weight, 0);
+  const guaranteedTotal = guaranteed.reduce((sum, value) => sum + value.entry.weight, 0);
+  rows.forEach((row) => {
+    const entry = collectLootboxEntry(row);
+    const itemField = row.querySelector(".lb-entry-item").closest(".admin-field");
+    itemField.style.display = entry.reward_kind === "item" ? "" : "none";
+    const denominator = entry.is_guaranteed ? guaranteedTotal : total;
+    row.querySelector(".lb-entry-percent").textContent = entry.is_active && denominator > 0
+      ? `${entry.is_guaranteed ? "Шанс в гарантированном слоте" : "Нормализованный шанс"}: ${(entry.weight / denominator * 100).toFixed(2)}%`
+      : "Не участвует в розыгрыше";
+  });
+  const totalEl = overlay.querySelector("#lb-weight-total");
+  if (totalEl) totalEl.textContent = `Сумма активных случайных весов: ${total}`;
+}
+
+function validateLootboxPayload(payload) {
+  if (!payload.code || !/^[a-z0-9][a-z0-9_-]{1,63}$/.test(payload.code)) return "Внутренний ID: 2–64 символа, латиница, цифры, _ или -";
+  if (!payload.name) return "Название обязательно";
+  if (!payload.image_url) return "Укажите ассет ковбокса";
+  if (payload.sale_price != null && (!Number.isInteger(payload.sale_price) || payload.sale_price < 1 || payload.sale_price > 1000000000)) return "Цена продажи должна быть целым числом от 1 до 1 000 000 000";
+  const active = payload.entries.filter((entry) => entry.is_active);
+  if (payload.is_active && active.length === 0) return "Активный ковбокс не может быть пустым";
+  for (const entry of payload.entries) {
+    const numbers = [entry.amount_min, entry.amount_max, entry.weight, entry.sort_order];
+    if (numbers.some((number) => !Number.isFinite(number) || !Number.isInteger(number))) return "Все числовые поля наград должны быть целыми";
+    if (entry.amount_min < 1 || entry.amount_max < entry.amount_min) return "Проверьте диапазон количества награды";
+    if (entry.weight < 1) return "Вес должен быть больше нуля";
+    if (entry.reward_kind === "item" && !entry.item_id) return "Выберите предмет для каждой предметной награды";
+  }
+  const guaranteedCount = active.filter((entry) => entry.is_guaranteed).length;
+  if (!payload.allow_duplicates && guaranteedCount && payload.guaranteed_slots > guaranteedCount) return "Без дубликатов число гарантированных слотов превышает число гарантированных наград";
+  if (payload.min_user_level != null && payload.max_user_level != null && payload.max_user_level < payload.min_user_level) return "Максимальный уровень меньше минимального";
+  if (payload.starts_at && payload.ends_at && new Date(payload.ends_at) <= new Date(payload.starts_at)) return "Дата окончания должна быть позже начала";
+  return null;
+}
+
+function openLootboxEditor(body, existing = null) {
+  const box = existing || {
+    code: "", name: "", description: "", rarity: "Обычный",
+    image_url: "/static/img/items/lootbox_common.svg", is_active: false,
+    is_droppable: false, is_archived: false, assembly_weight: 10,
+    sale_price: null, sale_currency: "kovbucks", min_user_level: null,
+    max_user_level: null, sort_order: 0, starts_at: null, ends_at: null,
+    daily_open_limit: 0, guaranteed_slots: 1, allow_duplicates: true,
+    entries: [],
+  };
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:760px;max-height:92vh;overflow:auto">
+      <button class="close" id="lb-editor-close" type="button">×</button>
+      <h3>${existing ? "Редактировать" : "Создать"} ковбокс</h3>
+      <div class="admin-form-grid">
+        ${field("Внутренний ID", `<input class="input" id="lb-code" value="${escapeHtml(box.code)}" ${existing ? "disabled" : ""} placeholder="winter_2026"/>`)}
+        ${field("Название", `<input class="input" id="lb-name" value="${escapeHtml(box.name)}"/>`)}
+        ${field("Описание", `<textarea class="input" id="lb-description" rows="3">${escapeHtml(box.description || "")}</textarea>`)}
+        ${field("Редкость", `<select class="input" id="lb-rarity">${LOOTBOX_RARITIES.map((rarity) => `<option ${box.rarity === rarity ? "selected" : ""}>${rarity}</option>`).join("")}</select>`)}
+        ${field("Ассет", `<input class="input" id="lb-image" value="${escapeHtml(box.image_url)}"/>`)}
+        ${field("Активен для открытия", `<select class="input" id="lb-active"><option value="true" ${box.is_active ? "selected" : ""}>Да</option><option value="false" ${!box.is_active ? "selected" : ""}>Нет</option></select>`)}
+        ${field("Доступен для сборки/выпадения", `<select class="input" id="lb-droppable"><option value="true" ${box.is_droppable ? "selected" : ""}>Да</option><option value="false" ${!box.is_droppable ? "selected" : ""}>Нет</option></select>`)}
+        ${field("Вес при сборке", `<input class="input" id="lb-assembly-weight" type="number" min="1" value="${box.assembly_weight || 10}"/>`)}
+        ${field("Цена продажи", `<input class="input" id="lb-price" type="number" min="1" value="${box.sale_price ?? ""}" placeholder="не продаётся"/>`)}
+        ${field("Валюта цены", `<select class="input" id="lb-currency"><option value="kovbucks" selected>Ковбаксы</option></select>`)}
+        ${field("Мин. уровень", `<input class="input" id="lb-min-level" type="number" min="0" value="${box.min_user_level ?? ""}"/>`)}
+        ${field("Макс. уровень", `<input class="input" id="lb-max-level" type="number" min="0" value="${box.max_user_level ?? ""}"/>`)}
+        ${field("Порядок", `<input class="input" id="lb-order" type="number" value="${box.sort_order || 0}"/>`)}
+        ${field("Начало", `<input class="input" id="lb-start" type="datetime-local" value="${lootboxDateValue(box.starts_at)}"/>`)}
+        ${field("Окончание", `<input class="input" id="lb-end" type="datetime-local" value="${lootboxDateValue(box.ends_at)}"/>`)}
+        ${field("Лимит открытий в сутки (0 — нет)", `<input class="input" id="lb-daily-limit" type="number" min="0" max="1000" value="${box.daily_open_limit || 0}"/>`)}
+        ${field("Гарантированных слотов", `<input class="input" id="lb-slots" type="number" min="1" max="10" value="${box.guaranteed_slots || 1}"/>`)}
+        ${field("Разрешить дубликаты", `<select class="input" id="lb-duplicates"><option value="true" ${box.allow_duplicates ? "selected" : ""}>Да</option><option value="false" ${!box.allow_duplicates ? "selected" : ""}>Нет</option></select>`)}
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin:10px 0">
+        <img id="lb-image-preview" src="${escapeHtml(box.image_url)}" alt="" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--border);border-radius:12px" onerror="this.src='/static/img/ui/box.svg'"/>
+        <div class="admin-sub">Предпросмотр ассета · уже выданные ковбоксы используют актуальную конфигурацию; архивирование не удаляет экземпляры</div>
+      </div>
+      <div class="row gap wrap"><h4 style="margin:0;flex:1">Содержимое</h4><button class="btn btn-sm btn-secondary" id="lb-add-entry" type="button">+ Награда</button></div>
+      <div id="lb-weight-total" class="admin-sub"></div>
+      <div id="lb-entry-list">${(box.entries || []).map(lootboxEntryTemplate).join("")}</div>
+      <div class="row gap" style="margin-top:12px">
+        <button class="btn btn-sm" id="lb-save" type="button">Сохранить</button>
+        <button class="btn btn-sm btn-secondary" id="lb-cancel" type="button">Отмена</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  let dirty = false;
+  const unloadWarning = (event) => { if (dirty) { event.preventDefault(); event.returnValue = ""; } };
+  window.addEventListener("beforeunload", unloadWarning);
+  const cleanup = () => { window.removeEventListener("beforeunload", unloadWarning); overlay.remove(); };
+  const requestClose = () => { if (!dirty || confirm("Закрыть редактор и потерять несохранённые изменения?")) cleanup(); };
+  overlay.querySelector("#lb-editor-close").addEventListener("click", requestClose);
+  overlay.querySelector("#lb-cancel").addEventListener("click", requestClose);
+  overlay.addEventListener("click", (event) => { if (event.target === overlay) requestClose(); });
+  overlay.addEventListener("input", () => { dirty = true; refreshLootboxProbabilities(overlay); });
+  overlay.addEventListener("change", () => { dirty = true; refreshLootboxProbabilities(overlay); });
+  overlay.querySelector("#lb-image").addEventListener("input", (event) => {
+    overlay.querySelector("#lb-image-preview").src = event.target.value || "/static/img/ui/box.svg";
+  });
+
+  function bindEntryButtons() {
+    overlay.querySelectorAll(".lb-entry-remove").forEach((button) => {
+      button.onclick = () => { button.closest(".lootbox-entry").remove(); dirty = true; refreshLootboxProbabilities(overlay); };
+    });
+  }
+  bindEntryButtons();
+  overlay.querySelector("#lb-add-entry").addEventListener("click", () => {
+    overlay.querySelector("#lb-entry-list").insertAdjacentHTML("beforeend", lootboxEntryTemplate());
+    dirty = true;
+    bindEntryButtons();
+    refreshLootboxProbabilities(overlay);
+  });
+  refreshLootboxProbabilities(overlay);
+
+  overlay.querySelector("#lb-save").addEventListener("click", async () => {
+    const nullableNumber = (selector) => {
+      const value = overlay.querySelector(selector).value.trim();
+      return value === "" ? null : Number(value);
+    };
+    const payload = {
+      code: overlay.querySelector("#lb-code").value.trim(),
+      name: overlay.querySelector("#lb-name").value.trim(),
+      description: overlay.querySelector("#lb-description").value.trim(),
+      rarity: overlay.querySelector("#lb-rarity").value,
+      image_url: overlay.querySelector("#lb-image").value.trim(),
+      is_active: overlay.querySelector("#lb-active").value === "true",
+      is_droppable: overlay.querySelector("#lb-droppable").value === "true",
+      is_archived: Boolean(box.is_archived),
+      assembly_weight: Number(overlay.querySelector("#lb-assembly-weight").value),
+      sale_price: nullableNumber("#lb-price"),
+      sale_currency: overlay.querySelector("#lb-currency").value,
+      min_user_level: nullableNumber("#lb-min-level"),
+      max_user_level: nullableNumber("#lb-max-level"),
+      sort_order: Number(overlay.querySelector("#lb-order").value) || 0,
+      starts_at: overlay.querySelector("#lb-start").value ? new Date(overlay.querySelector("#lb-start").value).toISOString() : null,
+      ends_at: overlay.querySelector("#lb-end").value ? new Date(overlay.querySelector("#lb-end").value).toISOString() : null,
+      daily_open_limit: Number(overlay.querySelector("#lb-daily-limit").value) || 0,
+      guaranteed_slots: Number(overlay.querySelector("#lb-slots").value),
+      allow_duplicates: overlay.querySelector("#lb-duplicates").value === "true",
+      entries: Array.from(overlay.querySelectorAll(".lootbox-entry")).map(collectLootboxEntry),
+    };
+    const error = validateLootboxPayload(payload);
+    if (error) return window.kov.toast(error);
+    const save = overlay.querySelector("#lb-save");
+    save.disabled = true;
+    try {
+      if (existing) await patch(`/api/admin/lootboxes/${existing.id}`, payload);
+      else await post("/api/admin/lootboxes", payload);
+      dirty = false;
+      cleanup();
+      window.kov.toast("Ковбокс сохранён");
+      renderLootboxes(body);
+    } catch (error) {
+      save.disabled = false;
+      window.kov.toast(error.message);
+    }
+  });
+}
+
+async function renderLootboxes(body) {
+  const rows = await get("/api/admin/lootboxes");
+  const rarities = Array.from(new Set(rows.map((row) => row.rarity))).sort();
+  body.innerHTML = `
+    <div class="admin-card">
+      <div class="row gap wrap">
+        <input class="input input-sm" id="lb-search" placeholder="Поиск по названию или ID" style="flex:1;min-width:180px"/>
+        <select class="input input-sm" id="lb-active-filter"><option value="">Все статусы</option><option value="active">Активные</option><option value="inactive">Отключённые</option><option value="archived">Архив</option></select>
+        <select class="input input-sm" id="lb-rarity-filter"><option value="">Все редкости</option>${rarities.map((rarity) => `<option>${escapeHtml(rarity)}</option>`).join("")}</select>
+        <button class="btn btn-sm" id="lb-create">Создать</button>
+      </div>
+      <div class="admin-sub" style="margin-top:8px">Вероятности задаются целыми весами; проценты нормализуются сервером автоматически.</div>
+    </div>
+    <div id="lb-list"></div>`;
+
+  const list = body.querySelector("#lb-list");
+  function draw() {
+    const term = body.querySelector("#lb-search").value.trim().toLowerCase();
+    const status = body.querySelector("#lb-active-filter").value;
+    const rarity = body.querySelector("#lb-rarity-filter").value;
+    const filtered = rows.filter((row) => {
+      if (term && !`${row.name} ${row.code}`.toLowerCase().includes(term)) return false;
+      if (rarity && row.rarity !== rarity) return false;
+      if (status === "active" && (!row.is_active || row.is_archived)) return false;
+      if (status === "inactive" && (row.is_active || row.is_archived)) return false;
+      if (status === "archived" && !row.is_archived) return false;
+      return true;
+    });
+    list.innerHTML = filtered.length ? filtered.map((row) => `
+      <div class="admin-card" data-lb-id="${row.id}">
+        <div style="display:flex;gap:12px;align-items:center">
+          <img src="${escapeHtml(row.image_url)}" alt="" style="width:64px;height:64px;object-fit:contain;flex:0 0 auto" onerror="this.src='/static/img/ui/box.svg'"/>
+          <div style="min-width:0;flex:1">
+            <h3 class="admin-card-title">${escapeHtml(row.name)} ${row.is_archived ? '<span class="admin-badge">архив</span>' : row.is_active ? '<span class="admin-badge">активен</span>' : ""}</h3>
+            <div class="admin-sub">${escapeHtml(row.code)} · ${escapeHtml(row.rarity)} · версия ${row.version} · случайный вес ${row.weight_total}</div>
+            <div class="admin-sub">${row.entries.length} наград · гарант. слотов ${row.guaranteed_slots} · сборка вес ${row.assembly_weight}</div>
+          </div>
+        </div>
+        <div class="row gap wrap" style="margin-top:10px">
+          <button class="btn btn-sm" data-lb-action="edit">Редактировать</button>
+          <button class="btn btn-sm btn-secondary" data-lb-action="duplicate">Дублировать</button>
+          ${row.is_archived ? "" : '<button class="btn btn-sm btn-danger" data-lb-action="archive">Архивировать</button>'}
+        </div>
+      </div>`).join("") : '<div class="admin-card"><div class="admin-sub">Ковбоксы не найдены</div></div>';
+
+    list.querySelectorAll("[data-lb-id]").forEach((card) => {
+      const row = rows.find((value) => value.id === Number(card.dataset.lbId));
+      card.querySelector('[data-lb-action="edit"]').addEventListener("click", () => openLootboxEditor(body, row));
+      card.querySelector('[data-lb-action="duplicate"]').addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        if (button.disabled) return;
+        const code = prompt("Новый внутренний ID", `${row.code}_copy`);
+        if (!code) return;
+        const name = prompt("Название копии", `${row.name} — копия`);
+        if (!name) return;
+        button.disabled = true;
+        button.textContent = "Создаём…";
+        try {
+          await post(`/api/admin/lootboxes/${row.id}/duplicate`, { code: code.trim(), name: name.trim() });
+          window.kov.toast("Копия создана отключённой");
+          renderLootboxes(body);
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = "Дублировать";
+          window.kov.toast(error.message);
+        }
+      });
+      card.querySelector('[data-lb-action="archive"]')?.addEventListener("click", (event) => {
+        const button = event.currentTarget;
+        if (button.disabled) return;
+        confirmAction("Архивировать ковбокс? Новые экземпляры перестанут выпадать, уже выданные сохранятся.", async () => {
+          button.disabled = true;
+          button.textContent = "Архивируем…";
+          try {
+            await post(`/api/admin/lootboxes/${row.id}/archive`);
+            window.kov.toast("Ковбокс архивирован");
+            renderLootboxes(body);
+          } catch (error) {
+            button.disabled = false;
+            button.textContent = "Архивировать";
+            window.kov.toast(error.message);
+          }
+        });
+      });
+    });
+  }
+  body.querySelector("#lb-create").addEventListener("click", () => openLootboxEditor(body));
+  body.querySelector("#lb-search").addEventListener("input", draw);
+  body.querySelector("#lb-active-filter").addEventListener("change", draw);
+  body.querySelector("#lb-rarity-filter").addEventListener("change", draw);
+  draw();
 }
 
 // ---------- BATTLE PASS ADMIN ----------
@@ -1552,6 +1851,7 @@ const SECTION_RENDERERS = {
   tasks: renderTasks,
   quizzes: renderQuizzes,
   items: renderItems,
+  lootboxes: renderLootboxes,
   legal: renderLegal,
   battlepass: renderBattlePassAdmin,
 };

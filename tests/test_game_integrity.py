@@ -65,7 +65,7 @@ def game_api(tmp_path):
         )
         db.add_all([fragment, prize, lootbox])
         db.flush()
-        pool = models.LootboxPool(code="common", name="Обычный")
+        pool = models.LootboxPool(code="common", name="Обычный", item_id=lootbox.id)
         db.add(pool)
         db.flush()
         db.add(models.LootboxPoolEntry(pool_id=pool.id, item_id=prize.id, weight=1))
@@ -137,20 +137,44 @@ def test_daily_reward_parallel_claim_only_once(game_api, monkeypatch):
 @pytest.mark.parametrize("game", sorted(arcade.FIRST_WIN_GAMES))
 def test_each_arcade_first_win_requires_round_and_is_daily(game_api, game):
     client, sessions = game_api
+    results = {
+        "moshonka": {"player_score": 10, "opponent_score": 0, "duration_ms": 3_000},
+        "tictactoe": {"player_score": 1, "opponent_score": 0, "duration_ms": 2_000},
+        "minesweeper": {"player_score": 54, "opponent_score": 10, "duration_ms": 3_000},
+        "harvest": {"player_score": 10, "opponent_score": 0, "duration_ms": 20_000},
+        "checkers": {"player_score": 1, "opponent_score": 0, "duration_ms": 12_000},
+        "pingpong": {"player_score": 5, "opponent_score": 2, "duration_ms": 12_000},
+    }
+    result = results[game]
     assert client.post("/api/arcade/first-win", json={"game": game, "round_token": "fake"}, headers=_headers()).status_code == 409
     token = client.post("/api/arcade/round/start", json={"game": game}, headers=_headers()).json()["token"]
     with sessions() as db:
         row = db.query(models.ArcadeRound).filter_by(token=token).one()
         row.started_at -= timedelta(seconds=20)
         db.commit()
-    first = client.post("/api/arcade/first-win", json={"game": game, "round_token": token}, headers=_headers())
+    empty_result = client.post(
+        "/api/arcade/first-win",
+        json={"game": game, "round_token": token},
+        headers=_headers(),
+    )
+    assert empty_result.status_code == 400
+    assert _balance(sessions) == 100
+    first = client.post(
+        "/api/arcade/first-win",
+        json={"game": game, "round_token": token, **result},
+        headers=_headers(),
+    )
     assert first.status_code == 200 and first.json()["reward"] == 3
     token2 = client.post("/api/arcade/round/start", json={"game": game}, headers=_headers()).json()["token"]
     with sessions() as db:
         row = db.query(models.ArcadeRound).filter_by(token=token2).one()
         row.started_at -= timedelta(seconds=20)
         db.commit()
-    second = client.post("/api/arcade/first-win", json={"game": game, "round_token": token2}, headers=_headers())
+    second = client.post(
+        "/api/arcade/first-win",
+        json={"game": game, "round_token": token2, **result},
+        headers=_headers(),
+    )
     assert second.status_code == 200 and second.json()["already_claimed"] is True
 
 
@@ -164,7 +188,13 @@ def test_first_win_parallel_request_cannot_double_credit(game_api):
     def claim(_):
         return client.post(
             "/api/arcade/first-win",
-            json={"game": "minesweeper", "round_token": token},
+            json={
+                "game": "minesweeper",
+                "round_token": token,
+                "player_score": 54,
+                "opponent_score": 10,
+                "duration_ms": 3_000,
+            },
             headers=_headers(),
         ).status_code
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -177,7 +207,7 @@ def test_fragment_assembly_and_parallel_safety(game_api):
     client, sessions = game_api
     with sessions() as db:
         fragment = db.query(models.Item).filter_by(code="box_fragment").one()
-        db.add(models.InventoryItem(user_id=1, item_id=fragment.id, quantity=6))
+        db.add(models.InventoryItem(user_id=1, item_id=fragment.id, quantity=20))
         db.commit()
     with ThreadPoolExecutor(max_workers=2) as pool:
         statuses = list(pool.map(lambda _: client.post("/api/profile/inventory/assemble-fragments", headers=_headers()).status_code, range(2)))

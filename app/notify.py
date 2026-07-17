@@ -1,8 +1,7 @@
 """Notifications to admins via Telegram bot.
 
 Endpoints call notify_admins_bg("html message") to push action logs to ALL admin
-telegram chats (configured via ADMIN_IDS in .env, plus any User where
-is_admin=True if they have a known telegram_id and have opened the mini-app).
+telegram chats configured by immutable Telegram IDs.
 
 The actual send is fire-and-forget: we schedule a background task on the running
 event loop so HTTP endpoints stay snappy.
@@ -14,8 +13,7 @@ import logging
 from typing import Iterable
 
 from app.config import get_settings
-from app.db import session_scope
-from app import models
+from app.players import PLAYER_BINDINGS
 
 log = logging.getLogger(__name__)
 
@@ -27,23 +25,7 @@ _background_tasks: set[asyncio.Task] = set()
 def _resolve_admin_chat_ids() -> list[int]:
     settings = get_settings()
     ids: set[int] = set(settings.admin_id_list)
-
-    # Plus any user whose username is in the admin allowlist (resolved once
-    # they have logged in at least once).
-    try:
-        usernames = settings.admin_username_list
-        if usernames:
-            with session_scope() as db:
-                admin_users = (
-                    db.query(models.User)
-                    .filter(models.User.username.in_(usernames))
-                    .all()
-                )
-                for u in admin_users:
-                    if u.telegram_id:
-                        ids.add(int(u.telegram_id))
-    except Exception as exc:  # noqa: BLE001
-        log.warning("notify._resolve_admin_chat_ids db query failed: %s", exc)
+    ids.update(tg_id for tg_id, binding in PLAYER_BINDINGS.items() if binding.get("is_admin"))
 
     return list(ids)
 

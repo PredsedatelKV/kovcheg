@@ -19,9 +19,9 @@ from aiogram.types import (
 
 import app.assistant as assistant
 from app import models
-from app.api._helpers import ensure_wallet
+from app.api._helpers import award_xp, ensure_wallet
 from app.config import get_settings
-from app.db import session_scope
+from app.db import begin_game_write, session_scope
 from app.models import now_utc
 
 log = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 _bot: Bot | None = None
 _dp: Dispatcher | None = None
 _last_assistant_requests: dict[int, datetime] = {}
-WEBAPP_RELEASE = "228"
+WEBAPP_RELEASE = "229"
 
 
 def _versioned_webapp_url(public_url: str) -> str:
@@ -75,7 +75,9 @@ def _inline_webapp_kb(public_url: str) -> InlineKeyboardMarkup:
 
 
 def _is_admin(tg_id: int) -> bool:
-    return tg_id in get_settings().admin_id_list
+    from app.players import is_bound_admin
+
+    return is_bound_admin(tg_id) or tg_id in get_settings().admin_id_list
 
 
 def _register_handlers(dp: Dispatcher) -> None:
@@ -194,6 +196,7 @@ def _register_handlers(dp: Dispatcher) -> None:
         notify_tg_id: int | None = None
         try:
             with session_scope() as db:
+                begin_game_write(db)
                 ut = db.query(models.UserTask).filter(models.UserTask.id == user_task_id).one_or_none()
                 if ut is None:
                     await message.answer("Запись задания не найдена")
@@ -205,15 +208,23 @@ def _register_handlers(dp: Dispatcher) -> None:
                 ut.progress = ut.task.target_progress
                 ut.approved_by = message.from_user.id
                 ut.finished_at = now_utc()
-                ensure_wallet(db, ut.user).balance += ut.task.reward
-                db.add(
-                    models.Transaction(
-                        sender_id=None,
-                        recipient_id=ut.user_id,
-                        amount=ut.task.reward,
-                        note=f"task:{ut.task.id}",
+                wallet = ensure_wallet(db, ut.user)
+                if not 0 <= ut.task.reward <= 1_000_000 or not 0 <= ut.task.xp_reward <= 1_000_000:
+                    raise ValueError("награда задания настроена некорректно")
+                if wallet.balance < 0 or wallet.balance > 2_000_000_000 - ut.task.reward:
+                    raise ValueError("достигнут максимальный баланс ковбаксов")
+                wallet.balance += ut.task.reward
+                if ut.task.xp_reward:
+                    award_xp(db, ut.user, ut.task.xp_reward)
+                if ut.task.reward:
+                    db.add(
+                        models.Transaction(
+                            sender_id=None,
+                            recipient_id=ut.user_id,
+                            amount=ut.task.reward,
+                            note=f"task:{ut.task.id}",
+                        )
                     )
-                )
                 notify_text = (
                     f"🎉 Задание <b>{ut.task.name}</b> подтверждено!\nНаграда: {ut.task.reward} Ковбаксов."
                 )
@@ -242,6 +253,7 @@ def _register_handlers(dp: Dispatcher) -> None:
         reason = parts[2] if len(parts) > 2 else "без причины"
         notify_tg_id: int | None = None
         with session_scope() as db:
+            begin_game_write(db)
             ut = db.query(models.UserTask).filter(models.UserTask.id == user_task_id).one_or_none()
             if ut is None:
                 await message.answer("Запись задания не найдена")
@@ -276,8 +288,12 @@ def _register_handlers(dp: Dispatcher) -> None:
         except ValueError:
             await message.answer("tg_id и qty должны быть числами")
             return
+        if qty <= 0 or qty > 1_000_000:
+            await message.answer("qty должен быть целым числом от 1 до 1 000 000")
+            return
         item_code = parts[2]
         with session_scope() as db:
+            begin_game_write(db)
             user = db.query(models.User).filter(models.User.telegram_id == tg_id).one_or_none()
             if user is None:
                 await message.answer("Пользователь не найден (попроси открыть mini-app)")
@@ -294,6 +310,9 @@ def _register_handlers(dp: Dispatcher) -> None:
             if inv is None:
                 db.add(models.InventoryItem(user_id=user.id, item_id=item.id, quantity=qty))
             else:
+                if inv.quantity < 0 or inv.quantity > 2_000_000_000 - qty:
+                    await message.answer("Достигнут максимальный размер стака")
+                    return
                 inv.quantity += qty
         await message.answer(f"Выдано {qty} × {item_code} пользователю {tg_id}")
 
@@ -311,13 +330,20 @@ def _register_handlers(dp: Dispatcher) -> None:
         except ValueError:
             await message.answer("tg_id и amount должны быть числами")
             return
+        if amount <= 0 or amount > 1_000_000_000:
+            await message.answer("amount должен быть целым числом от 1 до 1 000 000 000")
+            return
         try:
             with session_scope() as db:
+                begin_game_write(db)
                 user = db.query(models.User).filter(models.User.telegram_id == tg_id).one_or_none()
                 if user is None:
                     await message.answer("Пользователь не найден")
                     return
-                ensure_wallet(db, user).balance += amount
+                wallet = ensure_wallet(db, user)
+                if wallet.balance < 0 or wallet.balance > 2_000_000_000 - amount:
+                    raise ValueError("достигнут максимальный баланс ковбаксов")
+                wallet.balance += amount
                 db.add(
                     models.Transaction(
                         sender_id=None, recipient_id=user.id, amount=amount, note=f"admin:{message.from_user.id}"

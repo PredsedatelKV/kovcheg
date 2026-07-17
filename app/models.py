@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -16,6 +17,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+
+# The client receives this value through ProfilePayload and never chooses how
+# many fragments the server consumes.
+LOOTBOX_FRAGMENT_COST = 10
 
 
 def now_utc() -> datetime:
@@ -73,6 +78,33 @@ class WebSession(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class IdempotencyReceipt(Base):
+    """Durable guard for one client-issued critical game mutation."""
+
+    __tablename__ = "idempotency_receipts"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    method: Mapped[str] = mapped_column(String(8), nullable=False)
+    path: Mapped[str] = mapped_column(String(256), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="processing", nullable=False)
+    response_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_body: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    response_content_type: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class TelegramUpdateReceipt(Base):
+    """Telegram update IDs are globally unique and must be processed once."""
+
+    __tablename__ = "telegram_update_receipts"
+
+    update_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    status: Mapped[str] = mapped_column(String(16), default="processing", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Wallet(Base):
@@ -281,6 +313,7 @@ class QuizQuestion(Base):
 
 class QuizAttempt(Base):
     __tablename__ = "quiz_attempts"
+    __table_args__ = (UniqueConstraint("quiz_id", "user_id", name="uq_quiz_attempt_user"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     quiz_id: Mapped[int] = mapped_column(ForeignKey("quizzes.id"), index=True, nullable=False)
@@ -293,6 +326,20 @@ class QuizAttempt(Base):
 
     quiz: Mapped["Quiz"] = relationship("Quiz", back_populates="attempts")
     user: Mapped["User"] = relationship("User")
+
+
+class QuizRun(Base):
+    """Short-lived, single-use proof that a user actually opened a quiz."""
+
+    __tablename__ = "quiz_runs"
+
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)
+    quiz_id: Mapped[int] = mapped_column(ForeignKey("quizzes.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    question_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ChatMessage(Base):
@@ -398,26 +445,97 @@ class BattlePassClaim(Base):
 
 
 class LootboxPool(Base):
-    """Пул призов для лутбокса (по code: bronze/silver/gold)."""
+    """Server-owned configuration for one type of Kovbox.
+
+    Existing inventory stacks point to an ``Item``.  ``item_id`` connects that
+    item to this mutable configuration; archiving therefore stops new drops
+    without invalidating boxes which players already own.
+    """
     __tablename__ = "lootbox_pools"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    code: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    rarity: Mapped[str] = mapped_column(String(32), default="Обычный", nullable=False)
+    image_url: Mapped[str] = mapped_column(String(512), default="/static/img/items/lootbox_common.svg", nullable=False)
+    item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), unique=True, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_droppable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    assembly_weight: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    sale_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sale_currency: Mapped[str] = mapped_column(String(16), default="kovbucks", nullable=False)
+    min_user_level: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_user_level: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    daily_open_limit: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    guaranteed_slots: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    allow_duplicates: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     entries: Mapped[list["LootboxPoolEntry"]] = relationship("LootboxPoolEntry", back_populates="pool", cascade="all, delete-orphan")
+    item: Mapped["Item | None"] = relationship("Item")
 
 
 class LootboxPoolEntry(Base):
     __tablename__ = "lootbox_pool_entries"
+    __table_args__ = (
+        CheckConstraint("weight > 0", name="ck_lootbox_entry_weight_positive"),
+        CheckConstraint("amount_min > 0", name="ck_lootbox_entry_amount_min_positive"),
+        CheckConstraint("amount_max >= amount_min", name="ck_lootbox_entry_amount_range"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     pool_id: Mapped[int] = mapped_column(ForeignKey("lootbox_pools.id"), nullable=False)
-    item_id: Mapped[int] = mapped_column(ForeignKey("items.id"), nullable=False)
-    weight: Mapped[int] = mapped_column(Integer, default=10)
+    reward_kind: Mapped[str] = mapped_column(String(16), default="item", nullable=False)
+    item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+    amount_min: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    amount_max: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    weight: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    is_guaranteed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     pool: Mapped["LootboxPool"] = relationship("LootboxPool", back_populates="entries")
-    item: Mapped["Item"] = relationship("Item")
+    item: Mapped["Item | None"] = relationship("Item")
+
+
+class LootboxOpen(Base):
+    """Immutable, idempotent audit fact for consuming one Kovbox."""
+
+    __tablename__ = "lootbox_opens"
+    __table_args__ = (UniqueConstraint("user_id", "request_id", name="uq_lootbox_open_request"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    lootbox_item_id: Mapped[int] = mapped_column(ForeignKey("items.id"), nullable=False)
+    pool_id: Mapped[int] = mapped_column(ForeignKey("lootbox_pools.id"), nullable=False)
+    pool_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True, nullable=False)
+
+    rewards: Mapped[list["LootboxOpenReward"]] = relationship(
+        "LootboxOpenReward", back_populates="opening", cascade="all, delete-orphan"
+    )
+
+
+class LootboxOpenReward(Base):
+    """The exact rewards granted by a recorded Kovbox opening."""
+
+    __tablename__ = "lootbox_open_rewards"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    opening_id: Mapped[int] = mapped_column(ForeignKey("lootbox_opens.id"), index=True, nullable=False)
+    reward_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    opening: Mapped["LootboxOpen"] = relationship("LootboxOpen", back_populates="rewards")
+    item: Mapped["Item | None"] = relationship("Item")
 
 
 class ClickerState(Base):

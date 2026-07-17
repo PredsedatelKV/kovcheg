@@ -123,10 +123,21 @@ def _yesterday_str() -> str:
     return (datetime.now(MSK) - timedelta(days=1)).strftime("%Y-%m-%d")
 
 
+def _day_keys() -> tuple[str, str]:
+    """Return a consistent Moscow today/yesterday pair for one request.
+
+    Deriving yesterday from the already captured date avoids a mixed pair when
+    the request happens exactly across midnight.
+    """
+    today = _today_str()
+    yesterday = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+    return today, yesterday
+
+
 @router.get("/daily-reward")
 def get_daily_reward(user: models.User = Depends(current_user), db: Session = Depends(get_db)):
     dr = db.query(models.DailyReward).filter(models.DailyReward.user_id == user.id).first()
-    today = _today_str()
+    today, yesterday = _day_keys()
     if not dr:
         return {"streak": 0, "claimed_today": False, "reward": 1}
     claimed_today = dr.last_claim_date == today
@@ -134,7 +145,7 @@ def get_daily_reward(user: models.User = Depends(current_user), db: Session = De
         # Уже забрано сегодня: показываем текущую серию и полученную награду.
         return {"streak": dr.streak, "claimed_today": True, "reward": min(dr.streak, 7)}
     # Не забрано сегодня. Серия продолжается только если забирали вчера, иначе сбрасывается.
-    if dr.last_claim_date == _yesterday_str():
+    if dr.last_claim_date == yesterday:
         next_streak = min(dr.streak + 1, 7)
     else:
         next_streak = 1  # пропущен календарный день — серия сброшена
@@ -146,13 +157,13 @@ def claim_daily_reward(user: models.User = Depends(current_user), db: Session = 
     from app.api._helpers import ensure_wallet
 
     begin_game_write(db)
-    today = _today_str()
+    today, yesterday = _day_keys()
     dr = db.query(models.DailyReward).filter(models.DailyReward.user_id == user.id).first()
     if dr and dr.last_claim_date == today:
         raise HTTPException(409, "Награда уже получена сегодня")
 
     if dr:
-        if dr.last_claim_date == _yesterday_str():
+        if dr.last_claim_date == yesterday:
             dr.streak = min(dr.streak + 1, 7)
         else:
             dr.streak = 1
@@ -163,6 +174,8 @@ def claim_daily_reward(user: models.User = Depends(current_user), db: Session = 
 
     reward = dr.streak
     wallet = ensure_wallet(db, user)
+    if wallet.balance < 0 or wallet.balance > 2_000_000_000 - reward:
+        raise HTTPException(status_code=409, detail="Достигнут максимальный баланс ковбаксов")
     wallet.balance += reward
     db.add(models.Transaction(recipient_id=user.id, amount=reward, note=f"Ежедневная награда (день {dr.streak})"))
     db.commit()

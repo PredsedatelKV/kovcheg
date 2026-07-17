@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import random
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -12,6 +11,10 @@ from app.auth import current_user, is_admin
 from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/battlepass", tags=["battlepass"])
+MAX_REWARD_AMOUNT = 1_000_000
+MAX_GAME_BALANCE = 2_000_000_000
+MAX_INVENTORY_QUANTITY = 2_000_000_000
+MAX_BATTLEPASS_LEVELS = 1_000
 
 
 def _get_active_season(db: Session) -> models.BattlePassSeason | None:
@@ -30,7 +33,18 @@ def _get_ubp(db: Session, user_id: int, season: models.BattlePassSeason) -> mode
     return ubp
 
 
+def _validate_season(season: models.BattlePassSeason) -> None:
+    """Reject malformed legacy/admin data before it reaches arithmetic or rewards."""
+    if not 1 <= season.xp_per_level <= MAX_REWARD_AMOUNT:
+        raise HTTPException(503, "Сезон пропуска настроен некорректно: проверьте XP за уровень")
+    if not 1 <= season.total_levels <= MAX_BATTLEPASS_LEVELS:
+        raise HTTPException(503, "Сезон пропуска настроен некорректно: проверьте число уровней")
+
+
 def _calc_level(xp: int, xp_per_level: int) -> tuple[int, int]:
+    if xp_per_level < 1:
+        raise HTTPException(503, "Сезон пропуска настроен некорректно: XP за уровень должен быть больше нуля")
+    xp = max(0, xp)
     level = xp // xp_per_level
     current_xp = xp % xp_per_level
     return level, current_xp
@@ -65,6 +79,7 @@ def get_battlepass(
     season = _get_active_season(db)
     if not season:
         return None
+    _validate_season(season)
     ubp = _get_ubp(db, user.id, season)
     level, current_xp = _calc_level(user.xp, season.xp_per_level)
     claimed_raw: list = []
@@ -114,6 +129,7 @@ def claim_reward(
     season = _get_active_season(db)
     if not season:
         raise HTTPException(404, "Нет активного сезона")
+    _validate_season(season)
     ubp = _get_ubp(db, user.id, season)
     level_index, _ = _calc_level(user.xp, season.xp_per_level)
     # API stores a zero-based progress index, while rewards are numbered 1..N.
@@ -152,12 +168,20 @@ def claim_reward(
         item = db.query(models.Item).filter(models.Item.code == item_code).first()
         if not item:
             raise HTTPException(400, "Предмет награды не найден")
+        if item.lootbox_pool_code:
+            pool = db.query(models.LootboxPool).filter(models.LootboxPool.code == item.lootbox_pool_code).first()
+            if not pool or not pool.is_active or not pool.is_droppable or pool.is_archived:
+                raise HTTPException(409, "Этот ковбокс больше не доступен для новых наград")
         qty = (reward.value or 1) if reward.value and reward.value > 0 else 1
+        if qty > MAX_REWARD_AMOUNT:
+            raise HTTPException(503, "Количество предметов в награде настроено некорректно")
         inv = db.query(models.InventoryItem).filter(
             models.InventoryItem.user_id == user.id,
             models.InventoryItem.item_id == item.id,
         ).first()
         if inv:
+            if inv.quantity < 0 or inv.quantity > MAX_INVENTORY_QUANTITY - qty:
+                raise HTTPException(409, "Достигнут максимальный размер стака предмета")
             inv.quantity += qty
         else:
             db.add(models.InventoryItem(user_id=user.id, item_id=item.id, quantity=qty))
@@ -165,10 +189,16 @@ def claim_reward(
     xp_to_coins = 0
     reward_value = reward.value or 0
     if reward.kind == "coins" or reward.kind.startswith("coins_"):
+        if not 1 <= reward_value <= MAX_REWARD_AMOUNT:
+            raise HTTPException(503, "Сумма награды пропуска настроена некорректно")
         wallet = ensure_wallet(db, user)
+        if wallet.balance < 0 or wallet.balance > MAX_GAME_BALANCE - reward_value:
+            raise HTTPException(409, "Достигнут максимальный баланс ковбаксов")
         wallet.balance += reward_value
         db.add(models.Transaction(recipient_id=user.id, amount=reward_value, note=f"Battle Pass: {reward.label}"))
     elif reward.kind == "xp":
+        if not 1 <= reward_value <= MAX_REWARD_AMOUNT:
+            raise HTTPException(503, "Награда XP пропуска настроена некорректно")
         xp_to_coins = award_xp(db, user, reward_value)["coins"]
     elif reward.kind == "item":
         if not reward.item_code:
@@ -201,6 +231,7 @@ def award_xp_route(
     if not is_admin(user):
         raise HTTPException(403, "Только для админов")
 
+    begin_game_write(db)
     target = user
     if body.user_id:
         target = db.query(models.User).filter(models.User.id == body.user_id).first()
@@ -225,57 +256,11 @@ def open_lootbox(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    begin_game_write(db)
-    item = db.query(models.Item).filter(models.Item.id == body.item_id).first()
-    if not item or not item.lootbox_pool_code:
-        raise HTTPException(404, "Лутбокс не найден")
+    # Compatibility route: all clients now share the same atomic/idempotent
+    # implementation, so the old URL cannot bypass the editor configuration.
+    from app.api.profile import open_lootbox_for_user
 
-    inv = db.query(models.InventoryItem).filter(
-        models.InventoryItem.user_id == user.id,
-        models.InventoryItem.item_id == item.id,
-    ).first()
-    if not inv or inv.quantity < 1:
-        raise HTTPException(409, "У вас нет этого ковбокса")
-
-    pool = db.query(models.LootboxPool).filter(models.LootboxPool.code == item.lootbox_pool_code).first()
-    if not pool or not pool.entries:
-        raise HTTPException(500, "Пул ковбокса пуст")
-
-    entries = pool.entries
-    total_weight = sum(max(0, e.weight) for e in entries)
-    if total_weight <= 0:
-        raise HTTPException(400, "Некорректные веса пула ковбокса")
-    roll = random.randint(1, total_weight)
-    cumulative = 0
-    chosen = entries[0]
-    for e in entries:
-        cumulative += max(0, e.weight)
-        if roll <= cumulative:
-            chosen = e
-            break
-
-    inv.quantity -= 1
-    if inv.quantity <= 0:
-        db.delete(inv)
-
-    target_inv = db.query(models.InventoryItem).filter(
-        models.InventoryItem.user_id == user.id,
-        models.InventoryItem.item_id == chosen.item_id,
-    ).first()
-    if target_inv:
-        target_inv.quantity += 1
-    else:
-        db.add(models.InventoryItem(user_id=user.id, item_id=chosen.item_id, quantity=1))
-
-    db.commit()
-
-    return schemas.LootboxOpenResult(item=schemas.ItemOut(
-        id=chosen.item.id, code=chosen.item.code, name=chosen.item.name,
-        description=chosen.item.description, icon=chosen.item.icon,
-        image_url=chosen.item.image_url, rarity=chosen.item.rarity,
-        category=chosen.item.category, can_gift=chosen.item.can_gift,
-        can_activate=chosen.item.can_activate,
-    ), quantity=1)
+    return open_lootbox_for_user(body=body, user=user, db=db)
 
 
 @router.post("/arcade-xp")
@@ -293,15 +278,27 @@ def list_lootbox_pools(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    pools = db.query(models.LootboxPool).all()
+    pools = db.query(models.LootboxPool).filter(models.LootboxPool.is_active.is_(True)).all()
     result = []
     for p in pools:
         result.append({
             "code": p.code,
             "name": p.name,
             "entries": [
-                {"item_id": e.item_id, "item_name": e.item.name, "item_icon": e.item.icon, "item_rarity": e.item.rarity, "weight": e.weight}
-                for e in p.entries
+                {
+                    "item_id": e.item_id,
+                    "item_name": e.item.name if e.item else e.reward_kind,
+                    "item_icon": e.item.icon if e.item else (
+                        "/static/img/item_icons/xp.svg" if e.reward_kind == "xp" else "/static/img/ui/coin.svg"
+                    ),
+                    "item_rarity": e.item.rarity if e.item else "Обычный",
+                    "weight": e.weight,
+                    "reward_kind": e.reward_kind,
+                    "amount_min": e.amount_min,
+                    "amount_max": e.amount_max,
+                    "is_guaranteed": e.is_guaranteed,
+                }
+                for e in p.entries if e.is_active
             ],
         })
     return result

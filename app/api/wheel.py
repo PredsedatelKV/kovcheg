@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import random
+import secrets
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +12,9 @@ from app.auth import current_user
 from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/wheel", tags=["wheel"])
+SYSTEM_RANDOM = secrets.SystemRandom()
+WHEEL_KINDS = {"coins", "xp", "item", "nothing"}
+MAX_WHEEL_VALUE = 1_000_000
 
 
 def _load_sectors(db: Session) -> list[dict]:
@@ -21,8 +24,19 @@ def _load_sectors(db: Session) -> list[dict]:
         .order_by(models.WheelPrize.sort_order, models.WheelPrize.id)
         .all()
     )
-    return [
-        {
+    sectors = []
+    for p in rows:
+        if p.kind not in WHEEL_KINDS:
+            raise HTTPException(status_code=503, detail=f"Некорректный тип приза колеса: {p.label}")
+        if p.weight is None or p.weight <= 0:
+            raise HTTPException(status_code=503, detail=f"Некорректный вес приза колеса: {p.label}")
+        if p.value is None or p.value < 0 or p.value > MAX_WHEEL_VALUE:
+            raise HTTPException(status_code=503, detail=f"Некорректное значение приза колеса: {p.label}")
+        if p.kind == "item" and not p.item_code:
+            raise HTTPException(status_code=503, detail=f"Для приза «{p.label}» не выбран предмет")
+        if p.kind == "item" and db.query(models.Item).filter(models.Item.code == p.item_code).first() is None:
+            raise HTTPException(status_code=503, detail=f"Предмет приза «{p.label}» не найден")
+        sectors.append({
             "id": p.id,
             "label": p.label,
             "kind": p.kind,
@@ -30,14 +44,13 @@ def _load_sectors(db: Session) -> list[dict]:
             "icon": p.icon,
             "item_code": p.item_code,
             "weight": p.weight,
-        }
-        for p in rows
-    ]
+        })
+    return sectors
 
 
 def _pick_sector(sectors: list[dict]) -> tuple[int, dict]:
-    weights = [max(1, s["weight"]) for s in sectors]
-    idx = random.choices(range(len(sectors)), weights=weights, k=1)[0]
+    weights = [s["weight"] for s in sectors]
+    idx = SYSTEM_RANDOM.choices(range(len(sectors)), weights=weights, k=1)[0]
     return idx, sectors[idx]
 
 
@@ -88,6 +101,8 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
     wallet = ensure_wallet(db, user)
     xp_to_coins = 0
     if sector["kind"] == "coins":
+        if wallet.balance < 0 or wallet.balance > 2_000_000_000 - sector["value"]:
+            raise HTTPException(status_code=409, detail="Достигнут максимальный баланс ковбаксов")
         wallet.balance += sector["value"]
         db.add(
             models.Transaction(
@@ -111,9 +126,11 @@ def spin(user: models.User = Depends(current_user), db: Session = Depends(get_db
             .one_or_none()
         )
         if inv is None:
-            db.add(models.InventoryItem(user_id=user.id, item_id=item.id, quantity=1))
+            db.add(models.InventoryItem(user_id=user.id, item_id=item.id, quantity=sector["value"]))
         else:
-            inv.quantity += 1
+            if inv.quantity < 0 or inv.quantity > 2_000_000_000 - sector["value"]:
+                raise HTTPException(status_code=409, detail="Достигнут максимальный размер стака предмета")
+            inv.quantity += sector["value"]
 
     xp_to_coins += award_xp(db, user, 2)["coins"]
     db.add(

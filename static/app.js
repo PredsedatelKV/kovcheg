@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=227";
-import { renderProfile } from "/static/pages/profile.js?v=227";
-import { renderKoverna } from "/static/pages/koverna.js?v=227";
-import { renderArcade } from "/static/pages/arcade.js?v=227";
-import { renderAdmin } from "/static/pages/admin.js?v=227";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=227";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=227";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=227";
-import { get, post } from "/static/api.js?v=227";
+import { renderHome } from "/static/pages/home.js?v=229";
+import { renderProfile } from "/static/pages/profile.js?v=229";
+import { renderKoverna } from "/static/pages/koverna.js?v=229";
+import { renderArcade } from "/static/pages/arcade.js?v=229";
+import { renderAdmin } from "/static/pages/admin.js?v=229";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=229";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=229";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=229";
+import { get, post, prefetch, peekCached } from "/static/api.js?v=229";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -31,94 +31,283 @@ const RENDERERS = {
 const viewEl = document.getElementById("view");
 const tabButtons = document.querySelectorAll(".tabbtn");
 const containers = {};
+const tabState = {};
 
 let currentTab = null;
 
-// Tab change listeners for cleanup
+// Tab lifecycle listeners. Mounted tabs stay in the DOM, so pages can pause
+// timers while hidden and resume them without a destructive re-render.
 const tabListeners = {};
+const tabShowListeners = {};
 
 function onTabChange(name, fn) {
   if (!tabListeners[name]) tabListeners[name] = [];
   tabListeners[name].push(fn);
+  return () => {
+    tabListeners[name] = (tabListeners[name] || []).filter((listener) => listener !== fn);
+  };
+}
+
+function onTabShow(name, fn) {
+  if (!tabShowListeners[name]) tabShowListeners[name] = [];
+  tabShowListeners[name].push(fn);
+  return () => {
+    tabShowListeners[name] = (tabShowListeners[name] || []).filter((listener) => listener !== fn);
+  };
 }
 
 function notifyTabHidden(name) {
   const list = tabListeners[name];
-  if (list) list.forEach(function(fn) { fn(); });
+  if (list) [...list].forEach(function(fn) { fn(); });
 }
 
-let _switching = false;
+function notifyTabShown(name) {
+  const list = tabShowListeners[name];
+  if (list) [...list].forEach(function(fn) { fn(); });
+}
+
+function getTabState(name) {
+  if (!tabState[name]) {
+    let savedScroll = 0;
+    try { savedScroll = Number(sessionStorage.getItem(`kovcheg.scroll.${name}`)) || 0; } catch (_) {}
+    tabState[name] = {
+      rendered: false,
+      renderPromise: null,
+      refreshPromise: null,
+      scrollTop: Math.max(0, savedScroll),
+      lastRevalidatedAt: 0,
+      revalidateVersion: 0,
+      needsRefresh: false,
+    };
+  }
+  return tabState[name];
+}
+
+function rememberScroll(name) {
+  if (!name) return;
+  const state = getTabState(name);
+  state.scrollTop = Math.max(0, viewEl.scrollTop || 0);
+  try { sessionStorage.setItem(`kovcheg.scroll.${name}`, String(state.scrollTop)); } catch (_) {}
+}
+
+function restoreScroll(name) {
+  const expectedTab = name;
+  requestAnimationFrame(() => {
+    if (currentTab !== expectedTab) return;
+    viewEl.scrollTop = getTabState(name).scrollTop;
+  });
+}
+
+function createTabContainer(name) {
+  const div = document.createElement("div");
+  div.className = "tab-content";
+  div.dataset.tabContent = name;
+  div.style.display = "none";
+  viewEl.appendChild(div);
+  containers[name] = div;
+  return div;
+}
+
+function showMountedTab(name) {
+  if (currentTab !== name || !containers[name]) return;
+  containers[name].style.display = "";
+  restoreScroll(name);
+  const state = getTabState(name);
+  if (state.needsRefresh) {
+    state.needsRefresh = false;
+    refreshTab(name).catch((error) => console.warn("Не удалось тихо обновить вкладку", error));
+    return;
+  }
+  notifyTabShown(name);
+  revalidateVisibleTab(name);
+}
+
+async function ensureTabRendered(name) {
+  const state = getTabState(name);
+  const div = containers[name] || createTabContainer(name);
+  if (state.rendered) return div;
+  if (state.renderPromise) return state.renderPromise;
+
+  div.setAttribute("aria-busy", "true");
+  div.innerHTML = '<div class="card"><p>Загрузка…</p></div>';
+  state.renderPromise = (async () => {
+    try {
+      await RENDERERS[name](div);
+      state.rendered = true;
+      state.lastRevalidatedAt = Date.now();
+      div.removeAttribute("aria-busy");
+      if (currentTab !== name) {
+        div.style.display = "none";
+        if (name !== "arcade") notifyTabHidden(name);
+      }
+      return div;
+    } catch (error) {
+      state.rendered = false;
+      div.removeAttribute("aria-busy");
+      div.innerHTML = `<div class="card"><p style="color:var(--danger)">Не удалось загрузить раздел: ${String(error && error.message || error)}</p></div>`;
+      throw error;
+    } finally {
+      state.renderPromise = null;
+    }
+  })();
+  return state.renderPromise;
+}
+
+const TAB_QUERIES = {
+  home: ["/api/home", "/api/quiz/available"],
+  profile: ["/api/profile/me"],
+  koverna: ["/api/shop/products", "/api/market/listings"],
+  arcade: ["/api/profile/me", "/api/arcade/first-win-status"],
+  battlepass: ["/api/battlepass"],
+};
+
+function warmTab(name) {
+  const paths = TAB_QUERIES[name];
+  if (paths) prefetch(paths).catch(() => {});
+}
+
+function comparableRevalidationValue(path, value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const comparable = { ...value };
+  // These fields intentionally change on every request and already have a
+  // local live timer. They must not trigger a full mounted-tab refresh.
+  if (path === "/api/home") {
+    delete comparable.server_time_msk;
+    delete comparable.server_epoch_ms;
+  } else if (path === "/api/arcade/first-win-status") {
+    delete comparable.server_time;
+    delete comparable.next_reset_seconds;
+  }
+  return comparable;
+}
+
+function revalidateVisibleTab(name) {
+  const paths = TAB_QUERIES[name];
+  const state = getTabState(name);
+  const now = Date.now();
+  if (!paths || now - state.lastRevalidatedAt < 15_000) return;
+  state.lastRevalidatedAt = now;
+  const version = ++state.revalidateVersion;
+  const previous = paths.map((path) => peekCached(path));
+  const balanceAtStart = window.kov && window.kov.me ? window.kov.me.balance : null;
+  Promise.allSettled(paths.map((path) => get(path, { force: true }))).then(async (results) => {
+    if (!window.kov || state.revalidateVersion !== version) return;
+    const profileIndex = paths.indexOf("/api/profile/me");
+    if (profileIndex !== -1) {
+      const result = results[profileIndex];
+      const freshUser = result && result.status === "fulfilled" && result.value && result.value.user;
+      if (freshUser && window.kov.me) {
+        const oldBalance = window.kov.me.balance;
+        // A confirmed local action may have updated the balance while this
+        // background read was travelling. Never roll that newer value back.
+        if (oldBalance === balanceAtStart) {
+          window.kov.me = { ...window.kov.me, ...freshUser };
+          if (freshUser.balance !== oldBalance) window.kov.emit("balance:update", { balance: freshUser.balance });
+        }
+      }
+    }
+    const changed = results.some((result, index) => {
+      if (!result || result.status !== "fulfilled") return false;
+      if (previous[index] === undefined) return true;
+      const before = comparableRevalidationValue(paths[index], previous[index]);
+      const after = comparableRevalidationValue(paths[index], result.value);
+      try { return JSON.stringify(before) !== JSON.stringify(after); }
+      catch (_) { return before !== after; }
+    });
+    if (currentTab !== name) {
+      if (changed) state.needsRefresh = true;
+      return;
+    }
+    if (changed) {
+      try { await refreshTab(name); }
+      catch (error) { console.warn("Не удалось тихо обновить вкладку", error); }
+    }
+    window.kov.emit("data:revalidated", { tab: name, paths, results, changed });
+  });
+}
+
+async function refreshTab(name) {
+  if (!RENDERERS[name] || !containers[name]) return;
+  const state = getTabState(name);
+  // Coalesce repeated local refreshes (for example two rapid market actions).
+  if (state.refreshPromise) return state.refreshPromise;
+  const div = containers[name];
+  const wasVisible = currentTab === name;
+  if (wasVisible) rememberScroll(name);
+  const snapshot = wasVisible ? div.cloneNode(true) : null;
+  if (snapshot) {
+    snapshot.removeAttribute("aria-busy");
+    snapshot.setAttribute("aria-hidden", "true");
+    snapshot.style.pointerEvents = "none";
+    div.after(snapshot);
+    div.style.display = "none";
+  }
+  // Give the mounted page a chance to stop timers before its DOM/listeners are
+  // replaced. The freshly rendered page registers its own lifecycle below.
+  notifyTabHidden(name);
+  tabListeners[name] = [];
+  tabShowListeners[name] = [];
+  state.refreshPromise = (async () => {
+    try {
+      await RENDERERS[name](div);
+      state.rendered = true;
+    } catch (error) {
+      state.rendered = false;
+      throw error;
+    } finally {
+      if (snapshot) snapshot.remove();
+      div.style.display = currentTab === name ? "" : "none";
+      state.refreshPromise = null;
+      if (currentTab === name) {
+        restoreScroll(name);
+        notifyTabShown(name);
+      }
+    }
+  })();
+  return state.refreshPromise;
+}
 
 async function setTab(name, force) {
-  if (_switching) return;
   if (!RENDERERS[name]) name = "home";
-  const btn = document.querySelector(`.tabbtn[data-tab="${name}"]`);
+  let btn = document.querySelector(`.tabbtn[data-tab="${name}"]`);
   // Скрытую вкладку (админка) можно открыть только принудительно (секретный жест).
-  if (!force && btn && btn.hidden) name = "home";
+  if (!force && btn && btn.hidden) {
+    name = "home";
+    btn = document.querySelector('.tabbtn[data-tab="home"]');
+  }
 
-  if (name === currentTab) return;
-
-  _switching = true;
+  if (name === currentTab) return ensureTabRendered(name);
   const prevTab = currentTab;
 
-  if (prevTab) notifyTabHidden(prevTab);
+  if (prevTab) {
+    rememberScroll(prevTab);
+    // Arcade's only tab-hide callback stops its lightweight reward countdown
+    // and the module has no matching resume hook. Keep that timer alive while
+    // its mounted DOM is hidden; games themselves clean up with their modal.
+    if (prevTab !== "arcade") notifyTabHidden(prevTab);
+  }
 
   currentTab = name;
 
   tabButtons.forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
 
-  if (prevTab && containers[prevTab]) {
-    containers[prevTab].style.display = "none";
-  }
-
-  // Все вкладки кешируются после первой загрузки — никакого моргания.
-  // Home and Arcade own timers, observers and game listeners. Recreate them
-  // when returning to the tab so cleanup is complete and no stale timer stays
-  // stopped or points at detached UI.
-  const needsRender = !containers[name] || name === "admin" || name === "home" || name === "arcade";
-
-  if (needsRender) {
-    if (containers[name]) containers[name].remove();
-    tabListeners[name] = [];
-    const div = document.createElement("div");
-    div.className = "tab-content";
-    div.style.display = "";
-    viewEl.appendChild(div);
-    containers[name] = div;
-    div.innerHTML = '<div class="card"><p>Загрузка…</p></div>';
-    try {
-      await RENDERERS[name](div);
-      _finishTabSwitch(name);
-    } finally {
-      // Keep the guard up for the whole async render; release only once done.
-      _switching = false;
-    }
-  } else {
-    const next = containers[name];
-    next.style.display = "";
-    next.classList.remove("tab-enter");
-    void next.offsetWidth;
-    next.classList.add("tab-enter");
-
-    if (viewEl.scrollTo) viewEl.scrollTo({ top: 0 });
-    localStorage.setItem("kovcheg.tab", name);
-    _switching = false;
-  }
-}
-
-// Separate finalization for tabs that need async render
-function _finishTabSwitch(name) {
-  if (currentTab !== name) return; // user switched away during render
-  const next = containers[name];
-  if (!next) return;
-  next.style.display = "";
-  requestAnimationFrame(() => {
-    next.classList.remove("tab-enter");
-    void next.offsetWidth;
-    next.classList.add("tab-enter");
+  Object.entries(containers).forEach(([tabName, div]) => {
+    div.style.display = tabName === name ? "" : "none";
   });
-  if (viewEl.scrollTo) viewEl.scrollTo({ top: 0 });
-  localStorage.setItem("kovcheg.tab", name);
+  const div = containers[name] || createTabContainer(name);
+  div.style.display = "";
+  restoreScroll(name);
+  try { localStorage.setItem("kovcheg.tab", name); } catch (_) {}
+
+  const alreadyRendered = getTabState(name).rendered;
+  if (alreadyRendered) {
+    showMountedTab(name);
+    return div;
+  }
+  warmTab(name);
+  const rendered = await ensureTabRendered(name);
+  showMountedTab(name);
+  return rendered;
 }
 
 tabButtons.forEach((btn) => {
@@ -126,18 +315,50 @@ tabButtons.forEach((btn) => {
     playUISound("click");
     setTab(btn.dataset.tab);
   });
+  // Warm only the section the user is actually approaching. This replaces the
+  // previous eager mounting of every tab (and all of its timers/subscriptions).
+  btn.addEventListener("pointerenter", () => warmTab(btn.dataset.tab), { passive: true });
+  btn.addEventListener("touchstart", () => warmTab(btn.dataset.tab), { passive: true, once: true });
 });
+
+// Modal lifecycle is owned by the shell. Feature modules register a guard or
+// cleanup callback here instead of monkey-patching window.closeModal during
+// ES-module evaluation (dependencies run before this file's body).
+const modalBeforeCloseListeners = new Set();
+
+function notifyModalBeforeClose(reason) {
+  for (const listener of [...modalBeforeCloseListeners]) {
+    try {
+      if (listener({ reason }) === false) return false;
+    } catch (error) {
+      console.warn("Ошибка обработчика закрытия модального окна", error);
+    }
+  }
+  return true;
+}
+
+function closeActiveModal(reason = "user") {
+  const root = document.getElementById("modal-root");
+  if (!root || !root.firstElementChild) return true;
+  if (!notifyModalBeforeClose(reason)) return false;
+  root.innerHTML = "";
+  return true;
+}
 
 // Global helpers — set early so renderers can use them
 window.kov = {
   setTab,
   onTabChange,
+  onTabShow,
+  onModalBeforeClose(fn) {
+    modalBeforeCloseListeners.add(fn);
+    return () => modalBeforeCloseListeners.delete(fn);
+  },
   getTab() { return currentTab; },
   // Re-render a tab into its own container (not the shared #view), so a renderer
   // can refresh itself without clobbering the structure of other tabs.
   rerender(name) {
-    const div = containers[name];
-    if (div && RENDERERS[name]) return RENDERERS[name](div);
+    return refreshTab(name);
   },
   me: null,
   toast(msg) {
@@ -153,7 +374,7 @@ window.kov = {
     root.innerHTML = `<div class="modal-overlay" data-close="1"><div class="modal" role="dialog">${html}</div></div>`;
     const overlay = root.firstElementChild;
     overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) closeModal();
+      if (e.target === overlay) window.closeModal();
     });
     return overlay.querySelector(".modal");
   },
@@ -178,7 +399,7 @@ window.kov.on("balance:update", function(data) {
 });
 
 window.closeModal = function () {
-  document.getElementById("modal-root").innerHTML = "";
+  return closeActiveModal("user");
 };
 
 async function renderBrowserLogin() {
@@ -234,20 +455,19 @@ async function renderBrowserLogin() {
     await renderBrowserLogin();
     return;
   }
-  const initial = "home"; // при входе всегда открывается «Главная»
+  let initial = "home";
+  try {
+    const saved = localStorage.getItem("kovcheg.tab");
+    // The hidden admin screen is never restored without its explicit gesture.
+    if (saved && saved !== "admin" && RENDERERS[saved]) initial = saved;
+  } catch (_) {}
   try {
     await setTab(initial);
-  } catch (e) {
-    document.getElementById('view').innerHTML = '<div class="card"><p style="color:var(--danger);padding:20px">Не удалось загрузить приложение: ' + e.message + '</p></div>';
-  }
-  for (const name of Object.keys(RENDERERS)) {
-    if (!containers[name]) {
-      const div = document.createElement("div");
-      div.className = "tab-content";
-      div.style.display = "none";
-      viewEl.appendChild(div);
-      containers[name] = div;
-      RENDERERS[name](div).catch(function() {});
-    }
+  } catch (_) {
+    // `ensureTabRendered` already left a retryable error inside this tab. Do
+    // not replace #view: doing so would detach every cached container and make
+    // subsequent navigation point to dead DOM nodes.
+    const failed = containers[initial];
+    if (failed) failed.style.display = "";
   }
 })();

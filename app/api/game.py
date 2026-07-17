@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,7 +11,7 @@ from app import games_checkers as checkers
 from app import models, schemas
 from app.auth import current_user
 from app.config import get_settings
-from app.db import get_db
+from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/game", tags=["game"])
 
@@ -19,6 +20,16 @@ ONLINE_WINDOW = timedelta(minutes=2)
 
 GAME_NAMES = {"tictactoe": "Крестики-нолики", "checkers": "Шашки", "pingpong": "Пинг-понг"}
 PONG_WIN_SCORE = 5
+SUPPORTED_GAMES = frozenset(GAME_NAMES)
+
+
+def _finite_number(value, *, low: float, high: float, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise HTTPException(400, f"Некорректное поле {field}")
+    result = float(value)
+    if not math.isfinite(result) or result < low or result > high:
+        raise HTTPException(400, f"Некорректное поле {field}")
+    return result
 
 
 def _is_online(u: models.User) -> bool:
@@ -74,6 +85,9 @@ def send_invite(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    begin_game_write(db)
+    if payload.game not in SUPPORTED_GAMES:
+        raise HTTPException(400, "Неизвестная игра")
     if payload.to_user_id == user.id:
         raise HTTPException(400, "Нельзя пригласить самого себя")
     to_user = db.query(models.User).filter(models.User.id == payload.to_user_id).first()
@@ -155,6 +169,7 @@ def accept_invite(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    begin_game_write(db)
     invite = db.query(models.GameInvite).filter(
         models.GameInvite.id == payload.invite_id,
         models.GameInvite.to_user_id == user.id,
@@ -206,6 +221,7 @@ def decline_invite(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    begin_game_write(db)
     invite = db.query(models.GameInvite).filter(
         models.GameInvite.id == payload.invite_id,
         models.GameInvite.to_user_id == user.id,
@@ -279,6 +295,7 @@ def make_move(
     db: Session = Depends(get_db),
 ):
     """Ход в крестики-нолики."""
+    begin_game_write(db)
     session = _get_session_for(session_id, user, db)
     if session.game != "tictactoe":
         raise HTTPException(400, "Не та игра")
@@ -321,6 +338,7 @@ def checkers_move(
     db: Session = Depends(get_db),
 ):
     """Ход в шашки: {from, to}. При продолжении боя ход остаётся за тем же игроком."""
+    begin_game_write(db)
     session = _get_session_for(session_id, user, db)
     if session.game != "checkers":
         raise HTTPException(400, "Не та игра")
@@ -360,25 +378,54 @@ def pong_sync(
     db: Session = Depends(get_db),
 ):
     """Синхронизация пинг-понга. Хост (X) шлёт полное состояние, гость (O) — свою ракетку."""
+    begin_game_write(db)
     session = _get_session_for(session_id, user, db)
     if session.game != "pingpong":
         raise HTTPException(400, "Не та игра")
+    if session.status != "playing":
+        raise HTTPException(400, "Игра завершена")
     st = json.loads(session.state) if session.state else {}
     is_host = session.player_x_id == user.id
 
     if is_host:
         ball = payload.get("ball")
         if isinstance(ball, dict):
-            st["ball"] = {k: float(ball.get(k, 0)) for k in ("x", "y", "vx", "vy")}
-        if isinstance(payload.get("px"), (int, float)):
-            st["px"] = float(payload["px"])
-        if isinstance(payload.get("sx"), int):
-            st["sx"] = max(0, payload["sx"])
-        if isinstance(payload.get("so"), int):
-            st["so"] = max(0, payload["so"])
+            st["ball"] = {
+                "x": _finite_number(ball.get("x"), low=0, high=1, field="ball.x"),
+                "y": _finite_number(ball.get("y"), low=0, high=1, field="ball.y"),
+                "vx": _finite_number(ball.get("vx"), low=-0.05, high=0.05, field="ball.vx"),
+                "vy": _finite_number(ball.get("vy"), low=-0.05, high=0.05, field="ball.vy"),
+            }
+        if "px" in payload:
+            st["px"] = _finite_number(payload["px"], low=0.08, high=0.92, field="px")
+        old_sx, old_so = int(st.get("sx", 0)), int(st.get("so", 0))
+        new_sx = payload.get("sx", old_sx)
+        new_so = payload.get("so", old_so)
+        if isinstance(new_sx, bool) or not isinstance(new_sx, int):
+            raise HTTPException(400, "Некорректный счёт")
+        if isinstance(new_so, bool) or not isinstance(new_so, int):
+            raise HTTPException(400, "Некорректный счёт")
+        if not (old_sx <= new_sx <= min(PONG_WIN_SCORE, old_sx + 1)):
+            raise HTTPException(400, "Невозможное изменение счёта")
+        if not (old_so <= new_so <= min(PONG_WIN_SCORE, old_so + 1)):
+            raise HTTPException(400, "Невозможное изменение счёта")
+        if (new_sx > old_sx) and (new_so > old_so):
+            raise HTTPException(400, "Оба игрока не могут получить очко одновременно")
+        score_changed = new_sx > old_sx or new_so > old_so
+        last_score_at = st.get("last_score_at")
+        if score_changed and last_score_at:
+            try:
+                previous_score_time = datetime.fromisoformat(last_score_at)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(409, "Состояние матча повреждено") from exc
+            if (models.now_utc() - previous_score_time).total_seconds() < 0.35:
+                raise HTTPException(429, "Счёт изменяется слишком быстро")
+        if score_changed:
+            st["last_score_at"] = models.now_utc().isoformat()
+        st["sx"], st["so"] = new_sx, new_so
     else:
-        if isinstance(payload.get("po"), (int, float)):
-            st["po"] = float(payload["po"])
+        if "po" in payload:
+            st["po"] = _finite_number(payload["po"], low=0.08, high=0.92, field="po")
 
     # Победа по очкам (авторитет — хост, он шлёт счёт).
     if session.status == "playing":
@@ -403,6 +450,7 @@ def rematch(
 ):
     """Реванш: создаём новое pending-приглашение тому же сопернику в ту же игру.
     Соперник увидит приглашение через глобальный поллер; при accept создастся новая сессия."""
+    begin_game_write(db)
     session = _get_session_for(session_id, user, db)
     opponent_id = session.player_o_id if session.player_x_id == user.id else session.player_x_id
     opponent = db.query(models.User).filter(models.User.id == opponent_id).first()
@@ -458,12 +506,17 @@ def create_game_session(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    begin_game_write(db)
     invite_id = payload.get("invite_id")
-    if not invite_id:
+    if isinstance(invite_id, bool) or not isinstance(invite_id, int) or invite_id <= 0:
         raise HTTPException(400, "invite_id обязателен")
     invite = db.query(models.GameInvite).filter(models.GameInvite.id == invite_id).first()
     if not invite:
         raise HTTPException(404, "Приглашение не найдено")
+    if user.id not in (invite.from_user_id, invite.to_user_id):
+        raise HTTPException(403, "Вы не участник этого приглашения")
+    if invite.status != "accepted":
+        raise HTTPException(400, "Приглашение ещё не принято")
     existing = db.query(models.GameSession).filter(models.GameSession.invite_id == invite_id).first()
     if existing:
         return {"session_id": existing.id, "game": existing.game}

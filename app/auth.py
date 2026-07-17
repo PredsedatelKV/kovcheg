@@ -30,8 +30,6 @@ def is_admin(user: models.User) -> bool:
     settings = get_settings()
     if settings.admin_id_list and user.telegram_id in settings.admin_id_list:
         return True
-    if user.username and user.username.lower().lstrip("@") in settings.admin_username_list:
-        return True
     return False
 
 
@@ -81,7 +79,7 @@ def validate_init_data(init_data: str, bot_token: str, max_age_seconds: int = 60
 
 def _is_allowed_user(tg_user: dict[str, Any]) -> bool:
     """Check if this Telegram user is permitted to access the mini-app or bot."""
-    return _is_allowed_tg_id(int(tg_user["id"]), tg_user.get("username", ""))
+    return _is_allowed_tg_id(int(tg_user["id"]))
 
 
 def _is_allowed_tg_id(tg_id: int, username: str = "") -> bool:
@@ -91,16 +89,13 @@ def _is_allowed_tg_id(tg_id: int, username: str = "") -> bool:
     settings = get_settings()
     if settings.admin_id_list and tg_id in settings.admin_id_list:
         return True
-    username_clean = username.lower().lstrip("@") if username else ""
-    if username_clean and username_clean in settings.admin_username_list:
-        return True
     return False
 
 
 def upsert_user(db: Session, tg_user: dict[str, Any]) -> models.User | None:
     """Return existing user or None (no auto-creation — restricted access).
 
-    Admins (by telegram_id or username in config) can auto-register on first visit.
+    Administrators identified by immutable Telegram ID can auto-register on first visit.
     """
     tg_id = int(tg_user["id"])
     binding = binding_for(tg_id)
@@ -216,6 +211,14 @@ def current_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Доступ только для граждан Федерации Ковчега",
+        )
+    if user.restrictions and user.restrictions.strip():
+        # ``restrictions`` is an administrator-controlled account lock, not a
+        # cosmetic profile note.  Enforce it before every protected mini-app
+        # endpoint so direct API calls cannot bypass a blocked UI.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Доступ к игровым действиям ограничен: {user.restrictions.strip()}",
         )
     now = models.now_utc()
     # Throttle last_seen writes: only update (and commit) if more than ~60s have

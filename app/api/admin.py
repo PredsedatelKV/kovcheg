@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import json
 import re
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api._helpers import ensure_wallet
+from app.api._helpers import award_xp, ensure_wallet, sync_lootbox_shop_product
 from app.auth import is_admin, require_admin
 from app.db import begin_game_write, get_db
 from app.models import now_utc
@@ -35,8 +36,8 @@ def _coerce_int(body: dict, field: str, default=None):
         raise HTTPException(status_code=400, detail=f"Поле '{field}' должно быть числом")
     try:
         return int(val)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail=f"Поле '{field}' должно быть числом")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Поле '{field}' должно быть числом") from exc
 
 
 # ------- helpers -------
@@ -68,6 +69,7 @@ def _item_out(i: models.Item) -> schemas.ItemOut:
         category=i.category,
         can_gift=i.can_gift,
         can_activate=i.can_activate,
+        lootbox_pool_code=i.lootbox_pool_code,
     )
 
 
@@ -75,14 +77,14 @@ def _shop_product_out(p: models.ShopProduct) -> schemas.ShopProductOut:
     return schemas.ShopProductOut(id=p.id, item=_item_out(p.item), price=p.price, stock=p.stock)
 
 
-def _market_listing_out(l: models.MarketListing) -> schemas.MarketListingOut:
+def _market_listing_out(listing: models.MarketListing) -> schemas.MarketListingOut:
     return schemas.MarketListingOut(
-        id=l.id,
-        seller_id=l.seller_id,
-        seller_name=l.seller.first_name if l.seller else "",
-        item=_item_out(l.item),
-        quantity=l.quantity,
-        price=l.price,
+        id=listing.id,
+        seller_id=listing.seller_id,
+        seller_name=listing.seller.first_name if listing.seller else "",
+        item=_item_out(listing.item),
+        quantity=listing.quantity,
+        price=listing.price,
     )
 
 
@@ -93,6 +95,7 @@ def _task_out(t: models.Task) -> schemas.TaskOut:
         description=t.description,
         icon=t.icon,
         reward=t.reward,
+        xp_reward=t.xp_reward,
         target_progress=t.target_progress,
         is_daily_plan=t.is_daily_plan,
     )
@@ -163,6 +166,7 @@ def update_user(user_id: int, body: schemas.AdminUserUpdate, db: Session = Depen
 
 @router.post("/users/{user_id}/balance", response_model=schemas.AdminUserOut)
 def adjust_balance(user_id: int, body: schemas.AdminBalanceUpdate, db: Session = Depends(get_db)) -> schemas.AdminUserOut:
+    begin_game_write(db)
     u = db.query(models.User).filter(models.User.id == user_id).one_or_none()
     if u is None:
         raise HTTPException(status_code=404, detail="Игрок не найден")
@@ -188,6 +192,8 @@ def adjust_balance(user_id: int, body: schemas.AdminBalanceUpdate, db: Session =
         tx_recipient = u.id if body.delta >= 0 else None
     if new_balance < 0:
         raise HTTPException(status_code=400, detail="Баланс не может быть отрицательным")
+    if new_balance > 2_000_000_000:
+        raise HTTPException(status_code=400, detail="Баланс превышает допустимый максимум")
     wallet.balance = new_balance
     if tx_amount > 0:
         db.add(
@@ -205,6 +211,7 @@ def adjust_balance(user_id: int, body: schemas.AdminBalanceUpdate, db: Session =
 
 @router.post("/users/{user_id}/inventory", response_model=list[schemas.InventoryItemOut])
 def adjust_inventory(user_id: int, body: schemas.AdminInventoryUpdate, db: Session = Depends(get_db)) -> list[schemas.InventoryItemOut]:
+    begin_game_write(db)
     u = db.query(models.User).filter(models.User.id == user_id).one_or_none()
     if u is None:
         raise HTTPException(status_code=404, detail="Игрок не найден")
@@ -225,6 +232,8 @@ def adjust_inventory(user_id: int, body: schemas.AdminInventoryUpdate, db: Sessi
         inv.quantity += body.delta
         if inv.quantity < 0:
             raise HTTPException(status_code=400, detail="Недостаточно предметов")
+        if inv.quantity > 2_000_000_000:
+            raise HTTPException(status_code=400, detail="Количество предметов превышает допустимый максимум")
         if inv.quantity == 0:
             db.delete(inv)
     db.commit()
@@ -257,6 +266,7 @@ def view_user_inventory(user_id: int, db: Session = Depends(get_db)) -> list[sch
 
 @router.delete("/users/{user_id}/inventory/{inv_id}")
 def remove_from_inventory(user_id: int, inv_id: int, db: Session = Depends(get_db)) -> dict:
+    begin_game_write(db)
     u = db.query(models.User).filter(models.User.id == user_id).one_or_none()
     if u is None:
         raise HTTPException(status_code=404, detail="Игрок не найден")
@@ -282,6 +292,7 @@ def list_items(db: Session = Depends(get_db)) -> list[schemas.ItemOut]:
 
 @router.post("/items", response_model=schemas.ItemOut)
 def create_item(body: schemas.AdminItemBody, db: Session = Depends(get_db)) -> schemas.ItemOut:
+    begin_game_write(db)
     if db.query(models.Item).filter(models.Item.code == body.code).one_or_none() is not None:
         raise HTTPException(status_code=400, detail="Предмет с таким кодом уже есть")
     item = models.Item(**body.model_dump())
@@ -293,14 +304,42 @@ def create_item(body: schemas.AdminItemBody, db: Session = Depends(get_db)) -> s
 
 @router.patch("/items/{item_id}", response_model=schemas.ItemOut)
 def update_item(item_id: int, body: schemas.AdminItemBody, db: Session = Depends(get_db)) -> schemas.ItemOut:
+    begin_game_write(db)
     item = db.query(models.Item).filter(models.Item.id == item_id).one_or_none()
     if item is None:
         raise HTTPException(status_code=404, detail="Предмет не найден")
+    if item.lootbox_pool_code:
+        raise HTTPException(409, "Ковбоксы изменяются только через редактор ковбоксов")
     for k, v in body.model_dump().items():
         setattr(item, k, v)
     db.commit()
     db.refresh(item)
     return _item_out(item)
+
+
+@router.delete("/items/{item_id}")
+def delete_item(item_id: int, db: Session = Depends(get_db)) -> dict:
+    """Delete only an unused catalog row; never cascade player value."""
+    begin_game_write(db)
+    item = db.query(models.Item).filter(models.Item.id == item_id).one_or_none()
+    if item is None:
+        raise HTTPException(status_code=404, detail="Предмет не найден")
+    if item.lootbox_pool_code:
+        raise HTTPException(409, "Ковбокс можно только архивировать в редакторе ковбоксов")
+    references = (
+        db.query(models.InventoryItem).filter(models.InventoryItem.item_id == item.id).first()
+        or db.query(models.ShopProduct).filter(models.ShopProduct.item_id == item.id).first()
+        or db.query(models.MarketListing).filter(models.MarketListing.item_id == item.id).first()
+        or db.query(models.LootboxPoolEntry).filter(models.LootboxPoolEntry.item_id == item.id).first()
+        or db.query(models.BattlePassReward).filter(models.BattlePassReward.item_code == item.code).first()
+        or db.query(models.Quiz).filter(models.Quiz.prize_item_code == item.code).first()
+        or db.query(models.WheelPrize).filter(models.WheelPrize.item_code == item.code).first()
+    )
+    if references is not None:
+        raise HTTPException(409, "Предмет используется в игре и не может быть удалён")
+    db.delete(item)
+    db.commit()
+    return {"ok": True}
 
 
 # ------- uploads (images for products / items) -------
@@ -421,6 +460,7 @@ def list_tasks(db: Session = Depends(get_db)) -> list[schemas.TaskOut]:
 
 @router.post("/tasks", response_model=schemas.TaskOut)
 def create_task(body: schemas.AdminTaskBody, db: Session = Depends(get_db)) -> schemas.TaskOut:
+    begin_game_write(db)
     t = models.Task(**body.model_dump())
     db.add(t)
     db.commit()
@@ -430,6 +470,7 @@ def create_task(body: schemas.AdminTaskBody, db: Session = Depends(get_db)) -> s
 
 @router.patch("/tasks/{task_id}", response_model=schemas.TaskOut)
 def update_task(task_id: int, body: schemas.AdminTaskBody, db: Session = Depends(get_db)) -> schemas.TaskOut:
+    begin_game_write(db)
     t = db.query(models.Task).filter(models.Task.id == task_id).one_or_none()
     if t is None:
         raise HTTPException(status_code=404, detail="Задание не найдено")
@@ -442,6 +483,7 @@ def update_task(task_id: int, body: schemas.AdminTaskBody, db: Session = Depends
 
 @router.delete("/tasks/{task_id}")
 def delete_task(task_id: int, db: Session = Depends(get_db)) -> dict:
+    begin_game_write(db)
     t = db.query(models.Task).filter(models.Task.id == task_id).one_or_none()
     if t is None:
         raise HTTPException(status_code=404, detail="Задание не найдено")
@@ -475,17 +517,22 @@ def approve_user_task(
     ut.progress = ut.task.target_progress
     ut.finished_at = now_utc()
     wallet = ensure_wallet(db, ut.user)
+    if not 0 <= ut.task.reward <= 1_000_000 or not 0 <= ut.task.xp_reward <= 1_000_000:
+        raise HTTPException(status_code=503, detail="Награда задания настроена некорректно")
+    if wallet.balance < 0 or wallet.balance > 2_000_000_000 - ut.task.reward:
+        raise HTTPException(status_code=409, detail="Достигнут максимальный баланс ковбаксов")
     wallet.balance += ut.task.reward
     if ut.task.xp_reward:
-        ut.user.xp += ut.task.xp_reward
-    db.add(
-        models.Transaction(
-            sender_id=None,
-            recipient_id=ut.user_id,
-            amount=ut.task.reward,
-            note=f"task:{ut.task.id}:admin_approved",
+        award_xp(db, ut.user, ut.task.xp_reward)
+    if ut.task.reward:
+        db.add(
+            models.Transaction(
+                sender_id=None,
+                recipient_id=ut.user_id,
+                amount=ut.task.reward,
+                note=f"task:{ut.task.id}:admin_approved",
+            )
         )
-    )
     db.commit()
     db.refresh(ut)
     return _user_task_out(ut)
@@ -501,9 +548,12 @@ def list_shop(db: Session = Depends(get_db)) -> list[schemas.ShopProductOut]:
 
 @router.post("/shop", response_model=schemas.ShopProductOut)
 def create_shop(body: schemas.AdminShopProductBody, db: Session = Depends(get_db)) -> schemas.ShopProductOut:
+    begin_game_write(db)
     item = db.query(models.Item).filter(models.Item.id == body.item_id).one_or_none()
     if item is None:
         raise HTTPException(status_code=404, detail="Предмет не найден")
+    if item.lootbox_pool_code:
+        raise HTTPException(409, "Продажа ковбокса настраивается в редакторе ковбоксов")
     # stock: -1 = безлимит, 0 = распродано, >0 = остаток. Меньше -1 — некорректно.
     if body.stock < -1:
         raise HTTPException(status_code=400, detail="Некорректный остаток (stock >= -1, где -1 = безлимит)")
@@ -516,9 +566,15 @@ def create_shop(body: schemas.AdminShopProductBody, db: Session = Depends(get_db
 
 @router.patch("/shop/{product_id}", response_model=schemas.ShopProductOut)
 def update_shop(product_id: int, body: schemas.AdminShopProductBody, db: Session = Depends(get_db)) -> schemas.ShopProductOut:
+    begin_game_write(db)
     p = db.query(models.ShopProduct).filter(models.ShopProduct.id == product_id).one_or_none()
     if p is None:
         raise HTTPException(status_code=404, detail="Товар не найден")
+    next_item = db.query(models.Item).filter(models.Item.id == body.item_id).one_or_none()
+    if next_item is None:
+        raise HTTPException(status_code=404, detail="Предмет не найден")
+    if p.item.lootbox_pool_code or next_item.lootbox_pool_code:
+        raise HTTPException(409, "Продажа ковбокса настраивается в редакторе ковбоксов")
     if body.stock < -1:
         raise HTTPException(status_code=400, detail="Некорректный остаток (stock >= -1, где -1 = безлимит)")
     p.item_id = body.item_id
@@ -532,9 +588,12 @@ def update_shop(product_id: int, body: schemas.AdminShopProductBody, db: Session
 
 @router.delete("/shop/{product_id}")
 def delete_shop(product_id: int, db: Session = Depends(get_db)) -> dict:
+    begin_game_write(db)
     p = db.query(models.ShopProduct).filter(models.ShopProduct.id == product_id).one_or_none()
     if p is None:
         raise HTTPException(status_code=404, detail="Товар не найден")
+    if p.item.lootbox_pool_code:
+        raise HTTPException(409, "Продажа ковбокса настраивается в редакторе ковбоксов")
     db.delete(p)
     db.commit()
     return {"ok": True}
@@ -545,45 +604,41 @@ def delete_shop(product_id: int, db: Session = Depends(get_db)) -> dict:
 @router.get("/market", response_model=list[schemas.MarketListingOut])
 def list_market(db: Session = Depends(get_db)) -> list[schemas.MarketListingOut]:
     rows = db.query(models.MarketListing).order_by(models.MarketListing.id.desc()).all()
-    return [_market_listing_out(l) for l in rows]
+    return [_market_listing_out(listing) for listing in rows]
 
 
 @router.post("/market", response_model=schemas.MarketListingOut)
 def create_market(body: schemas.AdminMarketListingBody, db: Session = Depends(get_db)) -> schemas.MarketListingOut:
-    l = models.MarketListing(
-        seller_id=body.seller_id,
-        item_id=body.item_id,
-        quantity=body.quantity,
-        price=body.price,
-        is_active=body.is_active,
-    )
-    db.add(l)
-    db.commit()
-    db.refresh(l)
-    return _market_listing_out(l)
+    raise HTTPException(410, "Лот создаётся только игроком с атомарным резервированием предмета")
 
 
 @router.patch("/market/{listing_id}", response_model=schemas.MarketListingOut)
 def update_market(listing_id: int, body: schemas.AdminMarketListingBody, db: Session = Depends(get_db)) -> schemas.MarketListingOut:
-    l = db.query(models.MarketListing).filter(models.MarketListing.id == listing_id).one_or_none()
-    if l is None:
+    begin_game_write(db)
+    listing = db.query(models.MarketListing).filter(models.MarketListing.id == listing_id).one_or_none()
+    if listing is None:
         raise HTTPException(status_code=404, detail="Объявление не найдено")
-    l.seller_id = body.seller_id
-    l.item_id = body.item_id
-    l.quantity = body.quantity
-    l.price = body.price
-    l.is_active = body.is_active
+    if body.is_active != listing.is_active:
+        raise HTTPException(400, "Статус лота меняется только через безопасное действие продавца")
+    if (body.seller_id, body.item_id, body.quantity) != (
+        listing.seller_id, listing.item_id, listing.quantity
+    ):
+        raise HTTPException(400, "Продавца, предмет и количество активного лота менять нельзя")
+    listing.price = body.price
     db.commit()
-    db.refresh(l)
-    return _market_listing_out(l)
+    db.refresh(listing)
+    return _market_listing_out(listing)
 
 
 @router.delete("/market/{listing_id}")
 def delete_market(listing_id: int, db: Session = Depends(get_db)) -> dict:
-    l = db.query(models.MarketListing).filter(models.MarketListing.id == listing_id).one_or_none()
-    if l is None:
+    begin_game_write(db)
+    listing = db.query(models.MarketListing).filter(models.MarketListing.id == listing_id).one_or_none()
+    if listing is None:
         raise HTTPException(status_code=404, detail="Объявление не найдено")
-    db.delete(l)
+    if listing.is_active:
+        raise HTTPException(400, "Сначала снимите активный лот через безопасный возврат предмета")
+    db.delete(listing)
     db.commit()
     return {"ok": True}
 
@@ -598,6 +653,9 @@ def list_wheel(db: Session = Depends(get_db)) -> list[schemas.WheelPrizeOut]:
 
 @router.post("/wheel", response_model=schemas.WheelPrizeOut)
 def create_wheel(body: schemas.AdminWheelPrizeBody, db: Session = Depends(get_db)) -> schemas.WheelPrizeOut:
+    begin_game_write(db)
+    if body.kind == "item" and not db.query(models.Item).filter(models.Item.code == body.item_code).first():
+        raise HTTPException(400, "Предмет приза не найден")
     p = models.WheelPrize(**body.model_dump())
     db.add(p)
     db.commit()
@@ -607,6 +665,9 @@ def create_wheel(body: schemas.AdminWheelPrizeBody, db: Session = Depends(get_db
 
 @router.patch("/wheel/{prize_id}", response_model=schemas.WheelPrizeOut)
 def update_wheel(prize_id: int, body: schemas.AdminWheelPrizeBody, db: Session = Depends(get_db)) -> schemas.WheelPrizeOut:
+    begin_game_write(db)
+    if body.kind == "item" and not db.query(models.Item).filter(models.Item.code == body.item_code).first():
+        raise HTTPException(400, "Предмет приза не найден")
     p = db.query(models.WheelPrize).filter(models.WheelPrize.id == prize_id).one_or_none()
     if p is None:
         raise HTTPException(status_code=404, detail="Приз не найден")
@@ -619,6 +680,7 @@ def update_wheel(prize_id: int, body: schemas.AdminWheelPrizeBody, db: Session =
 
 @router.delete("/wheel/{prize_id}")
 def delete_wheel(prize_id: int, db: Session = Depends(get_db)) -> dict:
+    begin_game_write(db)
     p = db.query(models.WheelPrize).filter(models.WheelPrize.id == prize_id).one_or_none()
     if p is None:
         raise HTTPException(status_code=404, detail="Приз не найден")
@@ -648,6 +710,23 @@ def update_legal(slug: str, body: schemas.AdminLegalBody, db: Session = Depends(
 
 
 # ------- quizzes -------
+
+def _validate_quiz_config(
+    db: Session,
+    body: schemas.QuizBody,
+    *,
+    question_count: int,
+) -> None:
+    if body.prize_kind == "item":
+        item = db.query(models.Item).filter(models.Item.code == body.prize_item_code).one_or_none()
+        if item is None:
+            raise HTTPException(400, "Предмет-награда теста не найден")
+    if body.is_active and (
+        question_count < 1
+        or body.threshold_good > question_count
+        or body.threshold_excellent > question_count
+    ):
+        raise HTTPException(400, "Активный тест должен иметь достаточно вопросов для заданных порогов")
 
 def _quiz_out(q: models.Quiz) -> schemas.QuizOut:
     return schemas.QuizOut(
@@ -686,6 +765,8 @@ def list_quizzes(db: Session = Depends(get_db)) -> list[schemas.QuizOut]:
 
 @router.post("/quizzes", response_model=schemas.QuizOut)
 def create_quiz(body: schemas.QuizBody, db: Session = Depends(get_db)) -> schemas.QuizOut:
+    begin_game_write(db)
+    _validate_quiz_config(db, body, question_count=0)
     q = models.Quiz(**body.model_dump())
     db.add(q)
     db.commit()
@@ -695,9 +776,11 @@ def create_quiz(body: schemas.QuizBody, db: Session = Depends(get_db)) -> schema
 
 @router.patch("/quizzes/{quiz_id}", response_model=schemas.QuizOut)
 def update_quiz(quiz_id: int, body: schemas.QuizBody, db: Session = Depends(get_db)) -> schemas.QuizOut:
+    begin_game_write(db)
     q = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).one_or_none()
     if q is None:
         raise HTTPException(status_code=404, detail="Тест не найден")
+    _validate_quiz_config(db, body, question_count=len(q.questions))
     for k, v in body.model_dump().items():
         setattr(q, k, v)
     db.commit()
@@ -707,9 +790,11 @@ def update_quiz(quiz_id: int, body: schemas.QuizBody, db: Session = Depends(get_
 
 @router.delete("/quizzes/{quiz_id}")
 def delete_quiz(quiz_id: int, db: Session = Depends(get_db)) -> dict:
+    begin_game_write(db)
     q = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).one_or_none()
     if q is None:
         raise HTTPException(status_code=404, detail="Тест не найден")
+    db.query(models.QuizRun).filter(models.QuizRun.quiz_id == quiz_id).delete(synchronize_session=False)
     db.delete(q)
     db.commit()
     return {"ok": True}
@@ -717,9 +802,12 @@ def delete_quiz(quiz_id: int, db: Session = Depends(get_db)) -> dict:
 
 @router.post("/quizzes/{quiz_id}/questions", response_model=schemas.QuizQuestionOut)
 def add_question(quiz_id: int, body: schemas.QuizQuestionBody, db: Session = Depends(get_db)) -> schemas.QuizQuestionOut:
+    begin_game_write(db)
     q = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).one_or_none()
     if q is None:
         raise HTTPException(status_code=404, detail="Тест не найден")
+    if len(q.questions) >= 1000:
+        raise HTTPException(400, "В тесте не может быть больше 1000 вопросов")
     qq = models.QuizQuestion(quiz_id=quiz_id, **body.model_dump())
     db.add(qq)
     db.commit()
@@ -733,6 +821,7 @@ def add_question(quiz_id: int, body: schemas.QuizQuestionBody, db: Session = Dep
 
 @router.patch("/quizzes/{quiz_id}/questions/{q_id}", response_model=schemas.QuizQuestionOut)
 def update_question(quiz_id: int, q_id: int, body: schemas.QuizQuestionBody, db: Session = Depends(get_db)) -> schemas.QuizQuestionOut:
+    begin_game_write(db)
     qq = db.query(models.QuizQuestion).filter(models.QuizQuestion.id == q_id, models.QuizQuestion.quiz_id == quiz_id).one_or_none()
     if qq is None:
         raise HTTPException(status_code=404, detail="Вопрос не найден")
@@ -749,9 +838,18 @@ def update_question(quiz_id: int, q_id: int, body: schemas.QuizQuestionBody, db:
 
 @router.delete("/quizzes/{quiz_id}/questions/{q_id}")
 def delete_question(quiz_id: int, q_id: int, db: Session = Depends(get_db)) -> dict:
+    begin_game_write(db)
     qq = db.query(models.QuizQuestion).filter(models.QuizQuestion.id == q_id, models.QuizQuestion.quiz_id == quiz_id).one_or_none()
     if qq is None:
         raise HTTPException(status_code=404, detail="Вопрос не найден")
+    quiz = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).one()
+    remaining = len(quiz.questions) - 1
+    if quiz.is_active and (
+        remaining < 1
+        or quiz.threshold_good > remaining
+        or quiz.threshold_excellent > remaining
+    ):
+        raise HTTPException(409, "Сначала отключите тест или уменьшите пороги")
     db.delete(qq)
     db.commit()
     return {"ok": True}
@@ -775,6 +873,31 @@ def list_quiz_attempts(quiz_id: int, db: Session = Depends(get_db)) -> list[sche
 
 # ── Battle Pass ─────────────────────────────────────────────────
 
+MAX_BATTLEPASS_LEVELS = 1_000
+MAX_BATTLEPASS_REWARD = 1_000_000
+
+
+def _validate_bp_season_values(xp_per_level: int, total_levels: int) -> None:
+    """Also protects partial edits of malformed rows created by legacy code."""
+    if not 1 <= xp_per_level <= MAX_BATTLEPASS_REWARD:
+        raise HTTPException(400, "XP за уровень должен быть от 1 до 1 000 000")
+    if not 1 <= total_levels <= MAX_BATTLEPASS_LEVELS:
+        raise HTTPException(400, "Количество уровней должно быть от 1 до 1 000")
+
+
+def _claimed_bp_level(value: object) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if (
+        isinstance(value, list)
+        and value
+        and isinstance(value[0], int)
+        and not isinstance(value[0], bool)
+    ):
+        return value[0]
+    return None
+
+
 @router.get("/battlepass/seasons")
 def admin_list_bp_seasons(db: Session = Depends(get_db)):
     seasons = db.query(models.BattlePassSeason).order_by(models.BattlePassSeason.created_at.desc()).all()
@@ -795,31 +918,42 @@ def admin_list_bp_seasons(db: Session = Depends(get_db)):
 
 
 @router.post("/battlepass/season")
-def admin_save_bp_season(body: dict, db: Session = Depends(get_db)):
-    season_id = body.get("id")
+def admin_save_bp_season(body: schemas.AdminBattlePassSeasonBody, db: Session = Depends(get_db)):
+    season_id = body.id
     if season_id:
         s = db.query(models.BattlePassSeason).filter(models.BattlePassSeason.id == season_id).first()
         if not s:
             raise HTTPException(404, "Сезон не найден")
     else:
-        s = models.BattlePassSeason(name="Новый сезон")
+        s = models.BattlePassSeason(name=body.name or "Новый сезон")
         db.add(s)
         db.flush()
-    if "name" in body and body["name"] is not None:
-        s.name = body["name"]
-    if "theme" in body and body["theme"] is not None:
-        s.theme = body["theme"]
-    if "xp_per_level" in body:
-        s.xp_per_level = _coerce_int(body, "xp_per_level", s.xp_per_level)
-    if "total_levels" in body:
-        s.total_levels = _coerce_int(body, "total_levels", s.total_levels)
-    if "is_active" in body:
-        s.is_active = bool(body["is_active"])
+
+    next_xp_per_level = body.xp_per_level if body.xp_per_level is not None else s.xp_per_level
+    next_total_levels = body.total_levels if body.total_levels is not None else s.total_levels
+    _validate_bp_season_values(next_xp_per_level, next_total_levels)
+    highest_reward_level = db.query(models.BattlePassReward.level).filter(
+        models.BattlePassReward.season_id == s.id,
+    ).order_by(models.BattlePassReward.level.desc()).first()
+    if highest_reward_level and highest_reward_level[0] > next_total_levels:
+        raise HTTPException(
+            409,
+            f"Сначала удалите или перенесите награды выше уровня {next_total_levels}",
+        )
+
+    if body.name is not None:
+        s.name = body.name
+    if body.theme is not None:
+        s.theme = body.theme
+    s.xp_per_level = next_xp_per_level
+    s.total_levels = next_total_levels
+    if body.is_active is not None:
+        s.is_active = body.is_active
     # Только один активный сезон: при активации деактивируем остальные.
     if s.is_active:
         db.query(models.BattlePassSeason).filter(
             models.BattlePassSeason.id != s.id,
-            models.BattlePassSeason.is_active == True,
+            models.BattlePassSeason.is_active.is_(True),
         ).update({models.BattlePassSeason.is_active: False})
     db.commit()
     return {"ok": True, "id": s.id}
@@ -836,56 +970,70 @@ def admin_delete_bp_season(season_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/battlepass/reward")
-def admin_save_bp_reward(body: dict, db: Session = Depends(get_db)):
-    reward_id = body.get("id")
-    season_id = body.get("season_id")
-    if not season_id:
-        season = db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active == True).first()
+def admin_save_bp_reward(body: schemas.AdminBattlePassRewardBody, db: Session = Depends(get_db)):
+    reward_id = body.id
+    reward = None
+    if reward_id is not None:
+        reward = db.query(models.BattlePassReward).filter(models.BattlePassReward.id == reward_id).first()
+        if reward is None:
+            raise HTTPException(404, "Награда не найдена")
+        if body.season_id is not None and body.season_id != reward.season_id:
+            raise HTTPException(400, "Нельзя перенести награду в другой сезон")
+        season_id = reward.season_id
+    else:
+        season_id = body.season_id
+
+    if season_id is None:
+        season = db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active.is_(True)).first()
         if not season:
             raise HTTPException(400, "Нет активного сезона")
         season_id = season.id
-
-    # Трек всегда "free" — premium-трек убран из интерфейса.
-    kind = body.get("kind")
-    if kind is not None and kind not in ("coins", "xp", "item"):
-        raise HTTPException(400, "Недопустимый тип награды")
-    item_code = body.get("item_code")
-    if kind == "item" and not item_code:
-        raise HTTPException(400, "Для предмета укажите item_code")
-
-    level = _coerce_int(body, "level", None)
-
-    if reward_id:
-        r = db.query(models.BattlePassReward).filter(models.BattlePassReward.id == reward_id).first()
-        if not r:
-            raise HTTPException(404, "Награда не найдена")
     else:
+        season = db.query(models.BattlePassSeason).filter(models.BattlePassSeason.id == season_id).first()
+        if season is None:
+            raise HTTPException(404, "Сезон не найден")
+
+    _validate_bp_season_values(season.xp_per_level, season.total_levels)
+    if body.level > season.total_levels:
+        raise HTTPException(400, "Уровень награды выше максимального уровня сезона")
+
+    if body.item_code is not None:
+        item = db.query(models.Item).filter(models.Item.code == body.item_code).first()
+        if item is None:
+            raise HTTPException(400, "Предмет награды не найден")
+        if body.kind == "lootbox":
+            pool = db.query(models.LootboxPool).filter(models.LootboxPool.code == item.lootbox_pool_code).first()
+            if item.lootbox_pool_code is None or pool is None:
+                raise HTTPException(400, "Для награды-ковбокса выберите предмет с настроенным ковбоксом")
+
+    occupied = db.query(models.BattlePassReward).filter(
+        models.BattlePassReward.season_id == season_id,
+        models.BattlePassReward.level == body.level,
+        models.BattlePassReward.track == "free",
+    ).first()
+    if reward is not None and occupied is not None and occupied.id != reward.id:
+        raise HTTPException(409, "На этом уровне уже есть награда")
+
+    if reward is None:
         # Upsert по (season_id, level, free): не плодим дубли на занятом уровне
         # — иначе UniqueConstraint(season_id, level, track) даёт 500.
-        r = None
-        if level is not None:
-            r = db.query(models.BattlePassReward).filter(
-                models.BattlePassReward.season_id == season_id,
-                models.BattlePassReward.level == level,
-                models.BattlePassReward.track == "free",
-            ).first()
-        if r is None:
-            r = models.BattlePassReward(season_id=season_id, track="free", kind="xp", level=level or 1, value=0)
-            db.add(r)
-    r.track = "free"
-    if level is not None:
-        r.level = level
-    if "value" in body:
-        r.value = _coerce_int(body, "value", r.value)
-    for field in ("kind", "item_code", "label", "icon"):
-        if field in body:
-            setattr(r, field, body[field])
+        reward = occupied
+        if reward is None:
+            reward = models.BattlePassReward(season_id=season_id, track="free")
+            db.add(reward)
+    reward.track = "free"
+    reward.level = body.level
+    reward.kind = body.kind
+    reward.value = body.value
+    reward.item_code = body.item_code
+    reward.label = body.label
+    reward.icon = body.icon
     try:
         db.commit()
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         raise HTTPException(400, "Не удалось сохранить награду (проверьте уровень/значения)") from exc
-    return {"ok": True, "id": r.id}
+    return {"ok": True, "id": reward.id}
 
 
 @router.delete("/battlepass/reward/{reward_id}")
@@ -899,21 +1047,18 @@ def admin_delete_bp_reward(reward_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/battlepass/seed")
-def admin_seed_bp_season(body: dict, db: Session = Depends(get_db)):
+def admin_seed_bp_season(body: schemas.AdminBattlePassSeedBody, db: Session = Depends(get_db)):
     """Создать сезон с автозаполнением наград для всех уровней."""
-    levels = _coerce_int(body, "total_levels", 100)
-    xp_per_level = _coerce_int(body, "xp_per_level", 100)
-    name = body.get("name") or "Новый сезон"
-    if levels < 1:
-        raise HTTPException(status_code=400, detail="total_levels должен быть >= 1")
+    levels = body.total_levels
+    xp_per_level = body.xp_per_level
 
     # Только один активный сезон: деактивируем прочие перед активацией нового.
     db.query(models.BattlePassSeason).filter(
-        models.BattlePassSeason.is_active == True
+        models.BattlePassSeason.is_active.is_(True)
     ).update({models.BattlePassSeason.is_active: False})
 
     season = models.BattlePassSeason(
-        name=name, theme=body.get("theme", "summer"),
+        name=body.name, theme=body.theme,
         xp_per_level=xp_per_level, total_levels=levels,
         is_active=True,
     )
@@ -944,104 +1089,320 @@ def admin_reset_bp(user_id: int, db: Session = Depends(get_db)):
     if not u:
         raise HTTPException(404, "Пользователь не найден")
     u.xp = 0
+    db.query(models.BattlePassClaim).filter(models.BattlePassClaim.user_id == user_id).delete(
+        synchronize_session=False,
+    )
     db.query(models.UserBattlePass).filter(models.UserBattlePass.user_id == user_id).delete()
     db.commit()
     return {"ok": True}
 
 
 @router.post("/battlepass/reset-level")
-def admin_reset_level(body: dict, db: Session = Depends(get_db)):
+def admin_reset_level(body: schemas.AdminBattlePassResetLevelBody, db: Session = Depends(get_db)):
     """Сбросить конкретный уровень пропуска у игрока."""
-    user_id = _coerce_int(body, "user_id")
-    level = _coerce_int(body, "level")
-    if user_id is None or level is None:
-        raise HTTPException(400, "user_id и level обязательны")
-    season = db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active == True).first()
+    user_id = body.user_id
+    level = body.level
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if user is None:
+        raise HTTPException(404, "Пользователь не найден")
+    season = db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active.is_(True)).first()
     if not season:
         raise HTTPException(400, "Нет активного сезона")
+    _validate_bp_season_values(season.xp_per_level, season.total_levels)
+    if level > season.total_levels:
+        raise HTTPException(400, "Уровень выше максимального уровня сезона")
     ubp = db.query(models.UserBattlePass).filter(
         models.UserBattlePass.user_id == user_id,
         models.UserBattlePass.season_id == season.id,
     ).first()
-    if not ubp:
-        raise HTTPException(404, "У игрока нет прогресса в этом сезоне")
-    import json
-    claimed = json.loads(ubp.claimed_rewards) if ubp.claimed_rewards else []
-    claimed = [c for c in claimed if not (isinstance(c, list) and len(c) >= 1 and c[0] == level)]
-    ubp.claimed_rewards = json.dumps(claimed)
+    if ubp is not None:
+        try:
+            claimed = json.loads(ubp.claimed_rewards) if ubp.claimed_rewards else []
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise HTTPException(409, "Список полученных наград повреждён") from exc
+        if not isinstance(claimed, list):
+            raise HTTPException(409, "Список полученных наград повреждён")
+        ubp.claimed_rewards = json.dumps([
+            entry for entry in claimed if _claimed_bp_level(entry) != level
+        ])
+
+    reward_ids = [reward_id for (reward_id,) in db.query(models.BattlePassReward.id).filter(
+        models.BattlePassReward.season_id == season.id,
+        models.BattlePassReward.level == level,
+    ).all()]
+    deleted_claims = 0
+    if reward_ids:
+        deleted_claims = db.query(models.BattlePassClaim).filter(
+            models.BattlePassClaim.user_id == user_id,
+            models.BattlePassClaim.reward_id.in_(reward_ids),
+        ).delete(synchronize_session=False)
+    if ubp is None and deleted_claims == 0:
+        raise HTTPException(404, "У игрока нет прогресса на этом уровне")
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "deleted_claims": deleted_claims}
 
 
+def _naive_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _lootbox_item_code(code: str) -> str:
+    return code if code.startswith("lootbox_") else f"lootbox_{code}"
+
+
+def _lootbox_out(pool: models.LootboxPool) -> schemas.AdminLootboxOut:
+    active_random = [entry for entry in pool.entries if entry.is_active and not entry.is_guaranteed]
+    active_guaranteed = [entry for entry in pool.entries if entry.is_active and entry.is_guaranteed]
+    total = sum(entry.weight for entry in active_random)
+    guaranteed_total = sum(entry.weight for entry in active_guaranteed)
+    entries = []
+    for entry in sorted(pool.entries, key=lambda row: (row.sort_order, row.id)):
+        denominator = guaranteed_total if entry.is_guaranteed else total
+        percent = (entry.weight / denominator * 100) if denominator else 0.0
+        entries.append(schemas.AdminLootboxEntryOut(
+            id=entry.id,
+            reward_kind=entry.reward_kind,
+            item_id=entry.item_id,
+            item_name=entry.item.name if entry.item else None,
+            item_icon=entry.item.icon if entry.item else None,
+            amount_min=entry.amount_min,
+            amount_max=entry.amount_max,
+            weight=entry.weight,
+            normalized_percent=round(percent, 3),
+            is_guaranteed=entry.is_guaranteed,
+            is_active=entry.is_active,
+            sort_order=entry.sort_order,
+        ))
+    item = pool.item
+    if item is None:
+        raise HTTPException(500, f"Ковбокс {pool.code} не связан с предметом")
+    return schemas.AdminLootboxOut(
+        id=pool.id,
+        item_id=item.id,
+        item_code=item.code,
+        code=pool.code,
+        name=pool.name,
+        description=pool.description,
+        rarity=pool.rarity,
+        image_url=pool.image_url,
+        is_active=pool.is_active,
+        is_droppable=pool.is_droppable,
+        is_archived=pool.is_archived,
+        assembly_weight=pool.assembly_weight,
+        sale_price=pool.sale_price,
+        sale_currency=pool.sale_currency,
+        min_user_level=pool.min_user_level,
+        max_user_level=pool.max_user_level,
+        sort_order=pool.sort_order,
+        starts_at=pool.starts_at,
+        ends_at=pool.ends_at,
+        daily_open_limit=pool.daily_open_limit,
+        guaranteed_slots=pool.guaranteed_slots,
+        allow_duplicates=pool.allow_duplicates,
+        version=pool.version,
+        weight_total=total,
+        entries=entries,
+    )
+
+
+def _validate_lootbox_entries(db: Session, entries: list[schemas.AdminLootboxEntryBody]) -> None:
+    item_ids = {entry.item_id for entry in entries if entry.reward_kind == "item" and entry.item_id}
+    items = db.query(models.Item).filter(models.Item.id.in_(item_ids)).all() if item_ids else []
+    item_map = {item.id: item for item in items}
+    missing = item_ids - item_map.keys()
+    if missing:
+        raise HTTPException(400, f"Предмет награды не найден: ID {min(missing)}")
+    for item in items:
+        if item.lootbox_pool_code:
+            raise HTTPException(400, "Ковбокс не может выпадать из ковбокса: это создаёт циклическую награду")
+
+
+def _replace_lootbox_entries(
+    db: Session,
+    pool: models.LootboxPool,
+    entries: list[schemas.AdminLootboxEntryBody],
+) -> None:
+    _validate_lootbox_entries(db, entries)
+    pool.entries.clear()
+    for entry in entries:
+        pool.entries.append(models.LootboxPoolEntry(**entry.model_dump()))
+
+
+def _apply_lootbox_body(pool: models.LootboxPool, body: schemas.AdminLootboxBody) -> None:
+    for field in (
+        "name", "description", "rarity", "image_url", "is_active", "is_droppable",
+        "is_archived", "assembly_weight", "sale_price", "sale_currency", "min_user_level",
+        "max_user_level", "sort_order", "daily_open_limit", "guaranteed_slots", "allow_duplicates",
+    ):
+        setattr(pool, field, getattr(body, field))
+    pool.starts_at = _naive_utc(body.starts_at)
+    pool.ends_at = _naive_utc(body.ends_at)
+    if pool.is_archived:
+        pool.is_droppable = False
+
+
+@router.get("/lootboxes", response_model=list[schemas.AdminLootboxOut])
+def admin_list_lootboxes(
+    q: str | None = None,
+    active: bool | None = None,
+    rarity: str | None = None,
+    db: Session = Depends(get_db),
+) -> list[schemas.AdminLootboxOut]:
+    query = db.query(models.LootboxPool)
+    if q:
+        term = f"%{q.strip()}%"
+        query = query.filter((models.LootboxPool.name.ilike(term)) | (models.LootboxPool.code.ilike(term)))
+    if active is not None:
+        query = query.filter(models.LootboxPool.is_active.is_(active))
+    if rarity:
+        query = query.filter(models.LootboxPool.rarity == rarity)
+    pools = query.order_by(models.LootboxPool.sort_order, models.LootboxPool.id).all()
+    return [_lootbox_out(pool) for pool in pools]
+
+
+@router.post("/lootboxes", response_model=schemas.AdminLootboxOut)
+def admin_create_lootbox(
+    body: schemas.AdminLootboxBody,
+    db: Session = Depends(get_db),
+) -> schemas.AdminLootboxOut:
+    begin_game_write(db)
+    if db.query(models.LootboxPool).filter(models.LootboxPool.code == body.code).first():
+        raise HTTPException(409, "Ковбокс с таким внутренним ID уже существует")
+    _validate_lootbox_entries(db, body.entries)
+    item_code = _lootbox_item_code(body.code)
+    item = db.query(models.Item).filter(models.Item.code == item_code).first()
+    if item and item.lootbox_pool_code not in (None, body.code):
+        raise HTTPException(409, "Код предмета уже занят другим ковбоксом")
+    if item is None:
+        item = models.Item(code=item_code, name=body.name, category="Ковбоксы")
+        db.add(item)
+        db.flush()
+    pool = models.LootboxPool(code=body.code, name=body.name, item_id=item.id)
+    db.add(pool)
+    db.flush()
+    _apply_lootbox_body(pool, body)
+    item.name = body.name
+    item.description = body.description
+    item.icon = body.image_url
+    item.rarity = body.rarity
+    item.category = "Ковбоксы"
+    item.lootbox_pool_code = body.code
+    sync_lootbox_shop_product(db, pool)
+    _replace_lootbox_entries(db, pool, body.entries)
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(409, "Не удалось сохранить ковбокс: проверьте уникальный ID") from exc
+    return _lootbox_out(pool)
+
+
+@router.patch("/lootboxes/{pool_id}", response_model=schemas.AdminLootboxOut)
+def admin_update_lootbox(
+    pool_id: int,
+    body: schemas.AdminLootboxBody,
+    db: Session = Depends(get_db),
+) -> schemas.AdminLootboxOut:
+    begin_game_write(db)
+    pool = db.query(models.LootboxPool).filter(models.LootboxPool.id == pool_id).first()
+    if pool is None:
+        raise HTTPException(404, "Ковбокс не найден")
+    if body.code != pool.code:
+        raise HTTPException(400, "Внутренний ID нельзя менять; используйте дублирование")
+    _validate_lootbox_entries(db, body.entries)
+    _apply_lootbox_body(pool, body)
+    if pool.item is None:
+        raise HTTPException(409, "У конфигурации отсутствует предмет ковбокса")
+    pool.item.name = body.name
+    pool.item.description = body.description
+    pool.item.icon = body.image_url
+    pool.item.rarity = body.rarity
+    pool.item.lootbox_pool_code = pool.code
+    sync_lootbox_shop_product(db, pool)
+    pool.version += 1
+    _replace_lootbox_entries(db, pool, body.entries)
+    db.commit()
+    return _lootbox_out(pool)
+
+
+@router.post("/lootboxes/{pool_id}/duplicate", response_model=schemas.AdminLootboxOut)
+def admin_duplicate_lootbox(
+    pool_id: int,
+    body: schemas.AdminLootboxDuplicateBody,
+    db: Session = Depends(get_db),
+) -> schemas.AdminLootboxOut:
+    source = db.query(models.LootboxPool).filter(models.LootboxPool.id == pool_id).first()
+    if source is None:
+        raise HTTPException(404, "Ковбокс не найден")
+    copied = schemas.AdminLootboxBody(
+        code=body.code,
+        name=body.name,
+        description=source.description,
+        rarity=source.rarity,
+        image_url=source.image_url,
+        is_active=False,
+        is_droppable=False,
+        assembly_weight=source.assembly_weight,
+        sale_price=source.sale_price,
+        sale_currency=source.sale_currency,
+        min_user_level=source.min_user_level,
+        max_user_level=source.max_user_level,
+        sort_order=source.sort_order,
+        starts_at=source.starts_at,
+        ends_at=source.ends_at,
+        daily_open_limit=source.daily_open_limit,
+        guaranteed_slots=source.guaranteed_slots,
+        allow_duplicates=source.allow_duplicates,
+        entries=[
+            schemas.AdminLootboxEntryBody(
+                reward_kind=entry.reward_kind,
+                item_id=entry.item_id,
+                amount_min=entry.amount_min,
+                amount_max=entry.amount_max,
+                weight=entry.weight,
+                is_guaranteed=entry.is_guaranteed,
+                is_active=entry.is_active,
+                sort_order=entry.sort_order,
+            )
+            for entry in source.entries
+        ],
+    )
+    return admin_create_lootbox(body=copied, db=db)
+
+
+@router.post("/lootboxes/{pool_id}/archive", response_model=schemas.AdminLootboxOut)
+def admin_archive_lootbox(pool_id: int, db: Session = Depends(get_db)) -> schemas.AdminLootboxOut:
+    begin_game_write(db)
+    pool = db.query(models.LootboxPool).filter(models.LootboxPool.id == pool_id).first()
+    if pool is None:
+        raise HTTPException(404, "Ковбокс не найден")
+    pool.is_archived = True
+    pool.is_droppable = False
+    pool.version += 1
+    sync_lootbox_shop_product(db, pool)
+    db.commit()
+    return _lootbox_out(pool)
+
+
+# Unsafe row-by-row pool mutation was removed: it allowed temporarily empty or
+# negative-weight active pools.  Keep explicit responses so old admin clients
+# cannot silently bypass the validated atomic editor.
 @router.get("/lootbox/pools")
-def admin_list_lootbox_pools(db: Session = Depends(get_db)):
-    """Список всех пулов лутбоксов с их записями."""
-    pools = db.query(models.LootboxPool).all()
-    item_ids = {e.item_id for p in pools for e in p.entries if e.item_id is not None}
-    item_map = {}
-    if item_ids:
-        for item in db.query(models.Item).filter(models.Item.id.in_(item_ids)).all():
-            item_map[item.id] = item
-    result = []
-    for p in pools:
-        entries = []
-        for e in p.entries:
-            item = item_map.get(e.item_id)
-            entries.append({
-                "id": e.id, "item_id": e.item_id, "weight": e.weight,
-                "item_name": item.name if item else "?",
-                "item_icon": item.icon if item else "",
-            })
-        result.append({"id": p.id, "code": p.code, "name": p.name, "entries": entries})
-    return result
+def legacy_admin_list_lootbox_pools():
+    raise HTTPException(410, "Используйте редактор /api/admin/lootboxes")
 
 
 @router.post("/lootbox/pool")
-def admin_save_lootbox_pool(body: dict, db: Session = Depends(get_db)):
-    """Создать или обновить пул лутбокса."""
-    pool_id = body.get("id")
-    if pool_id:
-        p = db.query(models.LootboxPool).filter(models.LootboxPool.id == pool_id).first()
-        if not p:
-            raise HTTPException(404, "Пул не найден")
-    else:
-        p = models.LootboxPool(code=body.get("code", ""), name=body.get("name", ""))
-        db.add(p)
-        db.flush()
-    if "name" in body: p.name = body["name"]
-    if "code" in body: p.code = body["code"]
-    db.commit()
-    return {"ok": True, "id": p.id}
-
-
 @router.post("/lootbox/entry")
-def admin_save_lootbox_entry(body: dict, db: Session = Depends(get_db)):
-    """Создать или обновить запись в пуле лутбокса."""
-    entry_id = body.get("id")
-    if entry_id:
-        e = db.query(models.LootboxPoolEntry).filter(models.LootboxPoolEntry.id == entry_id).first()
-        if not e:
-            raise HTTPException(404, "Запись не найдена")
-    else:
-        pool_id = body.get("pool_id")
-        if not pool_id:
-            raise HTTPException(400, "pool_id обязателен")
-        e = models.LootboxPoolEntry(pool_id=_coerce_int(body, "pool_id"))
-        db.add(e)
-        db.flush()
-    if "item_id" in body:
-        e.item_id = _coerce_int(body, "item_id", e.item_id)
-    if "weight" in body:
-        e.weight = _coerce_int(body, "weight", e.weight)
-    db.commit()
-    return {"ok": True, "id": e.id}
+def legacy_admin_mutate_lootbox():
+    raise HTTPException(410, "Устаревшее редактирование ковбоксов отключено")
 
 
 @router.delete("/lootbox/entry/{entry_id}")
-def admin_delete_lootbox_entry(entry_id: int, db: Session = Depends(get_db)):
-    e = db.query(models.LootboxPoolEntry).filter(models.LootboxPoolEntry.id == entry_id).first()
-    if not e:
-        raise HTTPException(404, "Запись не найдена")
-    db.delete(e)
-    db.commit()
-    return {"ok": True}
+def legacy_admin_delete_lootbox_entry(entry_id: int):
+    del entry_id
+    raise HTTPException(410, "Устаревшее редактирование ковбоксов отключено")

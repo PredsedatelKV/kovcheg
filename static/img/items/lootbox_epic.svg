@@ -1,8 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
-  <rect x="12" y="28" width="56" height="40" rx="6" fill="#ce93d8" stroke="#9c27b0" stroke-width="2"/>
-  <path d="M12 34 L40 18 L68 34" fill="#e1bee7" stroke="#9c27b0" stroke-width="2"/>
-  <rect x="30" y="36" width="20" height="16" rx="3" fill="#6a1b9a" stroke="#9c27b0" stroke-width="1.5"/>
-  <circle cx="40" cy="44" r="4" fill="#f3e5f5" opacity="0.7"/>
-  <rect x="20" y="52" width="6" height="10" rx="2" fill="#9c27b0"/>
-  <rect x="54" y="52" width="6" height="10" rx="2" fill="#9c27b0"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="e-top" x1="15" y1="16" x2="66" y2="41" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E9B6FF"/><stop offset=".5" stop-color="#A54FE1"/><stop offset="1" stop-color="#552080"/>
+    </linearGradient>
+    <linearGradient id="e-face" x1="17" y1="35" x2="64" y2="70" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8A3FC0"/><stop offset="1" stop-color="#2A1242"/>
+    </linearGradient>
+    <filter id="e-glow" x="0" y="4" width="80" height="74" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="3" flood-color="#180725" flood-opacity=".55"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#D378FF" flood-opacity=".5"/>
+    </filter>
+  </defs>
+  <g filter="url(#e-glow)" stroke-linejoin="round">
+    <path d="m9 36 8-13 9 8-6 15-11-10ZM71 36l-8-13-9 8 6 15 11-10Z" fill="#7130A4" stroke="#E0A2FF" stroke-width="1.5"/>
+    <path d="M12 32 26 16h28l14 16-7 9H19l-7-9Z" fill="url(#e-top)" stroke="#37134F" stroke-width="2"/>
+    <path d="M15 36h50v25c0 4-3 7-7 7H22c-4 0-7-3-7-7V36Z" fill="url(#e-face)" stroke="#37134F" stroke-width="2"/>
+    <path d="m40 20 8 10-8 9-8-9 8-10Z" fill="#F0C7FF" stroke="#6C269C" stroke-width="1.5"/>
+    <path d="M32 36h16v18H32z" fill="#241032" stroke="#E4ABFF" stroke-width="1.5"/>
+    <circle cx="40" cy="45" r="4" fill="#D47CFF"/><path d="m38 45 2-3 2 3-2 5-2-5Z" fill="#FFF"/>
+    <path d="M22 59h36" stroke="#C96DF7" stroke-width="2" opacity=".7"/>
+  </g>
 </svg>

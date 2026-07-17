@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = "change-me"
     public_url: str = ""  # https://<app>.fly.dev — заполняется после деплоя
     admin_ids: str = ""  # CSV TG ID-шников
-    admin_usernames: str = "omarbutuev"  # CSV TG usernames (без @)
+    # Deprecated display/discovery setting. Usernames are mutable and never
+    # grant access or administrator rights; use immutable ADMIN_IDS instead.
+    admin_usernames: str = ""
     channel_url: str = "https://t.me/+2fe2Nsj0J9FiYzky"
     database_url: str = ""
     skip_init_data_check: bool = False  # для локальной отладки

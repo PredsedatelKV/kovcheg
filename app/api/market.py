@@ -10,6 +10,8 @@ from app.auth import current_user
 from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/market", tags=["market"])
+MAX_LISTING_PRICE = 1_000_000_000
+MAX_LISTING_QUANTITY = 1_000_000
 
 
 def _listing_to_out(listing: models.MarketListing) -> schemas.MarketListingOut:
@@ -63,6 +65,8 @@ def create_listing(
     db: Session = Depends(get_db),
 ) -> schemas.MarketListingOut:
     begin_game_write(db)
+    if payload.price > MAX_LISTING_PRICE or payload.quantity > MAX_LISTING_QUANTITY:
+        raise HTTPException(status_code=400, detail="Цена или количество слишком велики")
     inv = (
         db.query(models.InventoryItem)
         .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == payload.item_id)
@@ -70,6 +74,8 @@ def create_listing(
     )
     if inv is None or inv.quantity < payload.quantity:
         raise HTTPException(status_code=400, detail="Недостаточно предметов в инвентаре")
+    if not inv.item.can_gift:
+        raise HTTPException(status_code=400, detail="Этот предмет нельзя продавать")
     # Сохраняем нужные строки ДО commit (expire_on_commit аннулирует атрибуты).
     item_name = inv.item.name
     seller_name = user.first_name
@@ -105,6 +111,8 @@ def unlist(
         raise HTTPException(status_code=404, detail="Объявление не найдено")
     if not listing.is_active:
         raise HTTPException(status_code=400, detail="Объявление уже снято")
+    if not (1 <= listing.quantity <= MAX_LISTING_QUANTITY):
+        raise HTTPException(status_code=503, detail="Объявление настроено некорректно")
     listing.is_active = False
     inv = (
         db.query(models.InventoryItem)
@@ -114,6 +122,8 @@ def unlist(
     if inv is None:
         db.add(models.InventoryItem(user_id=user.id, item_id=listing.item_id, quantity=listing.quantity))
     else:
+        if inv.quantity < 0 or inv.quantity > 2_000_000_000 - listing.quantity:
+            raise HTTPException(status_code=409, detail="Достигнут максимальный размер стака предмета")
         inv.quantity += listing.quantity
     # Сохраняем строки ДО commit (expire_on_commit).
     item_name = listing.item.name
@@ -138,6 +148,8 @@ def buy_listing(
     listing = db.query(models.MarketListing).filter(models.MarketListing.id == payload.listing_id).one_or_none()
     if listing is None or not listing.is_active:
         raise HTTPException(status_code=404, detail="Объявление не найдено")
+    if not (1 <= listing.price <= MAX_LISTING_PRICE) or not (1 <= listing.quantity <= MAX_LISTING_QUANTITY):
+        raise HTTPException(status_code=503, detail="Объявление настроено некорректно")
     if listing.seller_id == user.id:
         raise HTTPException(status_code=400, detail="Нельзя купить у себя")
     if listing.target_user_id is not None and listing.target_user_id != user.id:
@@ -147,13 +159,17 @@ def buy_listing(
         raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
     seller = db.query(models.User).filter(models.User.id == listing.seller_id).one()
     seller_wallet = ensure_wallet(db, seller)
-    buyer_wallet.balance -= listing.price
-    seller_wallet.balance += listing.price
     inv = (
         db.query(models.InventoryItem)
         .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == listing.item_id)
         .one_or_none()
     )
+    if seller_wallet.balance < 0 or seller_wallet.balance > 2_000_000_000 - listing.price:
+        raise HTTPException(status_code=409, detail="Баланс продавца достиг максимума")
+    if inv is not None and (inv.quantity < 0 or inv.quantity > 2_000_000_000 - listing.quantity):
+        raise HTTPException(status_code=409, detail="Достигнут максимальный размер стака предмета")
+    buyer_wallet.balance -= listing.price
+    seller_wallet.balance += listing.price
     if inv is None:
         db.add(models.InventoryItem(user_id=user.id, item_id=listing.item_id, quantity=listing.quantity))
     else:

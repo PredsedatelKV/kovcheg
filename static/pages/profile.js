@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=227";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=229";
 
-import { playUISound } from "/static/pages/settings.js?v=227";
+import { playUISound } from "/static/pages/settings.js?v=229";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -11,6 +11,16 @@ const GAME_META = {
 };
 let _profileRoot = null;
 let _profileData = null;
+
+function makeLootboxRequestId() {
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+  if (window.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    return "lb_" + Array.from(bytes, (n) => n.toString(16).padStart(2, "0")).join("");
+  }
+  return "lb_" + Date.now() + "_" + String(performance.now()).replace(".", "");
+}
 
 function kovbaksWord(n) {
   const abs = Math.abs(n) % 100;
@@ -153,33 +163,36 @@ export async function renderProfile(root) {
   loadOnlineAvatars(root);
 
   // Event delegation — all profile clicks handled here, no re-binding on section update
-  root.addEventListener("click", function(e) {
-    var d = _profileData;
-    if (!d) return;
-    var actionEl = e.target.closest("[data-action]");
-    if (actionEl) {
-      switch (actionEl.dataset.action) {
-        case "transfer": openTransferDialog(d.user); return;
-        case "transfer-history": openTransactionHistory(); return;
-        case "all-inv": openAllInventory(d.inventory, root); return;
-        case "all-mytasks": openAllMyTasks(d.user_tasks, root); return;
-        case "open-battlepass": window.kov.setTab("battlepass"); return;
+  if (!root._profileDelegationBound) {
+    root._profileDelegationBound = true;
+    root.addEventListener("click", function(e) {
+      var d = _profileData;
+      if (!d) return;
+      var actionEl = e.target.closest("[data-action]");
+      if (actionEl) {
+        switch (actionEl.dataset.action) {
+          case "transfer": openTransferDialog(d.user); return;
+          case "transfer-history": openTransactionHistory(); return;
+          case "all-inv": openAllInventory(d.inventory, root); return;
+          case "all-mytasks": openAllMyTasks(d.user_tasks, root); return;
+          case "open-battlepass": window.kov.setTab("battlepass"); return;
+        }
       }
-    }
-    var itemCell = e.target.closest("[data-item-id]");
-    if (itemCell) {
-      var id = Number(itemCell.dataset.itemId);
-      var row = d.inventory.find(function(r) { return r.item.id === id; });
-      if (row) openItemActionsDialog(row);
-      return;
-    }
-    var taskRow = e.target.closest("[data-user-task-id]");
-    if (taskRow) {
-      var id = Number(taskRow.dataset.userTaskId);
-      var ut = d.user_tasks.find(function(u) { return u.id === id; });
-      if (ut) openUserTaskDialog(ut, root);
-    }
-  });
+      var itemCell = e.target.closest("[data-item-id]");
+      if (itemCell) {
+        var id = Number(itemCell.dataset.itemId);
+        var row = d.inventory.find(function(r) { return r.item.id === id; });
+        if (row) openItemActionsDialog(row);
+        return;
+      }
+      var taskRow = e.target.closest("[data-user-task-id]");
+      if (taskRow) {
+        var id = Number(taskRow.dataset.userTaskId);
+        var ut = d.user_tasks.find(function(u) { return u.id === id; });
+        if (ut) openUserTaskDialog(ut, root);
+      }
+    });
+  }
   bindChatInput(root);
   // Приглашения и сетевые игры обрабатываются глобально (static/pages/multiplayer.js),
   // поэтому здесь поллинг приглашений больше не нужен.
@@ -405,7 +418,7 @@ async function _updateSections(sectionNames) {
       var el = root.querySelector('[data-section="balance"] .wallet-balance-value');
       if (el) el.innerHTML = "<strong>" + user.balance + "</strong>";
       var xpEl = root.querySelector('[data-section="balance"] .wallet-xp-text');
-      if (xpEl) xpEl.textContent = "Уровень " + Math.floor(user.xp / 100) + " · " + (user.xp % 100) + " / 100 XP";
+      if (xpEl) xpEl.textContent = "Пропуск: ур. " + (data.bp_level ?? 0) + " · " + user.xp + " XP";
     }
 
     if (sectionNames.indexOf("inventory") !== -1) {
@@ -429,7 +442,11 @@ async function _updateSections(sectionNames) {
         section.innerHTML = '<h2 class="section-title">Задания ' + titleBtn + "</h2>" + body;
       }
     }
-  } catch (err) {}
+  } catch (err) {
+    // Keep the last confirmed UI instead of replacing it with an error/skeleton.
+    console.warn("Не удалось обновить разделы профиля", err);
+    window.kov.toast("Не удалось обновить данные. Показано последнее сохранённое состояние.");
+  }
 }
 
 function bindCellActions(scope, inventory) {
@@ -445,6 +462,8 @@ function bindCellActions(scope, inventory) {
 function openItemActionsDialog(row) {
   const item = row.item;
   const canGift = item.can_gift;
+  const assemblyCost = _profileData?.fragment_assembly_cost || 10;
+  const openRequestId = makeLootboxRequestId();
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <div class="item-actions-head">
@@ -458,14 +477,14 @@ function openItemActionsDialog(row) {
         <img src="/static/img/ui/gift.svg" alt="" class="icon icon-md"/>
         <span>Подарить</span>
       </button>
-      <button class="btn btn-outline" id="ia-sell">
+      <button class="btn btn-outline" id="ia-sell" ${canGift ? "" : "disabled"}>
         <img src="/static/img/ui/coin.svg" alt="" class="icon icon-md"/>
         <span>Продать</span>
       </button>
-      ${item.code === "box_fragment" && row.quantity >= 3 ? `
+      ${item.code === "box_fragment" && row.quantity >= assemblyCost ? `
       <button class="btn" id="ia-assemble">
         <img src="/static/img/ui/box.svg" alt="" class="icon icon-md"/>
-        <span>Собрать ковбокс (×3)</span>
+        <span>Собрать ковбокс (×${assemblyCost})</span>
       </button>` : item.lootbox_pool_code ? `
       <button class="btn" id="ia-open-lootbox">
         <img src="/static/img/ui/box.svg" alt="" class="icon icon-md"/>
@@ -484,43 +503,59 @@ function openItemActionsDialog(row) {
     setTimeout(() => openGiftDialog(item, row.quantity), 80);
   });
   modal.querySelector("#ia-sell").addEventListener("click", () => {
+    if (!canGift) return;
     window.closeModal();
     setTimeout(() => openSellDialog(item, row.quantity), 80);
   });
   modal.querySelector("#ia-activate")?.addEventListener("click", async () => {
+    const button = modal.querySelector("#ia-activate");
+    if (button.disabled) return;
+    button.disabled = true;
     try {
       await post("/api/profile/inventory/activate", { item_id: item.id, recipient: "", quantity: 1 });
       window.closeModal();
       _updateSections(["inventory", "balance"]);
       window.kov.toast(`✨ «${item.name}» активирован`);
     } catch (err) {
+      button.disabled = false;
       window.kov.toast(err.message);
     }
   });
   modal.querySelector("#ia-assemble")?.addEventListener("click", async () => {
+    const button = modal.querySelector("#ia-assemble");
+    if (button.disabled) return;
+    button.disabled = true;
     try {
       var res = await post("/api/profile/inventory/assemble-fragments");
       window.closeModal();
       _updateSections(["inventory", "balance"]);
       window.kov.toast("🎁 Вы получили: " + res.item_name);
     } catch (err) {
+      button.disabled = false;
       window.kov.toast(err.message);
     }
   });
   modal.querySelector("#ia-open-lootbox")?.addEventListener("click", async () => {
-    window.closeModal();
+    const button = modal.querySelector("#ia-open-lootbox");
+    if (button.disabled) return;
+    button.disabled = true;
     try {
       var pools = await get("/api/battlepass/lootbox-pools");
       var pool = pools.find(function(p) { return p.code === item.lootbox_pool_code; });
       var poolItems = pool ? pool.entries : [];
-      var result = await post("/api/battlepass/open-lootbox", { item_id: item.id });
+      var result = await post("/api/profile/inventory/open-lootbox", {
+        item_id: item.id,
+        request_id: openRequestId,
+      });
+      window.closeModal();
       _updateSections(["inventory", "balance"]);
-      if (poolItems.length > 1) {
+      if (result.rewards.length === 1 && result.item && poolItems.length > 1) {
         await showLootboxRoulette(poolItems, result.item);
       } else {
-        window.kov.toast("🎁 " + result.item.name);
+        window.kov.toast("🎁 " + result.rewards.map(function(reward) { return reward.label; }).join(", "));
       }
     } catch (err) {
+      button.disabled = false;
       window.kov.toast(err.message);
     }
   });
@@ -588,16 +623,22 @@ async function openTransferDialog(user) {
     .map((p) => `<option value="uid:${p.id}">${escapeHtml(p.first_name)}</option>`)
     .join("");
 
-  modal.querySelector("#send-btn").addEventListener("click", async () => {
+  modal.querySelector("#send-btn").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
     const recipient = select.value;
     const amount = Number(modal.querySelector("#amount").value);
     if (!recipient || !amount) return window.kov.toast("Заполни поля");
+    button.disabled = true;
+    button.textContent = "Отправляем…";
     try {
       await post("/api/profile/transfer", { recipient, amount });
       window.closeModal();
       _updateSections(["balance"]);
       window.kov.toast("Отправлено");
     } catch (err) {
+      button.disabled = false;
+      button.textContent = "Отправить";
       window.kov.toast(err.message);
     }
   });
@@ -667,16 +708,22 @@ async function openGiftDialog(item, maxQty) {
     .map((p) => `<option value="uid:${p.id}">${escapeHtml(p.first_name)}</option>`)
     .join("");
 
-  modal.querySelector("#ok").addEventListener("click", async () => {
+  modal.querySelector("#ok").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
     const recipient = select.value;
     const quantity = Number(modal.querySelector("#q").value);
     if (!recipient || !quantity) return window.kov.toast("Заполни поля");
+    button.disabled = true;
+    button.textContent = "Отправляем…";
     try {
       await post("/api/profile/inventory/gift", { recipient, item_id: item.id, quantity });
       window.closeModal();
       _updateSections(["inventory", "balance"]);
       window.kov.toast(`🎁 Подарено: «${item.name}» ×${quantity}`);
     } catch (err) {
+      button.disabled = false;
+      button.textContent = "Подарить";
       window.kov.toast(err.message);
     }
   });
@@ -688,22 +735,28 @@ async function openSellDialog(item, maxQty) {
     <h2>Продать «${escapeHtml(item.name)}»</h2>
     <label class="field-label">Количество (макс. ${maxQty})</label>
     <input class="input" id="q" type="number" min="1" max="${maxQty}" value="1" />
-    <label class="field-label">Цена за 1 шт (K)</label>
+    <label class="field-label">Цена за весь лот (K)</label>
     <input class="input" id="p" type="number" min="1" value="10" />
     <p class="card-sub" style="font-size:12px; margin:8px 0 0">Предмет появится на рынке. Любой игрок сможет купить.</p>
     <button class="btn" id="ok" style="margin-top:14px">Выставить на рынок</button>
   `);
 
-  modal.querySelector("#ok").addEventListener("click", async () => {
+  modal.querySelector("#ok").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
     const quantity = Number(modal.querySelector("#q").value);
     const price = Number(modal.querySelector("#p").value);
     if (!quantity || !price) return window.kov.toast("Заполни поля");
+    button.disabled = true;
+    button.textContent = "Выставляем…";
     try {
       await post("/api/market/list", { item_id: item.id, quantity, price });
       window.closeModal();
       _updateSections(["inventory", "balance"]);
-      window.kov.toast(`🏷️ Выставлено: «${item.name}» ×${quantity} за ${price} K/шт`);
+      window.kov.toast(`🏷️ Выставлено: «${item.name}» ×${quantity} за ${price} K`);
     } catch (err) {
+      button.disabled = false;
+      button.textContent = "Выставить на рынок";
       window.kov.toast(err.message);
     }
   });
@@ -720,13 +773,19 @@ function openUserTaskDialog(ut, root) {
     <button class="btn btn-danger" id="cancel-ut" style="margin-top:8px">Прервать задание</button>
   `);
 
-  modal.querySelector("#cancel-ut").addEventListener("click", async () => {
+  modal.querySelector("#cancel-ut").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
+    button.disabled = true;
+    button.textContent = "Прерываем…";
     try {
       await post(`/api/tasks/${ut.id}/cancel`);
       window.closeModal();
       _updateSections(["tasks"]);
       window.kov.toast("Задание прервано");
     } catch (e) {
+      button.disabled = false;
+      button.textContent = "Прервать задание";
       window.kov.toast(e.message);
     }
   });

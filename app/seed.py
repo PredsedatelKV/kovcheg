@@ -4,6 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import models
+from app.api._helpers import sync_lootbox_shop_product
 from app.players import PLAYER_BINDINGS
 
 
@@ -76,11 +77,40 @@ def migrate_icons(db: Session) -> None:
         task = db.query(models.Task).filter(models.Task.name == name).one_or_none()
         if task is not None and task.icon != path:
             task.icon = path
+    # This legacy booster never received a server-side effect.  Keeping it
+    # activatable exposes a button which always fails, so existing rows are
+    # normalised to an ordinary collectible until a real mechanic is designed.
+    booster = db.query(models.Item).filter(models.Item.code == "booster_1h").one_or_none()
+    if booster is not None:
+        booster.can_activate = False
+        booster.description = "Коллекционный ускоритель Федерации Ковчега."
+    for pool in db.query(models.LootboxPool).all():
+        sync_lootbox_shop_product(db, pool)
 
 
 def migrate_schema(db: Session) -> None:
     """Lightweight in-place migrations for SQLite (add columns to existing tables)."""
     from sqlalchemy import text  # local import to keep startup cheap
+
+    # Successful critical mutations persist their small HTTP response so a
+    # client that lost the first response can safely retry without executing
+    # the value-moving endpoint again.
+    idempotency_cols = {
+        row[1] for row in db.execute(text("PRAGMA table_info(idempotency_receipts)")).fetchall()
+    }
+    if idempotency_cols:
+        idempotency_response_columns = [
+            ("response_status", "INTEGER"),
+            ("response_body", "BLOB"),
+            ("response_content_type", "VARCHAR(256)"),
+        ]
+        added = False
+        for column, ddl in idempotency_response_columns:
+            if column not in idempotency_cols:
+                db.execute(text(f"ALTER TABLE idempotency_receipts ADD COLUMN {column} {ddl}"))
+                added = True
+        if added:
+            db.commit()
 
     # items.image_url — добавлено в PR #5 (фото товаров в админке)
     cols = {row[1] for row in db.execute(text("PRAGMA table_info(items)")).fetchall()}
@@ -122,6 +152,81 @@ def migrate_schema(db: Session) -> None:
     icols = {row[1] for row in db.execute(text("PRAGMA table_info(items)")).fetchall()}
     if "lootbox_pool_code" not in icols:
         db.execute(text("ALTER TABLE items ADD COLUMN lootbox_pool_code VARCHAR(64)"))
+        db.commit()
+
+    # Expand legacy prize-only pools into complete, server-owned Kovbox
+    # configurations.  SQLite does not alter existing tables during
+    # ``create_all``, so columns are added explicitly and old item entries are
+    # rebuilt once to allow currency/XP rewards where item_id is nullable.
+    lpcols = {row[1] for row in db.execute(text("PRAGMA table_info(lootbox_pools)")).fetchall()}
+    if lpcols:
+        lootbox_pool_columns = [
+            ("description", "TEXT NOT NULL DEFAULT ''"),
+            ("rarity", "VARCHAR(32) NOT NULL DEFAULT 'Обычный'"),
+            ("image_url", "VARCHAR(512) NOT NULL DEFAULT '/static/img/items/lootbox_common.svg'"),
+            ("item_id", "INTEGER REFERENCES items(id)"),
+            ("is_active", "BOOLEAN NOT NULL DEFAULT 1"),
+            ("is_droppable", "BOOLEAN NOT NULL DEFAULT 1"),
+            ("is_archived", "BOOLEAN NOT NULL DEFAULT 0"),
+            ("assembly_weight", "INTEGER NOT NULL DEFAULT 10"),
+            ("sale_price", "INTEGER"),
+            ("sale_currency", "VARCHAR(16) NOT NULL DEFAULT 'kovbucks'"),
+            ("min_user_level", "INTEGER"),
+            ("max_user_level", "INTEGER"),
+            ("sort_order", "INTEGER NOT NULL DEFAULT 0"),
+            ("starts_at", "DATETIME"),
+            ("ends_at", "DATETIME"),
+            ("daily_open_limit", "INTEGER NOT NULL DEFAULT 0"),
+            ("guaranteed_slots", "INTEGER NOT NULL DEFAULT 1"),
+            ("allow_duplicates", "BOOLEAN NOT NULL DEFAULT 1"),
+            ("version", "INTEGER NOT NULL DEFAULT 1"),
+            ("updated_at", "DATETIME"),
+        ]
+        added = False
+        for col, ddl in lootbox_pool_columns:
+            if col not in lpcols:
+                db.execute(text(f"ALTER TABLE lootbox_pools ADD COLUMN {col} {ddl}"))
+                added = True
+        if added:
+            db.execute(text("UPDATE lootbox_pools SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
+            db.commit()
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_lootbox_pools_item_id "
+            "ON lootbox_pools(item_id) WHERE item_id IS NOT NULL"
+        ))
+        db.commit()
+
+    lecols = {row[1] for row in db.execute(text("PRAGMA table_info(lootbox_pool_entries)")).fetchall()}
+    if lecols and "reward_kind" not in lecols:
+        db.execute(text("""
+            CREATE TABLE lootbox_pool_entries_new (
+                id INTEGER NOT NULL PRIMARY KEY,
+                pool_id INTEGER NOT NULL REFERENCES lootbox_pools(id),
+                reward_kind VARCHAR(16) NOT NULL DEFAULT 'item',
+                item_id INTEGER REFERENCES items(id),
+                amount_min INTEGER NOT NULL DEFAULT 1 CHECK (amount_min > 0),
+                amount_max INTEGER NOT NULL DEFAULT 1 CHECK (amount_max >= amount_min),
+                weight INTEGER NOT NULL DEFAULT 10 CHECK (weight > 0),
+                is_guaranteed BOOLEAN NOT NULL DEFAULT 0,
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            )
+        """))
+        db.execute(text("""
+            INSERT INTO lootbox_pool_entries_new
+                (id, pool_id, reward_kind, item_id, amount_min, amount_max, weight,
+                 is_guaranteed, is_active, sort_order)
+            SELECT id, pool_id, 'item', item_id, 1, 1,
+                   CASE WHEN weight > 0 THEN weight ELSE 1 END, 0, 1, id
+            FROM lootbox_pool_entries
+        """))
+        db.execute(text("DROP TABLE lootbox_pool_entries"))
+        db.execute(text("ALTER TABLE lootbox_pool_entries_new RENAME TO lootbox_pool_entries"))
+        db.commit()
+    if lecols:
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_lootbox_pool_entries_pool_id ON lootbox_pool_entries(pool_id)"
+        ))
         db.commit()
 
     # game_sessions.state — JSON-состояние для шашек/пинг-понга
@@ -175,6 +280,17 @@ def migrate_schema(db: Session) -> None:
     # old admin tooling still reads it.
     if db.get_bind().dialect.name == "sqlite":
         import json
+        duplicate_quiz_attempts = db.execute(text(
+            "SELECT COUNT(*) FROM ("
+            "SELECT quiz_id, user_id FROM quiz_attempts "
+            "GROUP BY quiz_id, user_id HAVING COUNT(*) > 1)"
+        )).scalar_one()
+        if duplicate_quiz_attempts:
+            raise RuntimeError("Нарушена целостность тестов: найдены повторные попытки")
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_quiz_attempt_user "
+            "ON quiz_attempts(quiz_id, user_id)"
+        ))
         for ubp in db.query(models.UserBattlePass).all():
             try:
                 raw = json.loads(ubp.claimed_rewards or "[]")
@@ -199,6 +315,39 @@ def migrate_schema(db: Session) -> None:
                 ).first()
                 if not exists:
                     db.add(models.BattlePassClaim(user_id=ubp.user_id, reward_id=reward.id))
+        db.commit()
+
+        # ``create_all`` cannot retrofit CHECK constraints into an existing
+        # SQLite table.  Production started before these model constraints were
+        # introduced, so durable triggers provide the same last-line defence
+        # for legacy databases and direct writes.
+        integrity_checks = {
+            "wallets": "SELECT COUNT(*) FROM wallets WHERE balance < 0 OR balance > 2000000000",
+            "inventory": "SELECT COUNT(*) FROM inventory WHERE quantity < 0 OR quantity > 2000000000",
+            "users.xp": "SELECT COUNT(*) FROM users WHERE xp < 0 OR xp > 3000",
+            "shop_products": "SELECT COUNT(*) FROM shop_products WHERE price <= 0 OR stock < -1",
+            "market_listings": "SELECT COUNT(*) FROM market_listings WHERE quantity <= 0 OR price <= 0",
+        }
+        for label, sql in integrity_checks.items():
+            if db.execute(text(sql)).scalar_one() != 0:
+                raise RuntimeError(f"Нарушена целостность игровой экономики: {label}")
+
+        guarded_tables = {
+            "wallets": "NEW.balance < 0 OR NEW.balance > 2000000000",
+            "inventory": "NEW.quantity < 0 OR NEW.quantity > 2000000000",
+            "users": "NEW.xp < 0 OR NEW.xp > 3000",
+            "shop_products": "NEW.price <= 0 OR NEW.stock < -1",
+            "market_listings": "NEW.quantity <= 0 OR NEW.price <= 0",
+        }
+        for table_name, condition in guarded_tables.items():
+            for operation in ("INSERT", "UPDATE"):
+                trigger_name = f"guard_{table_name}_{operation.lower()}"
+                db.execute(text(
+                    f"CREATE TRIGGER IF NOT EXISTS {trigger_name} "
+                    f"BEFORE {operation} ON {table_name} "
+                    f"WHEN {condition} BEGIN "
+                    "SELECT RAISE(ABORT, 'game economy integrity violation'); END"
+                ))
         db.commit()
 
 
@@ -357,9 +506,9 @@ def seed(db: Session) -> None:
         "booster_1h",
         name="Ускорение 1ч",
         icon="/static/img/items/booster_1h.svg",
-        description="Ускоряет выполнение задания на 1 час.",
+        description="Коллекционный ускоритель Федерации Ковчега.",
         category="Ускорители",
-        can_activate=True,
+        can_activate=False,
     )
     scroll = _get_or_create_item(
         db,
@@ -555,7 +704,7 @@ def seed(db: Session) -> None:
             t.xp_reward = 10
 
     # Seed lootbox items
-    _get_or_create_item(
+    lootbox_common = _get_or_create_item(
         db, "lootbox_common",
         name="Обычный ковбокс",
         icon="/static/img/items/lootbox_common.svg",
@@ -564,7 +713,7 @@ def seed(db: Session) -> None:
         rarity="Обычный",
         lootbox_pool_code="common",
     )
-    _get_or_create_item(
+    lootbox_rare = _get_or_create_item(
         db, "lootbox_rare",
         name="Редкий ковбокс",
         icon="/static/img/items/lootbox_rare.svg",
@@ -573,7 +722,7 @@ def seed(db: Session) -> None:
         rarity="Редкий",
         lootbox_pool_code="rare",
     )
-    _get_or_create_item(
+    lootbox_epic = _get_or_create_item(
         db, "lootbox_epic",
         name="Эпический ковбокс",
         icon="/static/img/items/lootbox_epic.svg",
@@ -582,7 +731,7 @@ def seed(db: Session) -> None:
         rarity="Эпический",
         lootbox_pool_code="epic",
     )
-    _get_or_create_item(
+    lootbox_legendary = _get_or_create_item(
         db, "lootbox_legendary",
         name="Легендарный ковбокс",
         icon="/static/img/items/lootbox_legendary.svg",
@@ -591,14 +740,30 @@ def seed(db: Session) -> None:
         rarity="Легендарный",
         lootbox_pool_code="legendary",
     )
-    _get_or_create_item(
+    fragment = _get_or_create_item(
         db, "box_fragment",
         name="Фрагмент ковбокса",
         icon="/static/img/items/box_fragment.svg",
-        description="Осколок ковбокса. Собери 3 фрагмента, чтобы получить случайный ковбокс.",
+        description=(
+            f"Осколок ковбокса. Собери {models.LOOTBOX_FRAGMENT_COST} фрагментов, "
+            "чтобы получить случайный ковбокс."
+        ),
         category="Ресурсы",
         rarity="Обычный",
     )
+    fragment.description = (
+        f"Осколок ковбокса. Собери {models.LOOTBOX_FRAGMENT_COST} фрагментов, "
+        "чтобы получить случайный ковбокс."
+    )
+    seeded_lootbox_items = {
+        "common": lootbox_common,
+        "rare": lootbox_rare,
+        "epic": lootbox_epic,
+        "legendary": lootbox_legendary,
+    }
+    for code, lootbox_item in seeded_lootbox_items.items():
+        lootbox_item.lootbox_pool_code = code
+        lootbox_item.category = "Ковбоксы"
     db.flush()
 
     # Seed lootbox pools
@@ -606,10 +771,10 @@ def seed(db: Session) -> None:
     rarities = ["nutella", "booster_1h", "exp_scroll"]
     legendary = ["scroll_of_wisdom"] if db.query(models.Item).filter(models.Item.code == "scroll_of_wisdom").first() else []
 
-    def _fill_pool(code: str, entries: list[tuple[str, int]]):
+    def _fill_pool(code: str, entries: list[tuple[str, int]]) -> models.LootboxPool:
         pool = db.query(models.LootboxPool).filter(models.LootboxPool.code == code).first()
         if pool:
-            return
+            return pool
         pool = models.LootboxPool(code=code, name=code.capitalize())
         db.add(pool)
         db.flush()
@@ -617,11 +782,34 @@ def seed(db: Session) -> None:
             item = db.query(models.Item).filter(models.Item.code == item_code).first()
             if item:
                 db.add(models.LootboxPoolEntry(pool_id=pool.id, item_id=item.id, weight=weight))
+        return pool
 
-    _fill_pool("common", [(c, 20) for c in props] + [(c, 1) for c in rarities])
-    _fill_pool("rare", [(c, 15) for c in props] + [(c, 8) for c in rarities])
-    _fill_pool("epic", [(c, 5) for c in props] + [(c, 15) for c in rarities] + [(c, 2) for c in legendary])
-    _fill_pool("legendary", [(c, 1) for c in props] + [(c, 20) for c in rarities] + [(c, 15) for c in legendary])
+    pools = {
+        "common": _fill_pool("common", [(c, 20) for c in props] + [(c, 1) for c in rarities]),
+        "rare": _fill_pool("rare", [(c, 15) for c in props] + [(c, 8) for c in rarities]),
+        "epic": _fill_pool("epic", [(c, 5) for c in props] + [(c, 15) for c in rarities] + [(c, 2) for c in legendary]),
+        "legendary": _fill_pool(
+            "legendary", [(c, 1) for c in props] + [(c, 20) for c in rarities] + [(c, 15) for c in legendary]
+        ),
+    }
+    pool_defaults = {
+        "common": ("Обычный", "/static/img/items/lootbox_common.svg"),
+        "rare": ("Редкий", "/static/img/items/lootbox_rare.svg"),
+        "epic": ("Эпический", "/static/img/items/lootbox_epic.svg"),
+        "legendary": ("Легендарный", "/static/img/items/lootbox_legendary.svg"),
+    }
+    for code, pool in pools.items():
+        item = seeded_lootbox_items.get(code)
+        if item:
+            needs_backfill = pool.item_id is None
+            pool.item_id = item.id
+            # Populate newly migrated fields without replacing later admin edits.
+            if needs_backfill and not pool.description:
+                pool.description = item.description
+            if needs_backfill and (not pool.image_url or pool.image_url == "/static/img/items/lootbox_common.svg"):
+                pool.image_url = item.icon
+            if needs_backfill and (not pool.rarity or pool.rarity == "Обычный"):
+                pool.rarity = pool_defaults[code][0]
 
     # Seed Battle Pass season
     if db.query(models.BattlePassSeason).count() == 0:

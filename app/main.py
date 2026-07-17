@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import IntegrityError
 
 from app import models  # noqa: F401  ensure models imported for create_all
 from app.api import admin as admin_api
@@ -27,7 +28,8 @@ from app.assistant.api import router as assistant_api
 from app import web_auth
 from app.bot import configure_webhook, feed_update, set_menu_button
 from app.config import get_settings
-from app.db import Base, engine, session_scope
+from app.db import Base, SessionLocal, engine, session_scope
+from app.idempotency import protect_game_mutation
 from app.seed import migrate_icons, migrate_schema, seed
 
 log = logging.getLogger(__name__)
@@ -77,6 +79,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.middleware("http")(protect_game_mutation)
 
 app.include_router(home_api.router)
 app.include_router(profile_api.router)
@@ -106,7 +109,40 @@ async def telegram_webhook(secret: str, request: Request) -> JSONResponse:
     if secret != settings.telegram_webhook_secret:
         raise HTTPException(status_code=403, detail="bad secret")
     payload = await request.json()
-    await feed_update(payload)
+    update_id = payload.get("update_id") if isinstance(payload, dict) else None
+    if isinstance(update_id, bool) or not isinstance(update_id, int) or update_id < 0:
+        raise HTTPException(status_code=400, detail="bad update_id")
+
+    with SessionLocal() as db:
+        try:
+            db.add(models.TelegramUpdateReceipt(update_id=update_id, status="processing"))
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            # Telegram expects a 2xx for an already delivered update. Returning
+            # an error here would only create a retry storm and repeat commands.
+            return JSONResponse({"ok": True, "duplicate": True})
+
+    try:
+        await feed_update(payload)
+    except Exception:
+        # A handler may commit its game write and only then fail while sending
+        # the confirmation message. Preserve the receipt so Telegram cannot
+        # replay an update whose mutation outcome is uncertain.
+        with SessionLocal() as db:
+            receipt = db.get(models.TelegramUpdateReceipt, update_id)
+            if receipt is not None:
+                receipt.status = "failed"
+                receipt.completed_at = models.now_utc()
+                db.commit()
+        raise
+
+    with SessionLocal() as db:
+        receipt = db.get(models.TelegramUpdateReceipt, update_id)
+        if receipt is not None:
+            receipt.status = "completed"
+            receipt.completed_at = models.now_utc()
+            db.commit()
     return JSONResponse({"ok": True})
 
 

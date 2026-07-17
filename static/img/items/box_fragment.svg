@@ -1,29 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" fill="none" aria-hidden="true">
   <defs>
-    <linearGradient id="bfFace" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#3a3a42"/>
-      <stop offset="100%" stop-color="#15151a"/>
+    <linearGradient id="f-top" x1="16" y1="18" x2="60" y2="44" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#66717C"/><stop offset=".45" stop-color="#303640"/><stop offset="1" stop-color="#11151B"/>
     </linearGradient>
-    <linearGradient id="bfLid" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#4a4a54"/>
-      <stop offset="100%" stop-color="#242430"/>
+    <linearGradient id="f-edge" x1="24" y1="31" x2="56" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E5F0FA"/><stop offset="1" stop-color="#6F8498"/>
     </linearGradient>
-    <filter id="bfShadow" x="-15%" y="-15%" width="130%" height="130%">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.4"/>
+    <filter id="f-shadow" x="6" y="8" width="68" height="66" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="3" flood-color="#000" flood-opacity=".6"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="1.5" flood-color="#A9C2D8" flood-opacity=".35"/>
     </filter>
   </defs>
-  <!-- Осколок ковбокса: рваный край справа/снизу, чёрный корпус -->
-  <g filter="url(#bfShadow)">
-    <path d="M14 30 L40 16 L58 26 L46 33 L52 44 L40 40 L30 52 L26 40 L14 44 Z"
-          fill="url(#bfLid)" stroke="#0c0c10" stroke-width="2" stroke-linejoin="round"/>
-    <path d="M14 44 L26 40 L30 52 L40 40 L36 60 L20 66 L14 60 Z"
-          fill="url(#bfFace)" stroke="#0c0c10" stroke-width="2" stroke-linejoin="round"/>
+  <g filter="url(#f-shadow)" stroke-linejoin="round">
+    <path d="m13 31 15-14 28 5 11 13-13 5 6 11-13-1-5 16-9-12-15 9 2-16-7-6Z" fill="url(#f-top)" stroke="#090C10" stroke-width="2"/>
+    <path d="m13 31 15-14 7 20-15 10-7-6V31ZM35 37l21-15 11 13-13 5 6 11-13-1-5 16-7-29Z" fill="#202630" opacity=".7"/>
+    <path d="m28 17 7 20-15 10M35 37l21-15M35 37l7 29" stroke="url(#f-edge)" stroke-width="2"/>
+    <path d="M27 33h14v16H27z" fill="#0B0F14" stroke="#7C8D9E" stroke-width="1.5"/>
+    <path d="M31 39a3 3 0 0 1 6 0v4h-6v-4Z" fill="#8797A6"/>
+    <path d="m53 41 8 3-5 5" stroke="#C9D9E6" stroke-width="2" stroke-linecap="round"/>
   </g>
-  <!-- Замочек-скоба -->
-  <rect x="30" y="36" width="12" height="10" rx="2" fill="#101014" stroke="#3a3a42" stroke-width="1.5"/>
-  <circle cx="36" cy="41" r="2.4" fill="#5a5a66"/>
-  <!-- Блик, чтобы читался объём -->
-  <path d="M18 30 L38 19" stroke="#6a6a76" stroke-width="2" stroke-linecap="round" opacity="0.55"/>
-  <!-- Скол по краю -->
-  <path d="M52 44 L60 47 L54 52 L48 49 Z" fill="#1a1a20" stroke="#0c0c10" stroke-width="1.5" stroke-linejoin="round"/>
 </svg>

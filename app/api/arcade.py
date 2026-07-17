@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-import random
+import math
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from pydantic import StrictInt
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -14,6 +15,7 @@ from app.auth import current_user
 from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/arcade", tags=["arcade"])
+SYSTEM_RANDOM = secrets.SystemRandom()
 
 MSK = timezone(timedelta(hours=3))
 OMAR_TELEGRAM_ID = 849162365
@@ -28,7 +30,7 @@ def _require_clicker_access(user: models.User) -> None:
 
 @router.post("/win")
 def arcade_win(
-    amount: int = Body(..., embed=True),
+    amount: StrictInt = Body(..., embed=True),
     game: str = Body("unknown", embed=True),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
@@ -42,8 +44,78 @@ FIRST_WIN_REWARD = 3
 FIRST_WIN_GAMES = {"moshonka", "tictactoe", "minesweeper", "harvest", "checkers", "pingpong"}
 FIRST_WIN_MIN_SECONDS = {
     "moshonka": 2.0, "tictactoe": 1.0, "minesweeper": 2.0,
-    "harvest": 8.0, "checkers": 4.0, "pingpong": 4.0,
+    "harvest": 18.0, "checkers": 10.0, "pingpong": 6.0,
 }
+PINGPONG_WIN_SCORE = 5
+PINGPONG_MIN_POINT_MS = 1_400
+PINGPONG_CLOCK_TOLERANCE_MS = 2_000
+
+
+def _validate_pingpong_result(payload: schemas.ArcadeFirstWinClaim, server_elapsed_seconds: float) -> None:
+    """Reject scores that the client could not plausibly have produced.
+
+    The server clock remains authoritative.  Client duration is accepted only
+    as corroborating telemetry: it cannot exceed elapsed server time (apart
+    from a small transport/rendering tolerance), and every scored point must
+    account for at least one physically plausible serve/travel interval.
+    """
+    if payload.player_score is None or payload.opponent_score is None or payload.duration_ms is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Для результата пинг-понга не хватает данных",
+        )
+    if payload.player_score != PINGPONG_WIN_SCORE or not 0 <= payload.opponent_score < PINGPONG_WIN_SCORE:
+        raise HTTPException(status_code=400, detail="Некорректный счёт пинг-понга")
+
+    point_count = payload.player_score + payload.opponent_score
+    minimum_duration_ms = point_count * PINGPONG_MIN_POINT_MS
+    server_elapsed_ms = max(0, int(server_elapsed_seconds * 1000))
+    if payload.duration_ms < minimum_duration_ms:
+        raise HTTPException(
+            status_code=400,
+            detail="Матч завершён за физически невозможное время",
+        )
+    if payload.duration_ms > server_elapsed_ms + PINGPONG_CLOCK_TOLERANCE_MS:
+        raise HTTPException(
+            status_code=400,
+            detail="Длительность матча не совпадает с серверным временем",
+        )
+
+
+def _validate_first_win_result(
+    game: str,
+    payload: schemas.ArcadeFirstWinClaim,
+    server_elapsed_seconds: float,
+) -> None:
+    """Validate the concrete win telemetry for every rewarded mini-game.
+
+    These games still run in the WebView, so telemetry cannot make a modified
+    client trusted. It does, however, reject the previous empty-result exploit,
+    impossible scores and instant/direct claims while keeping the server clock
+    authoritative.
+    """
+    if game == "pingpong":
+        _validate_pingpong_result(payload, server_elapsed_seconds)
+        return
+    if payload.player_score is None or payload.opponent_score is None or payload.duration_ms is None:
+        raise HTTPException(status_code=400, detail="Для подтверждения победы не хватает данных")
+    server_elapsed_ms = max(0, int(server_elapsed_seconds * 1000))
+    if payload.duration_ms < int(FIRST_WIN_MIN_SECONDS[game] * 1000):
+        raise HTTPException(status_code=400, detail="Игра завершена за невозможное время")
+    if payload.duration_ms > server_elapsed_ms + PINGPONG_CLOCK_TOLERANCE_MS:
+        raise HTTPException(status_code=400, detail="Длительность игры не совпадает с серверным временем")
+
+    score = payload.player_score
+    opponent = payload.opponent_score
+    valid = {
+        "moshonka": opponent == 0 and 10 <= score <= 10_000,
+        "tictactoe": score == 1 and opponent == 0,
+        "minesweeper": score == 54 and opponent == 10,
+        "harvest": opponent == 0 and 10 <= score <= 70,
+        "checkers": opponent == 0 and 1 <= score <= 12,
+    }.get(game, False)
+    if not valid:
+        raise HTTPException(status_code=400, detail="Невозможный результат игры")
 
 
 @router.post("/round/start")
@@ -84,11 +156,12 @@ def first_win_status(user: models.User = Depends(current_user), db: Session = De
 
 @router.post("/first-win")
 def claim_first_win(
-    game: str = Body(..., embed=True),
-    round_token: str = Body(..., embed=True),
+    payload: schemas.ArcadeFirstWinClaim,
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    game = payload.game
+    round_token = payload.round_token
     if game not in FIRST_WIN_GAMES:
         raise HTTPException(status_code=400, detail="Неизвестная мини-игра")
     begin_game_write(db)
@@ -100,8 +173,10 @@ def claim_first_win(
     ).first()
     if not game_round or game_round.consumed_at or game_round.expires_at < now:
         raise HTTPException(status_code=409, detail="Игровой раунд недействителен")
-    if (now - game_round.started_at).total_seconds() < FIRST_WIN_MIN_SECONDS[game]:
+    server_elapsed_seconds = (now - game_round.started_at).total_seconds()
+    if server_elapsed_seconds < FIRST_WIN_MIN_SECONDS[game]:
         raise HTTPException(status_code=400, detail="Невозможный результат игры")
+    _validate_first_win_result(game, payload, server_elapsed_seconds)
     game_round.consumed_at = now
     today = datetime.now(MSK).strftime("%Y-%m-%d")
     existing = db.query(models.ArcadeFirstWin).filter(
@@ -115,6 +190,8 @@ def claim_first_win(
 
     db.add(models.ArcadeFirstWin(user_id=user.id, game=game, win_date=today))
     wallet = ensure_wallet(db, user)
+    if wallet.balance < 0 or wallet.balance > 2_000_000_000 - FIRST_WIN_REWARD:
+        raise HTTPException(status_code=409, detail="Достигнут максимальный баланс ковбаксов")
     wallet.balance += FIRST_WIN_REWARD
     db.add(models.Transaction(recipient_id=user.id, amount=FIRST_WIN_REWARD, note=f"first_win:{game}"))
     db.commit()
@@ -124,7 +201,7 @@ def claim_first_win(
 
 @router.post("/bet")
 def arcade_bet(
-    amount: int = Body(..., embed=True),
+    amount: StrictInt = Body(..., embed=True),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> schemas.UserOut:
@@ -133,12 +210,51 @@ def arcade_bet(
 
 CASINO_GAMES = {"roulette", "slots", "dice", "rocket"}
 ROULETTE_MULTS = [(0.05, 16), (0.25, 11), (0.5, 15), (0.75, 15), (1.0, 15), (1.5, 12), (2.0, 8), (2.5, 5), (3.0, 3)]
+ROCKET_GROWTH_PER_SECOND = 0.25
+ROCKET_MAX_MULTIPLIER = 5.0
+
+
+def _rocket_progress(row: models.CasinoRound, now: datetime | None = None) -> dict:
+    """Return server-authoritative progress without revealing a future crash."""
+    try:
+        outcome = json.loads(row.outcome)
+        crash_at = float(outcome["crash_at"])
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=409, detail="Состояние раунда повреждено") from exc
+    if not math.isfinite(crash_at) or not 1.0 < crash_at <= ROCKET_MAX_MULTIPLIER:
+        raise HTTPException(status_code=409, detail="Состояние раунда повреждено")
+
+    current_time = now or models.now_utc()
+    elapsed_seconds = max(0.0, (current_time - row.created_at).total_seconds())
+    current_multiplier = min(
+        ROCKET_MAX_MULTIPLIER,
+        1.0 + elapsed_seconds * ROCKET_GROWTH_PER_SECOND,
+    )
+    crashed = current_multiplier >= crash_at
+    # The game displays two decimal places. Use integer hundredths for both
+    # display and payout so x1.50 can never pay as x1.49 because of rounding or
+    # binary floating-point representation. Flooring also never exposes a
+    # multiplier the server clock has not reached yet.
+    settlement_hundredths = max(
+        100,
+        min(
+            int(ROCKET_MAX_MULTIPLIER * 100),
+            math.floor(min(current_multiplier, crash_at) * 100 + 1e-9),
+        ),
+    )
+    return {
+        "crashed": crashed,
+        "current_multiplier": settlement_hundredths / 100,
+        "_settlement_hundredths": settlement_hundredths,
+        # The crash point becomes public only after the server clock reaches it.
+        "crash_multiplier": crash_at if crashed else None,
+    }
 
 
 @router.post("/casino/start")
 def casino_start(
     game: str = Body(..., embed=True),
-    amount: int = Body(..., embed=True),
+    amount: StrictInt = Body(..., embed=True),
     choice: str | None = Body(None, embed=True),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
@@ -149,22 +265,25 @@ def casino_start(
     wallet = ensure_wallet(db, user)
     if wallet.balance < amount:
         raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
+    max_bet = max(1, wallet.balance // 5)
+    if amount > max_bet:
+        raise HTTPException(status_code=400, detail=f"Максимальная ставка — {max_bet} ковбаксов")
     outcome: dict = {}
     payout = 0
     if game == "roulette":
-        mult = random.choices([m for m, _ in ROULETTE_MULTS], weights=[w for _, w in ROULETTE_MULTS], k=1)[0]
+        mult = SYSTEM_RANDOM.choices([m for m, _ in ROULETTE_MULTS], weights=[w for _, w in ROULETTE_MULTS], k=1)[0]
         outcome = {"multiplier": mult, "index": [m for m, _ in ROULETTE_MULTS].index(mult)}
         payout = int(amount * mult)
     elif game == "slots":
         symbols = ["🍒", "🍋", "🍊", "🍇", "⭐", "💎", "7️⃣"]
-        reels = [random.choice(symbols) for _ in range(3)]
+        reels = [SYSTEM_RANDOM.choice(symbols) for _ in range(3)]
         payout = amount * 29 if len(set(reels)) == 1 else amount if len(set(reels)) == 2 else 0
         outcome = {"reels": reels}
     elif game == "dice":
         allowed = {"odd", "even", "low", "high", "1", "2", "3", "4", "5", "6"}
         if choice not in allowed:
             raise HTTPException(status_code=400, detail="Некорректный выбор")
-        roll = random.randint(1, 6)
+        roll = SYSTEM_RANDOM.randint(1, 6)
         won = ((choice == "odd" and roll % 2 == 1) or (choice == "even" and roll % 2 == 0)
                or (choice == "low" and roll <= 3) or (choice == "high" and roll >= 4) or choice == str(roll))
         payout = (amount * 5 if choice and choice.isdigit() else int(amount * 1.8)) if won else 0
@@ -172,7 +291,7 @@ def casino_start(
     else:
         # Deterministic growth on the client; server-owned crash point prevents
         # a forged multiplier. Cap 5x keeps the game economy bounded.
-        crash_at = round(min(5.0, 1.05 + random.expovariate(1.1)), 2)
+        crash_at = round(min(ROCKET_MAX_MULTIPLIER, 1.05 + SYSTEM_RANDOM.expovariate(1.1)), 2)
         outcome = {"crash_at": crash_at}
 
     token = secrets.token_urlsafe(32)
@@ -181,7 +300,40 @@ def casino_start(
                               outcome=json.dumps(outcome), payout=payout))
     db.add(models.Transaction(sender_id=user.id, amount=amount, note=f"casino:bet:{game}"))
     db.commit()
-    return {"token": token, "outcome": outcome, "balance": wallet.balance}
+    public_outcome = outcome
+    if game == "rocket":
+        # Never disclose the pre-generated crash point while a cashout is still
+        # possible. The client needs only the public growth parameters to draw
+        # the animation; the server clock remains authoritative.
+        public_outcome = {
+            "growth_per_second": ROCKET_GROWTH_PER_SECOND,
+            "max_multiplier": ROCKET_MAX_MULTIPLIER,
+        }
+    return {"token": token, "outcome": public_outcome, "balance": wallet.balance}
+
+
+@router.get("/casino/rocket/status")
+def rocket_status(
+    token: str = Query(..., min_length=8, max_length=128),
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Poll a rocket round without leaking its future crash multiplier."""
+    row = db.query(models.CasinoRound).filter(
+        models.CasinoRound.token == token,
+        models.CasinoRound.user_id == user.id,
+        models.CasinoRound.game == "rocket",
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Раунд не найден")
+    if row.settled:
+        raise HTTPException(status_code=409, detail="Раунд уже завершён")
+    progress = _rocket_progress(row)
+    return {
+        "crashed": progress["crashed"],
+        "current_multiplier": progress["current_multiplier"],
+        "crash_multiplier": progress["crash_multiplier"],
+    }
 
 
 @router.post("/casino/settle")
@@ -198,22 +350,37 @@ def casino_settle(
     if not row or row.settled:
         raise HTTPException(status_code=409, detail="Раунд уже завершён или не найден")
     payout = row.payout
+    rocket_result = None
     if row.game == "rocket":
-        outcome = json.loads(row.outcome)
-        elapsed_mult = 1 + max(0.0, (models.now_utc() - row.created_at).total_seconds()) * 0.25
-        requested = float(multiplier or 0)
-        if requested < 1 or requested > elapsed_mult + 0.08 or requested >= float(outcome["crash_at"]):
+        # Older clients send this field. It is validation-only now and can
+        # never influence the payout; current clients omit it entirely.
+        if multiplier is not None and not math.isfinite(multiplier):
+            raise HTTPException(status_code=400, detail="Некорректный множитель")
+        rocket_result = _rocket_progress(row)
+        if rocket_result["crashed"]:
             payout = 0
         else:
-            payout = min(row.bet * 5, int(row.bet * requested))
+            payout = min(
+                row.bet * int(ROCKET_MAX_MULTIPLIER),
+                row.bet * rocket_result["_settlement_hundredths"] // 100,
+            )
     row.settled = True
     row.payout = payout
     wallet = ensure_wallet(db, user)
     if payout > 0:
+        if wallet.balance < 0 or wallet.balance > 2_000_000_000 - payout:
+            raise HTTPException(status_code=409, detail="Достигнут максимальный баланс ковбаксов")
         wallet.balance += payout
         db.add(models.Transaction(recipient_id=user.id, amount=payout, note=f"casino:win:{row.game}"))
     db.commit()
-    return {"ok": True, "payout": payout, "balance": wallet.balance}
+    response = {"ok": True, "payout": payout, "balance": wallet.balance}
+    if rocket_result is not None:
+        response.update({
+            "crashed": rocket_result["crashed"],
+            "multiplier": rocket_result["current_multiplier"],
+            "crash_multiplier": rocket_result["crash_multiplier"],
+        })
+    return response
 
 # ============ CLICKER ============
 CLICKER_MAX_LEVEL = 20
@@ -517,7 +684,7 @@ def clicker_state(
 
 @router.post("/clicker/tap")
 def clicker_tap(
-    taps: int = Body(..., embed=True),
+    taps: StrictInt = Body(..., embed=True),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -573,7 +740,7 @@ def clicker_tap(
     coins_f = 0.0
     crits = 0
     for _ in range(actual):
-        if random.random() < crit:
+        if SYSTEM_RANDOM.random() < crit:
             coins_f += power * CLICKER_CRIT_MULT * mult
             crits += 1
         else:
@@ -629,7 +796,7 @@ def clicker_boost(
 
 @router.post("/clicker/cashout")
 def clicker_cashout(
-    amount: int = Body(None, embed=True),
+    amount: StrictInt | None = Body(None, embed=True),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -646,7 +813,7 @@ def clicker_cashout(
     if amount is None:
         spend = (kc // CLICKER_CASHOUT_RATE) * CLICKER_CASHOUT_RATE
     else:
-        spend = (min(int(amount), kc) // CLICKER_CASHOUT_RATE) * CLICKER_CASHOUT_RATE
+        spend = (min(amount, kc) // CLICKER_CASHOUT_RATE) * CLICKER_CASHOUT_RATE
 
     if spend < CLICKER_CASHOUT_MIN:
         raise HTTPException(
@@ -655,6 +822,8 @@ def clicker_cashout(
         )
 
     kovbaks = spend // CLICKER_CASHOUT_RATE
+    if wallet.balance < 0 or wallet.balance > 2_000_000_000 - kovbaks:
+        raise HTTPException(status_code=409, detail="Достигнут максимальный баланс ковбаксов")
     state.kovcoins = kc - spend
     wallet.balance += kovbaks
     db.add(
