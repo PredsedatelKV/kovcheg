@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=229";
+import { get, post, iconHtml } from "/static/api.js?v=230";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=229";
+import { openAssistantChat } from "/static/pages/assistant.js?v=230";
 
-import { playUISound } from "/static/pages/settings.js?v=229";
+import { playUISound } from "/static/pages/settings.js?v=230";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -480,7 +480,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=229").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=230").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {
