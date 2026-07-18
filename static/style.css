@@ -383,6 +383,60 @@ body {
   font-weight: 300;
 }
 
+/* Temporarily unavailable home features. Keep the cards visible, but make the
+   disabled state unmistakable and non-interactive in both themes. */
+.home-feature-locked {
+  cursor: not-allowed !important;
+  filter: saturate(0.35);
+  opacity: 0.72;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.assistant-card-wide.home-feature-locked {
+  background: linear-gradient(135deg, #edf0f3, #f8f9fa);
+  border-color: var(--border);
+}
+.feature-lock {
+  position: relative;
+  display: inline-block;
+  width: 22px;
+  height: 18px;
+  margin-left: auto;
+  flex: 0 0 auto;
+  border-radius: 5px;
+  background: var(--text-muted);
+}
+.feature-lock::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: -9px;
+  width: 12px;
+  height: 12px;
+  border: 3px solid var(--text-muted);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  box-sizing: border-box;
+}
+.feature-lock::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 6px;
+  width: 3px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--surface);
+}
+.big-chip.home-feature-locked:disabled {
+  color: var(--text-muted);
+  background: var(--surface-soft);
+  border-color: var(--border);
+}
+html.dark .assistant-card-wide.home-feature-locked {
+  background: linear-gradient(135deg, #20262d, #171b20);
+}
+
 /* Square row — wheel + news BIG */
 .square-row {
   display: grid;

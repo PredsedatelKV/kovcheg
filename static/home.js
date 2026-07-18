@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=233";
+import { get, post, iconHtml } from "/static/api.js?v=234";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=233";
+import { openAssistantChat } from "/static/pages/assistant.js?v=234";
 
-import { playUISound } from "/static/pages/settings.js?v=233";
+import { playUISound } from "/static/pages/settings.js?v=234";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -34,7 +34,7 @@ function bannerCarousel(banners) {
 
 function assistantCard() {
   return `
-    <div class="card assistant-card-wide" id="assistant-card">
+    <div class="card assistant-card-wide home-feature-locked" id="assistant-card" data-locked="1" aria-disabled="true" title="Скоро">
       <div class="assistant-bust">
         <div class="assistant-bust-bg"></div>
         <div class="assistant-bust-img"></div>
@@ -42,9 +42,9 @@ function assistantCard() {
       <div class="assistant-text">
         <div class="assistant-label">ИИ-ассистент</div>
         <h3 class="assistant-name">Мошонка</h3>
-        <p class="assistant-sub">Верный спутник граждан Ковчега</p>
+        <p class="assistant-sub">Скоро</p>
       </div>
-      <span class="assistant-arrow">›</span>
+      <span class="feature-lock" aria-hidden="true"></span>
     </div>`;
 }
 
@@ -152,11 +152,11 @@ export async function renderHome(root) {
     </div>
 
     <div class="chip-row">
-      <button class="chip big-chip" data-action="legal" data-slug="constitution">
-        ${iconHtml("/static/img/ui/constitution.svg", "md", "")}<span>Конституция</span>
+      <button class="chip big-chip home-feature-locked" type="button" disabled aria-disabled="true" title="Скоро">
+        ${iconHtml("/static/img/ui/constitution.svg", "md", "")}<span>Конституция</span><span class="feature-lock" aria-hidden="true"></span>
       </button>
-      <button class="chip big-chip" data-action="legal" data-slug="laws">
-        ${iconHtml("/static/img/ui/scales.svg", "md", "")}<span>Законодательство</span>
+      <button class="chip big-chip home-feature-locked" type="button" disabled aria-disabled="true" title="Скоро">
+        ${iconHtml("/static/img/ui/scales.svg", "md", "")}<span>Законодательство</span><span class="feature-lock" aria-hidden="true"></span>
       </button>
       <button class="chip big-chip" data-action="channel">
         ${iconHtml("/static/img/ui/telegram.svg", "md", "")}<span>Телеграм канал</span>
@@ -252,7 +252,7 @@ export async function renderHome(root) {
   }
 
   const ac = root.querySelector("#assistant-card");
-  if (ac) ac.addEventListener("click", () => { playUISound("click"); openAssistantChat(); });
+  if (ac && ac.dataset.locked !== "1") ac.addEventListener("click", () => { playUISound("click"); openAssistantChat(); });
   root.querySelector("#wheel-card").addEventListener("click", () => { playUISound("click"); openWheel(); });
   const newsCard = root.querySelector("#news-card");
   if (newsCard) newsCard.addEventListener("click", () => { playUISound("click"); openAllNews(); });
@@ -293,7 +293,7 @@ export async function renderHome(root) {
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=233").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=234").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {
