@@ -74,6 +74,11 @@ def migrate_icons(db: Session) -> None:
         item.description = ""
     for pool in db.query(models.LootboxPool).all():
         sync_lootbox_shop_product(db, pool)
+    for reward in db.query(models.BattlePassReward).all():
+        if reward.kind == "xp":
+            reward.icon = "/static/img/ui/xp.png"
+        elif reward.kind == "kovbucks" or reward.kind.startswith("coins"):
+            reward.icon = "/static/img/ui/kovbaks.png"
 
 
 def migrate_schema(db: Session) -> None:
@@ -633,24 +638,24 @@ def seed(db: Session) -> None:
 
         # Free rewards — coins/xp/item/lootbox every few levels
         rewards: dict[int, tuple[str, int, str, str]] = {
-            1: ("coins", 50, "50 монет", "/static/img/ui/coin.svg"),
-            2: ("xp", 25, "25 опыта", "/static/img/ui/spark.svg"),
+            1: ("coins", 50, "50 монет", "/static/img/ui/kovbaks.png"),
+            2: ("xp", 25, "25 опыта", "/static/img/ui/xp.png"),
             3: ("lootbox", 1, "Обычный ковбокс", "/static/img/items/lootbox_common.svg"),
-            4: ("coins", 75, "75 монет", "/static/img/ui/coin.svg"),
-            5: ("xp", 50, "50 опыта", "/static/img/ui/spark.svg"),
-            6: ("coins", 100, "100 монет", "/static/img/ui/coin.svg"),
+            4: ("coins", 75, "75 монет", "/static/img/ui/kovbaks.png"),
+            5: ("xp", 50, "50 опыта", "/static/img/ui/xp.png"),
+            6: ("coins", 100, "100 монет", "/static/img/ui/kovbaks.png"),
             7: ("lootbox", 1, "Обычный ковбокс", "/static/img/items/lootbox_common.svg"),
-            8: ("xp", 75, "75 опыта", "/static/img/ui/spark.svg"),
-            9: ("coins", 150, "150 монет", "/static/img/ui/coin.svg"),
+            8: ("xp", 75, "75 опыта", "/static/img/ui/xp.png"),
+            9: ("coins", 150, "150 монет", "/static/img/ui/kovbaks.png"),
             10: ("lootbox", 1, "Редкий ковбокс", "/static/img/items/lootbox_rare.svg"),
-            12: ("coins", 200, "200 монет", "/static/img/ui/coin.svg"),
-            14: ("xp", 100, "100 опыта", "/static/img/ui/spark.svg"),
+            12: ("coins", 200, "200 монет", "/static/img/ui/kovbaks.png"),
+            14: ("xp", 100, "100 опыта", "/static/img/ui/xp.png"),
             15: ("lootbox", 1, "Редкий ковбокс", "/static/img/items/lootbox_rare.svg"),
-            18: ("coins", 300, "300 монет", "/static/img/ui/coin.svg"),
+            18: ("coins", 300, "300 монет", "/static/img/ui/kovbaks.png"),
             20: ("lootbox", 1, "Эпический ковбокс", "/static/img/items/lootbox_epic.svg"),
-            22: ("xp", 150, "150 опыта", "/static/img/ui/spark.svg"),
+            22: ("xp", 150, "150 опыта", "/static/img/ui/xp.png"),
             25: ("lootbox", 1, "Эпический ковбокс", "/static/img/items/lootbox_epic.svg"),
-            28: ("coins", 500, "500 монет", "/static/img/ui/coin.svg"),
+            28: ("coins", 500, "500 монет", "/static/img/ui/kovbaks.png"),
             30: ("lootbox", 1, "Легендарный ковбокс", "/static/img/items/lootbox_legendary.svg"),
         }
 

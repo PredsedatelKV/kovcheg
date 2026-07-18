@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=237";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=238";
 
-import { playUISound } from "/static/pages/settings.js?v=237";
+import { playUISound } from "/static/pages/settings.js?v=238";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -9,6 +9,34 @@ let state = {
 };
 const shopLoadVersions = new WeakMap();
 const marketLoadVersions = new WeakMap();
+const KOVBOX_SHOWCASE = [
+  { code: "lootbox_common", name: "Обычный ковбокс", icon: "/static/img/items/lootbox_common.svg" },
+  { code: "lootbox_rare", name: "Редкий ковбокс", icon: "/static/img/items/lootbox_rare.svg" },
+  { code: "lootbox_epic", name: "Эпический ковбокс", icon: "/static/img/items/lootbox_epic.svg" },
+  { code: "lootbox_legendary", name: "Легендарный ковбокс", icon: "/static/img/items/lootbox_legendary.svg" },
+];
+
+function renderKovboxShowcase(products = []) {
+  const productByCode = new Map(products.map((product) => [product.item.code, product]));
+  return `
+    <section class="kovbox-shop-card" aria-labelledby="kovbox-shop-title">
+      <h2 id="kovbox-shop-title">Ковбоксы</h2>
+      <div class="kovbox-shop-grid">
+        ${KOVBOX_SHOWCASE.map((box) => {
+          const product = productByCode.get(box.code);
+          return `
+            <div class="kovbox-shop-item${product?.stock === 0 ? " product-out" : ""}">
+              <img src="${box.icon}" alt="${box.name}" draggable="false" decoding="async">
+              <div class="kovbox-shop-name">${box.name}</div>
+              ${product ? `
+                <div class="kovbox-shop-price">${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${product.price}${product.stock === -1 ? "" : ` · ${product.stock} шт.`}</div>
+                <button class="btn btn-sm" data-buy="${product.id}" ${product.stock === 0 ? "disabled" : ""}>${product.stock === 0 ? "Нет" : "Купить"}</button>
+              ` : ""}
+            </div>`;
+        }).join("")}
+      </div>
+    </section>`;
+}
 
 export async function renderKoverna(root) {
   root.innerHTML = `
@@ -58,29 +86,31 @@ async function renderShop(root, background) {
   const content = root.querySelector("#content");
   const requestVersion = (shopLoadVersions.get(root) || 0) + 1;
   shopLoadVersions.set(root, requestVersion);
-  if (content && !background) content.innerHTML = `<div class="empty">Загрузка…</div>`;
+  if (content && !background) content.innerHTML = `${renderKovboxShowcase()}<div class="empty">Загрузка…</div>`;
   let products;
   try {
     products = await get("/api/shop/products");
   } catch (e) {
-    if (content && shopLoadVersions.get(root) === requestVersion) content.innerHTML = `<div class="empty">Ошибка загрузки: ${escapeHtml(e.message)}</div>`;
+    if (content && shopLoadVersions.get(root) === requestVersion) content.innerHTML = `${renderKovboxShowcase()}<div class="empty">Ошибка загрузки: ${escapeHtml(e.message)}</div>`;
     return;
   }
   if (state.mode !== "shop" || shopLoadVersions.get(root) !== requestVersion || root.querySelector("#content") !== content) return;
-  content.innerHTML =
-    products.length === 0
-      ? `<div class="empty">В магазине пока пусто</div>`
-      : `<div class="product-grid">${products
+  const kovboxCodes = new Set(KOVBOX_SHOWCASE.map((box) => box.code));
+  const otherProducts = products.filter((product) => !kovboxCodes.has(product.item.code));
+  content.innerHTML = renderKovboxShowcase(products) +
+    (otherProducts.length === 0
+      ? ""
+      : `<div class="product-grid shop-other-products">${otherProducts
           .map(
             (p) => `
             <div class="product${p.stock === 0 ? " product-out" : ""}">
               ${productImg(p.item, "xl")}
               <div class="name">${escapeHtml(p.item.name)}</div>
-              <div class="price">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${p.price} ${p.stock === -1 ? "" : `×${p.stock}`}</div>
+              <div class="price">${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${p.price} ${p.stock === -1 ? "" : `×${p.stock}`}</div>
               <button class="btn btn-sm" data-buy="${p.id}" ${p.stock === 0 ? "disabled" : ""}>${p.stock === 0 ? "Нет" : "Купить"}</button>
             </div>`,
           )
-          .join("")}</div>`;
+          .join("")}</div>`);
 
   content.querySelectorAll("[data-buy]").forEach((b) =>
     b.addEventListener("click", async () => {
@@ -138,7 +168,7 @@ async function renderMarket(root, background) {
               ${productImg(l.item, "xl")}
               <div class="name">${escapeHtml(l.item.name)}</div>
               <div class="card-sub">от ${escapeHtml(l.seller_name)} · ×${l.quantity}</div>
-              <div class="price" style="margin-top:6px">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${l.price}</div>
+              <div class="price" style="margin-top:6px">${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${l.price}</div>
               <button class="btn btn-sm" data-buy-listing="${l.id}">Купить</button>
             </div>`,
           )
@@ -236,7 +266,7 @@ async function openMyListings(root) {
                   <div class="name">${escapeHtml(l.item.name)}</div>
                   <div class="author">×${l.quantity}</div>
                 </div>
-                <div class="price">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${l.price}</div>
+                <div class="price">${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${l.price}</div>
                 <button class="btn btn-sm btn-outline" data-unlist="${l.id}">Снять</button>
               </div>`,
             )

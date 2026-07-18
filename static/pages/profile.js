@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=237";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=238";
 
-import { playUISound } from "/static/pages/settings.js?v=237";
+import { playUISound } from "/static/pages/settings.js?v=238";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -42,8 +42,8 @@ function invCell(row) {
 
 function taskRewardsHtml(t) {
   const rewards = [];
-  if (Number(t.reward) > 0) rewards.push(`<span class="task-reward-badge">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${t.reward} ковбаксов</span>`);
-  if (Number(t.xp_reward) > 0) rewards.push(`<span class="task-reward-badge">${iconHtml("/static/img/ui/spark.svg", "sm", "")} ${t.xp_reward} XP</span>`);
+  if (Number(t.reward) > 0) rewards.push(`<span class="task-reward-badge">${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${t.reward} ковбаксов</span>`);
+  if (Number(t.xp_reward) > 0) rewards.push(`<span class="task-reward-badge">${iconHtml("/static/img/ui/xp.png", "sm", "")} ${t.xp_reward} XP</span>`);
   if (t.reward_item_id && Number(t.reward_item_quantity) > 0) {
     rewards.push(`<span class="task-reward-badge">${iconHtml(t.reward_item_icon || "/static/img/ui/box.svg", "sm", "")} ×${t.reward_item_quantity} ${escapeHtml(t.reward_item_name || "предмет")}</span>`);
   }
@@ -99,7 +99,7 @@ export async function renderProfile(root) {
       </div>
       <div class="wallet-row">
         <div class="wallet-balance-big">
-          <img src="/static/img/ui/coin.svg" alt="" class="wallet-coin"/>
+          <img src="/static/img/ui/kovbaks.png" alt="" class="wallet-coin"/>
           <div class="wallet-balance-num">
             <div class="wallet-balance-value"><strong>${user.balance}</strong></div>
           </div>
@@ -118,7 +118,7 @@ export async function renderProfile(root) {
         </button>
       </div>
       <div class="wallet-xp-row">
-        <img src="/static/img/item_icons/xp.svg" alt="" class="wallet-xp-icon"/>
+        <img src="/static/img/ui/xp.png" alt="" class="wallet-xp-icon"/>
         <div class="wallet-xp-text">Пропуск: ур. ${data.bp_level || 0} · ${user.xp} XP</div>
       </div>
     </div>
@@ -487,7 +487,7 @@ function openItemActionsDialog(row) {
         <span>Подарить</span>
       </button>
       <button class="btn btn-outline" id="ia-sell" ${canGift ? "" : "disabled"}>
-        <img src="/static/img/ui/coin.svg" alt="" class="icon icon-md"/>
+        <img src="/static/img/ui/kovbaks.png" alt="" class="icon icon-md"/>
         <span>Продать</span>
       </button>
       ${item.code === "box_fragment" && row.quantity >= assemblyCost ? `

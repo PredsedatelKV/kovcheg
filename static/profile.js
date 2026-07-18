@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=237";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=238";
 
-import { playUISound } from "/static/pages/settings.js?v=237";
+import { playUISound } from "/static/pages/settings.js?v=238";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -81,7 +81,7 @@ export async function renderProfile(root) {
       </div>
       <div class="wallet-row">
         <div class="wallet-balance-big">
-          <img src="/static/img/ui/coin.svg" alt="" class="wallet-coin"/>
+          <img src="/static/img/ui/kovbaks.png" alt="" class="wallet-coin"/>
           <div class="wallet-balance-num">
             <div class="wallet-balance-value"><strong>${user.balance}</strong></div>
           </div>
@@ -100,7 +100,7 @@ export async function renderProfile(root) {
         </button>
       </div>
       <div class="wallet-xp-row">
-        <img src="/static/img/item_icons/xp.svg" alt="" class="wallet-xp-icon"/>
+        <img src="/static/img/ui/xp.png" alt="" class="wallet-xp-icon"/>
         <div class="wallet-xp-text">Уровень ${Math.floor(user.xp / 100)} · ${user.xp % 100} / 100 XP</div>
       </div>
     </div>
@@ -488,7 +488,7 @@ function openItemActionsDialog(row) {
         <span>Подарить</span>
       </button>
       <button class="btn btn-outline" id="ia-sell">
-        <img src="/static/img/ui/coin.svg" alt="" class="icon icon-md"/>
+        <img src="/static/img/ui/kovbaks.png" alt="" class="icon icon-md"/>
         <span>Продать</span>
       </button>
       ${item.lootbox_pool_code ? `
@@ -730,7 +730,7 @@ function openUserTaskDialog(ut, root) {
     <h2 style="text-align:center;margin-top:0">${escapeHtml(ut.task.name)}</h2>
     <div style="text-align:center; margin: 2px 0 10px"><span style="background:var(--primary-soft); color:var(--primary-700); padding: 3px 10px; border-radius:8px; font-size:12px; font-weight:600">В процессе</span></div>
     <p style="color:var(--text-soft); font-size:14px; margin: 0 0 14px">${escapeHtml(ut.task.description)}</p>
-    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${ut.task.reward} K</div>
+    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${ut.task.reward} K</div>
     <button class="btn btn-secondary" style="margin-top:8px" onclick="closeModal()">Закрыть</button>
     <button class="btn btn-danger" id="cancel-ut" style="margin-top:8px">Прервать задание</button>
   `);

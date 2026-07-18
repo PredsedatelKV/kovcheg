@@ -845,10 +845,10 @@ def admin_seed_bp_season(body: dict, db: Session = Depends(get_db)):
 
     for lvl in range(1, levels + 1):
         if lvl % 2 == 0:
-            kind, icon, label = "coins", "/static/img/ui/coin.svg", f"{lvl * 15} монет"
+            kind, icon, label = "coins", "/static/img/ui/kovbaks.png", f"{lvl * 15} монет"
             value = lvl * 15
         else:
-            kind, icon, label = "xp", "/static/img/item_icons/xp.svg", f"{xp_per_level} XP"
+            kind, icon, label = "xp", "/static/img/ui/xp.png", f"{xp_per_level} XP"
             value = xp_per_level
 
         db.add(models.BattlePassReward(

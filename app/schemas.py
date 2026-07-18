@@ -306,7 +306,7 @@ class AdminWheelPrizeBody(BaseModel):
     kind: Literal["coins", "xp", "item", "nothing"] = "coins"
     value: StrictInt = Field(default=0, ge=0, le=1_000_000)
     item_code: str | None = Field(default=None, max_length=64)
-    icon: str = "/static/img/ui/coin.svg"
+    icon: str = "/static/img/ui/kovbaks.png"
     weight: StrictInt = Field(ge=1, le=1_000_000, default=10)
     sort_order: StrictInt = Field(default=0, ge=-100_000, le=100_000)
     is_active: bool = True

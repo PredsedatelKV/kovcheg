@@ -1431,6 +1431,66 @@ html.dark .toggle button.active {
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
 }
+.kovbox-shop-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+.kovbox-shop-card h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+.kovbox-shop-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.kovbox-shop-item {
+  min-width: 0;
+  padding: 10px 8px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.kovbox-shop-item > img {
+  display: block;
+  width: 100%;
+  height: 92px;
+  object-fit: contain;
+  margin: 0 auto 6px;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.kovbox-shop-name {
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.kovbox-shop-price {
+  min-height: 24px;
+  margin: 4px 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+.kovbox-shop-item .btn { margin-top: auto; }
+.shop-other-products { margin-top: 12px; }
+
+img[src^="/static/img/ui/kovbaks.png"],
+img[src^="/static/img/ui/xp.png"] {
+  image-rendering: auto !important;
+}
 .product {
   background: var(--surface);
   border-radius: var(--radius);

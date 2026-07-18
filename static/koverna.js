@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=237";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=238";
 
-import { playUISound } from "/static/pages/settings.js?v=237";
+import { playUISound } from "/static/pages/settings.js?v=238";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -53,7 +53,7 @@ async function renderShop(root) {
             <div class="product${p.stock === 0 ? " product-out" : ""}">
               ${productImg(p.item, "xl")}
               <div class="name">${escapeHtml(p.item.name)}</div>
-              <div class="price">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${p.price} ${p.stock === -1 ? "" : `×${p.stock}`}</div>
+              <div class="price">${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${p.price} ${p.stock === -1 ? "" : `×${p.stock}`}</div>
               <button class="btn btn-sm" data-buy="${p.id}" ${p.stock === 0 ? "disabled" : ""}>${p.stock === 0 ? "Нет" : "Купить"}</button>
             </div>`,
           )
@@ -97,7 +97,7 @@ async function renderMarket(root) {
               ${productImg(l.item, "xl")}
               <div class="name">${escapeHtml(l.item.name)}</div>
               <div class="card-sub">от ${escapeHtml(l.seller_name)} · ×${l.quantity}</div>
-              <div class="price" style="margin-top:6px">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${l.price}</div>
+              <div class="price" style="margin-top:6px">${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${l.price}</div>
               <button class="btn btn-sm" data-buy-listing="${l.id}">Купить</button>
             </div>`,
           )
@@ -169,7 +169,7 @@ async function openMyListings() {
                   <div class="name">${escapeHtml(l.item.name)}</div>
                   <div class="author">×${l.quantity}</div>
                 </div>
-                <div class="price">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${l.price}</div>
+                <div class="price">${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${l.price}</div>
                 <button class="btn btn-sm btn-outline" data-unlist="${l.id}">Снять</button>
               </div>`,
             )

@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=237";
+import { get, post, iconHtml } from "/static/api.js?v=238";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=237";
+import { openAssistantChat } from "/static/pages/assistant.js?v=238";
 
-import { playUISound } from "/static/pages/settings.js?v=237";
+import { playUISound } from "/static/pages/settings.js?v=238";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -103,8 +103,8 @@ function bigSquareCard(opts) {
 
 function taskRewardsHtml(t) {
   const rewards = [];
-  if (Number(t.reward) > 0) rewards.push(`<span class="task-reward-badge">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${t.reward} ковбаксов</span>`);
-  if (Number(t.xp_reward) > 0) rewards.push(`<span class="task-reward-badge">${iconHtml("/static/img/ui/spark.svg", "sm", "")} ${t.xp_reward} XP</span>`);
+  if (Number(t.reward) > 0) rewards.push(`<span class="task-reward-badge">${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${t.reward} ковбаксов</span>`);
+  if (Number(t.xp_reward) > 0) rewards.push(`<span class="task-reward-badge">${iconHtml("/static/img/ui/xp.png", "sm", "")} ${t.xp_reward} XP</span>`);
   if (t.reward_item_id && Number(t.reward_item_quantity) > 0) {
     rewards.push(`<span class="task-reward-badge">${iconHtml(t.reward_item_icon || "/static/img/ui/box.svg", "sm", "")} ×${t.reward_item_quantity} ${escapeHtml(t.reward_item_name || "предмет")}</span>`);
   }
@@ -174,7 +174,7 @@ ${bannerCarousel(data.banners)}
 
     <div class="card daily-reward-card" id="daily-reward-card" aria-busy="true">
       <div class="daily-reward-head">
-        <img src="/static/img/ui/coin.svg" alt="" class="daily-reward-icon"/>
+        <img src="/static/img/ui/kovbaks.png" alt="" class="daily-reward-icon"/>
         <div class="daily-reward-meta">
           <div class="daily-reward-title">Ежедневная награда</div>
           <div class="daily-reward-desc" id="daily-reward-desc">Загружаем статус…</div>
@@ -442,7 +442,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=237").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=238").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {
@@ -799,7 +799,7 @@ async function openWheel() {
         </div>
         <button class="btn" id="spin-btn" ${status.can_spin ? "" : "disabled"}>${escapeHtml(btnLabel)}</button>
         <div class="wheel-prize" id="prize" style="text-align:center;background:var(--surface-2,#f2f4f8);border-radius:14px;padding:14px;display:none;width:100%">
-          <div class="ic" id="prize-ic" style="font-size:38px">${iconHtml("/static/img/ui/coin.svg", "lg", "")}</div>
+          <div class="ic" id="prize-ic" style="font-size:38px">${iconHtml("/static/img/ui/kovbaks.png", "lg", "")}</div>
           <div class="lbl" id="prize-lbl" style="font-weight:700;margin-top:4px"></div>
         </div>
       </div>

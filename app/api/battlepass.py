@@ -289,7 +289,7 @@ def list_lootbox_pools(
                     "item_id": e.item_id,
                     "item_name": e.item.name if e.item else e.reward_kind,
                     "item_icon": e.item.icon if e.item else (
-                        "/static/img/item_icons/xp.svg" if e.reward_kind == "xp" else "/static/img/ui/coin.svg"
+                        "/static/img/ui/xp.png" if e.reward_kind == "xp" else "/static/img/ui/kovbaks.png"
                     ),
                     "item_rarity": e.item.rarity if e.item else "Обычный",
                     "weight": e.weight,

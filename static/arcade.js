@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=237";
+import { post, get } from "/static/api.js?v=238";
 
-import { playUISound } from "/static/pages/settings.js?v=237";
+import { playUISound } from "/static/pages/settings.js?v=238";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -55,7 +55,7 @@ function betInputHTML(id) {
   return `<div class="game-bet-custom">
     <label>Ставка:</label>
     <input type="number" id="${id}" value="1" min="1" max="${max}" class="input input-sm"/>
-    <span class="game-bet-hint"><img src="/static/img/ui/coin.svg" alt="" class="game-icon-sm"/> макс ${max}</span>
+    <span class="game-bet-hint"><img src="/static/img/ui/kovbaks.png" alt="" class="game-icon-sm"/> макс ${max}</span>
   </div>`;
 }
 

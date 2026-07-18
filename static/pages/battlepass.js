@@ -1,4 +1,4 @@
-import { get, post } from "/static/api.js?v=237";
+import { get, post } from "/static/api.js?v=238";
 
 var _bpRoot = null;
 var _bpData = null;
@@ -11,11 +11,10 @@ function escapeHtml(s) {
 
 function _rewardIcon(r) {
   if (!r) return "/static/img/ui/box.svg";
-  if (r.icon) return r.icon;
-  if (r.kind === "xp") return "/static/img/item_icons/xp.svg";
+  if (r.kind === "xp") return "/static/img/ui/xp.png";
   if (r.kind === "none") return "";
-  if (r.kind && r.kind.indexOf("coins") !== -1) return "/static/img/ui/coin.svg";
-  return "/static/img/ui/box.svg";
+  if (r.kind && r.kind.indexOf("coins") !== -1) return "/static/img/ui/kovbaks.png";
+  return r.icon || "/static/img/ui/box.svg";
 }
 
 function _rewardQty(r) {

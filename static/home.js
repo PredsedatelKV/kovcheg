@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=237";
+import { get, post, iconHtml } from "/static/api.js?v=238";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=237";
+import { openAssistantChat } from "/static/pages/assistant.js?v=238";
 
-import { playUISound } from "/static/pages/settings.js?v=237";
+import { playUISound } from "/static/pages/settings.js?v=238";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -293,7 +293,7 @@ export async function renderHome(root) {
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=237").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=238").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {
@@ -383,7 +383,7 @@ function openTaskDetails(t) {
     <button class="close" onclick="closeModal()">×</button>
     <h2 style="text-align:center;margin-top:8px">${escapeHtml(t.name)}</h2>
     <p style="color:var(--text-soft);font-size:14px;margin:8px 0 16px;text-align:center">${escapeHtml(t.description)}</p>
-    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${t.reward} K</div>
+    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${t.reward} K</div>
     <button class="btn" id="start-btn" style="margin-top:16px">Начать</button>
   `);
   modal.querySelector("#start-btn").addEventListener("click", async () => {
@@ -443,7 +443,7 @@ async function openWheel() {
         const val = s.value;
         content = `
           <text x="${cx2}" y="${cy2 - 10}" text-anchor="middle" font-size="20" font-weight="800" fill="#fff" transform="rotate(${mid},${cx2},${cy2})" style="text-shadow:0 2px 4px rgba(0,0,0,.5)">${val}</text>
-          <image href="/static/img/ui/coin.svg" x="${cx2 - 12}" y="${cy2 + 2}" width="24" height="24" transform="rotate(${mid},${cx2},${cy2})"/>`;
+          <image href="/static/img/ui/kovbaks.png" x="${cx2 - 12}" y="${cy2 + 2}" width="24" height="24" transform="rotate(${mid},${cx2},${cy2})"/>`;
       } else {
         content = `<image href="${s.icon}" x="${cx2 - 20}" y="${cy2 - 20}" width="40" height="40" transform="rotate(${mid},${cx2},${cy2})"/>`;
       }
@@ -503,7 +503,7 @@ async function openWheel() {
           ${status.can_spin ? "🎰 Крутить!" : "🔒 Доступно завтра"}
         </button>
         <div class="wheel-prize" id="prize">
-          <div class="ic" id="prize-ic">${iconHtml("/static/img/ui/coin.svg", "lg", "")}</div>
+          <div class="ic" id="prize-ic">${iconHtml("/static/img/ui/kovbaks.png", "lg", "")}</div>
           <div class="lbl" id="prize-lbl"></div>
         </div>
       </div>

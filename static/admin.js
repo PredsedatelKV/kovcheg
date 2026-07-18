@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=237";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=238";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -138,7 +138,7 @@ async function renderUsers(body) {
       (u) => `
     <div class="admin-card">
       <h3 class="admin-card-title">${escapeHtml(u.first_name)} ${u.is_admin ? '<span class="admin-badge">admin</span>' : ""}</h3>
-      <div class="admin-sub">TG ${u.telegram_id} · <img src="/static/img/ui/coin.svg" alt="" class="icon icon-sm inline-coin"/> ${u.balance} Ковбаксов · <img src="/static/img/item_icons/xp.svg" alt="" class="icon icon-sm inline-coin"/> ${u.xp} XP</div>
+      <div class="admin-sub">TG ${u.telegram_id} · <img src="/static/img/ui/kovbaks.png" alt="" class="icon icon-sm inline-coin"/> ${u.balance} Ковбаксов · <img src="/static/img/ui/xp.png" alt="" class="icon icon-sm inline-coin"/> ${u.xp} XP</div>
       ${formGrid(
         field("Имя", `<input class="input" data-k="first_name" value="${escapeHtml(u.first_name)}"/>`),
         field("Должность", `<input class="input" data-k="role" value="${escapeHtml(u.role)}"/>`),
@@ -491,7 +491,7 @@ async function renderWheel(body) {
           "Предмет (если предмет)",
           `<select class="input" id="w-item"><option value="">—</option>${META.items.map((i) => `<option value="${i.code}">${escapeHtml(i.name)}</option>`).join("")}</select>`,
         ),
-        field("Иконка (URL)", `<input class="input" id="w-icon" value="/static/img/ui/coin.svg"/>`),
+        field("Иконка (URL)", `<input class="input" id="w-icon" value="/static/img/ui/kovbaks.png"/>`),
         field("Вес", `<input class="input" id="w-weight" type="number" value="10" min="1"/>`),
       ) + `<button class="btn btn-sm" id="w-create">Добавить</button>`,
     )}
@@ -663,7 +663,7 @@ async function renderMarket(body) {
         (l) => `
       <div class="admin-card" data-id="${l.id}">
         <h3 class="admin-card-title"><img src="${escapeHtml(l.item.icon)}" class="icon icon-sm" alt=""/> ${escapeHtml(l.item.name)}</h3>
-        <div class="admin-sub">Продаёт: ${escapeHtml(l.seller_name)}${l.target_user_name ? ` → ${escapeHtml(l.target_user_name)}` : ""} · ${l.quantity} шт · <img src="/static/img/ui/coin.svg" alt="" class="icon icon-sm inline-coin"/> ${l.price}</div>
+        <div class="admin-sub">Продаёт: ${escapeHtml(l.seller_name)}${l.target_user_name ? ` → ${escapeHtml(l.target_user_name)}` : ""} · ${l.quantity} шт · <img src="/static/img/ui/kovbaks.png" alt="" class="icon icon-sm inline-coin"/> ${l.price}</div>
         ${formGrid(
           field("Цена", `<input class="input" data-k="price" type="number" min="1" value="${l.price}"/>`),
           field("Кол-во", `<input class="input" data-k="quantity" type="number" min="1" value="${l.quantity}"/>`),
@@ -1340,7 +1340,7 @@ async function renderBattlePassAdmin(body) {
     card.addEventListener("click", function() {
       var lvl = Number(card.dataset.lvl);
       var rw = byLevel[lvl] || null;
-      openBpRewardEditor(body, rw ? { id: rw.id, level: lvl, kind: rw.kind || "xp", value: rw.value || 0, label: rw.label || "", icon: rw.icon || "", item_code: rw.item_code || null } : { id: null, level: lvl, kind: "xp", value: 100, label: "", icon: "/static/img/item_icons/xp.svg", item_code: null }, s);
+      openBpRewardEditor(body, rw ? { id: rw.id, level: lvl, kind: rw.kind || "xp", value: rw.value || 0, label: rw.label || "", icon: rw.icon || "", item_code: rw.item_code || null } : { id: null, level: lvl, kind: "xp", value: 100, label: "", icon: "/static/img/ui/xp.png", item_code: null }, s);
     });
   });
 
@@ -1385,7 +1385,7 @@ function openBpRewardEditor(body, r, season) {
     return '<option value="' + k + '"' + (r.kind === k ? ' selected' : '') + '>' + k + '</option>';
   }).join("");
 
-  var iconMap = { xp: "/static/img/item_icons/xp.svg", coins: "/static/img/ui/coin.svg", lootbox: "/static/img/ui/lootbox.svg", none: "" };
+  var iconMap = { xp: "/static/img/ui/xp.png", coins: "/static/img/ui/kovbaks.png", lootbox: "/static/img/ui/lootbox.svg", none: "" };
   var defaultIcon = iconMap[r.kind] || r.icon;
 
   overlay.innerHTML = '<div class="modal" style="max-width:380px;padding:20px">' +

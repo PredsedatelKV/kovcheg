@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=237";
+import { post, get } from "/static/api.js?v=238";
 
-import { playUISound } from "/static/pages/settings.js?v=237";
+import { playUISound } from "/static/pages/settings.js?v=238";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -55,7 +55,7 @@ function betInputHTML(id) {
   return `<div class="game-bet-custom">
     <label>Ставка:</label>
     <input type="number" id="${id}" value="1" min="1" max="${max}" class="input input-sm"/>
-    <span class="game-bet-hint"><img src="/static/img/ui/coin.svg" alt="" class="game-icon-sm"/> макс ${max}</span>
+    <span class="game-bet-hint"><img src="/static/img/ui/kovbaks.png" alt="" class="game-icon-sm"/> макс ${max}</span>
   </div>`;
 }
 
@@ -1889,7 +1889,7 @@ function gameClicker() {
     <div class="clicker-cashout" id="clicker-cashout">
       <div class="clicker-cashout-info">
         <span class="clicker-cashout-rate">100 ковкойнов = 1 ковбакс</span>
-        <span class="clicker-cashout-wallet"><img src="/static/img/ui/coin.svg" class="game-icon-sm"/> <strong id="clicker-wallet">0</strong> ковбаксов</span>
+        <span class="clicker-cashout-wallet"><img src="/static/img/ui/kovbaks.png" class="game-icon-sm"/> <strong id="clicker-wallet">0</strong> ковбаксов</span>
       </div>
       <button class="btn clicker-cashout-btn" id="clicker-cashout-btn">Вывести в ковбаксы</button>
     </div>
@@ -2322,7 +2322,7 @@ function gameClicker() {
 // ============ RENDER ============
 
 function arcadeIcon(name) {
-  return `<div class="game-tile-icon arcade-icon-frame"><img class="arcade-icon-img" src="/static/img/ui/arcade/${name}.png?v=237" alt="" draggable="false" decoding="async"></div>`;
+  return `<div class="game-tile-icon arcade-icon-frame"><img class="arcade-icon-img" src="/static/img/ui/arcade/${name}.png?v=238" alt="" draggable="false" decoding="async"></div>`;
 }
 
 export async function renderArcade(root) {
