@@ -44,6 +44,11 @@ def _task_to_out(t: models.Task) -> schemas.TaskOut:
         description=t.description,
         icon=t.icon,
         reward=t.reward,
+        xp_reward=t.xp_reward,
+        reward_item_id=t.reward_item_id,
+        reward_item_name=t.reward_item.name if t.reward_item else None,
+        reward_item_icon=t.reward_item.icon if t.reward_item else None,
+        reward_item_quantity=t.reward_item_quantity,
         target_progress=t.target_progress,
         is_daily_plan=t.is_daily_plan,
     )

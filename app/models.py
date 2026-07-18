@@ -152,6 +152,11 @@ class InventoryItem(Base):
 
 class Task(Base):
     __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint("reward >= 0", name="ck_task_kovbucks_nonnegative"),
+        CheckConstraint("xp_reward >= 0", name="ck_task_xp_nonnegative"),
+        CheckConstraint("reward_item_quantity >= 0", name="ck_task_item_quantity_nonnegative"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -163,6 +168,10 @@ class Task(Base):
     is_daily_plan: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     xp_reward: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    reward_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+    reward_item_quantity: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    reward_item: Mapped[Item | None] = relationship("Item")
 
 
 class UserTask(Base):

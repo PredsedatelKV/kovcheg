@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=231";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=233";
 
-import { playUISound } from "/static/pages/settings.js?v=231";
+import { playUISound } from "/static/pages/settings.js?v=233";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -40,12 +40,22 @@ function invCell(row) {
     </div>`;
 }
 
+function taskRewardsHtml(t) {
+  const rewards = [];
+  if (Number(t.reward) > 0) rewards.push(`<span class="task-reward-badge">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${t.reward} ковбаксов</span>`);
+  if (Number(t.xp_reward) > 0) rewards.push(`<span class="task-reward-badge">${iconHtml("/static/img/ui/spark.svg", "sm", "")} ${t.xp_reward} XP</span>`);
+  if (t.reward_item_id && Number(t.reward_item_quantity) > 0) {
+    rewards.push(`<span class="task-reward-badge">${iconHtml(t.reward_item_icon || "/static/img/ui/box.svg", "sm", "")} ×${t.reward_item_quantity} ${escapeHtml(t.reward_item_name || "предмет")}</span>`);
+  }
+  return rewards.length ? `<span class="task-rewards">${rewards.join("")}</span>` : `<span class="task-rewards">Без награды</span>`;
+}
+
 function userTaskRow(ut) {
   return `
     <div class="task-row" data-user-task-id="${ut.id}">
       <div class="meta">
         <h4>${escapeHtml(ut.task.name)}</h4>
-        <p>Награда: ${ut.task.reward} K</p>
+        <p>Награда: ${taskRewardsHtml(ut.task)}</p>
       </div>
       <span style="color: var(--success); font-size:18px">●</span>
     </div>`;
@@ -469,7 +479,6 @@ function openItemActionsDialog(row) {
     <div class="item-actions-head">
       ${productImg(item, "xl")}
       <h2>${escapeHtml(item.name)}</h2>
-      <p class="card-sub">${escapeHtml(item.description || "")}</p>
       <div class="item-meta">×${row.quantity}${item.category ? ` · ${escapeHtml(item.category)}` : ""}</div>
     </div>
     <div class="item-actions-grid">
@@ -768,7 +777,7 @@ function openUserTaskDialog(ut, root) {
     <h2 style="text-align:center;margin-top:0">${escapeHtml(ut.task.name)}</h2>
     <div style="text-align:center; margin: 2px 0 10px"><span style="background:var(--primary-soft); color:var(--primary-700); padding: 3px 10px; border-radius:8px; font-size:12px; font-weight:600">В процессе</span></div>
     <p style="color:var(--text-soft); font-size:14px; margin: 0 0 14px">${escapeHtml(ut.task.description)}</p>
-    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${ut.task.reward} K</div>
+    <div class="task-card-reward">Награда: ${taskRewardsHtml(ut.task)}</div>
     <button class="btn btn-secondary" style="margin-top:8px" onclick="closeModal()">Закрыть</button>
     <button class="btn btn-danger" id="cancel-ut" style="margin-top:8px">Прервать задание</button>
   `);

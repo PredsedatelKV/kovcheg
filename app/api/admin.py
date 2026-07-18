@@ -96,6 +96,10 @@ def _task_out(t: models.Task) -> schemas.TaskOut:
         icon=t.icon,
         reward=t.reward,
         xp_reward=t.xp_reward,
+        reward_item_id=t.reward_item_id,
+        reward_item_name=t.reward_item.name if t.reward_item else None,
+        reward_item_icon=t.reward_item.icon if t.reward_item else None,
+        reward_item_quantity=t.reward_item_quantity,
         target_progress=t.target_progress,
         is_daily_plan=t.is_daily_plan,
     )
@@ -295,7 +299,7 @@ def create_item(body: schemas.AdminItemBody, db: Session = Depends(get_db)) -> s
     begin_game_write(db)
     if db.query(models.Item).filter(models.Item.code == body.code).one_or_none() is not None:
         raise HTTPException(status_code=400, detail="Предмет с таким кодом уже есть")
-    item = models.Item(**body.model_dump())
+    item = models.Item(description="", **body.model_dump())
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -312,6 +316,7 @@ def update_item(item_id: int, body: schemas.AdminItemBody, db: Session = Depends
         raise HTTPException(409, "Ковбоксы изменяются только через редактор ковбоксов")
     for k, v in body.model_dump().items():
         setattr(item, k, v)
+    item.description = ""
     db.commit()
     db.refresh(item)
     return _item_out(item)
@@ -452,6 +457,13 @@ def delete_banner(banner_id: int, db: Session = Depends(get_db)) -> dict:
 
 # ------- tasks -------
 
+def _validate_task_reward_item(db: Session, body: schemas.AdminTaskBody) -> None:
+    if body.reward_item_id is None:
+        return
+    item = db.query(models.Item).filter(models.Item.id == body.reward_item_id).one_or_none()
+    if item is None:
+        raise HTTPException(status_code=400, detail="Предмет награды не найден")
+
 @router.get("/tasks", response_model=list[schemas.TaskOut])
 def list_tasks(db: Session = Depends(get_db)) -> list[schemas.TaskOut]:
     rows = db.query(models.Task).order_by(models.Task.is_daily_plan.desc(), models.Task.sort_order, models.Task.id).all()
@@ -461,6 +473,7 @@ def list_tasks(db: Session = Depends(get_db)) -> list[schemas.TaskOut]:
 @router.post("/tasks", response_model=schemas.TaskOut)
 def create_task(body: schemas.AdminTaskBody, db: Session = Depends(get_db)) -> schemas.TaskOut:
     begin_game_write(db)
+    _validate_task_reward_item(db, body)
     t = models.Task(**body.model_dump())
     db.add(t)
     db.commit()
@@ -474,6 +487,7 @@ def update_task(task_id: int, body: schemas.AdminTaskBody, db: Session = Depends
     t = db.query(models.Task).filter(models.Task.id == task_id).one_or_none()
     if t is None:
         raise HTTPException(status_code=404, detail="Задание не найдено")
+    _validate_task_reward_item(db, body)
     for k, v in body.model_dump().items():
         setattr(t, k, v)
     db.commit()
@@ -521,6 +535,17 @@ def approve_user_task(
         raise HTTPException(status_code=503, detail="Награда задания настроена некорректно")
     if wallet.balance < 0 or wallet.balance > 2_000_000_000 - ut.task.reward:
         raise HTTPException(status_code=409, detail="Достигнут максимальный баланс ковбаксов")
+    reward_item = ut.task.reward_item
+    reward_inventory = None
+    if ut.task.reward_item_id is not None:
+        if reward_item is None or not 1 <= ut.task.reward_item_quantity <= 1_000_000:
+            raise HTTPException(status_code=503, detail="Предметная награда задания настроена некорректно")
+        reward_inventory = db.query(models.InventoryItem).filter(
+            models.InventoryItem.user_id == ut.user_id,
+            models.InventoryItem.item_id == reward_item.id,
+        ).one_or_none()
+        if reward_inventory and reward_inventory.quantity > 2_000_000_000 - ut.task.reward_item_quantity:
+            raise HTTPException(status_code=409, detail="Достигнут максимальный размер стака предмета")
     wallet.balance += ut.task.reward
     if ut.task.xp_reward:
         award_xp(db, ut.user, ut.task.xp_reward)
@@ -533,6 +558,15 @@ def approve_user_task(
                 note=f"task:{ut.task.id}:admin_approved",
             )
         )
+    if reward_item is not None:
+        if reward_inventory is None:
+            db.add(models.InventoryItem(
+                user_id=ut.user_id,
+                item_id=reward_item.id,
+                quantity=ut.task.reward_item_quantity,
+            ))
+        else:
+            reward_inventory.quantity += ut.task.reward_item_quantity
     db.commit()
     db.refresh(ut)
     return _user_task_out(ut)
@@ -1234,11 +1268,12 @@ def _replace_lootbox_entries(
 
 def _apply_lootbox_body(pool: models.LootboxPool, body: schemas.AdminLootboxBody) -> None:
     for field in (
-        "name", "description", "rarity", "image_url", "is_active", "is_droppable",
+        "name", "rarity", "image_url", "is_active", "is_droppable",
         "is_archived", "assembly_weight", "sale_price", "sale_currency", "min_user_level",
         "max_user_level", "sort_order", "daily_open_limit", "guaranteed_slots", "allow_duplicates",
     ):
         setattr(pool, field, getattr(body, field))
+    pool.description = ""
     pool.starts_at = _naive_utc(body.starts_at)
     pool.ends_at = _naive_utc(body.ends_at)
     if pool.is_archived:
@@ -1286,7 +1321,7 @@ def admin_create_lootbox(
     db.flush()
     _apply_lootbox_body(pool, body)
     item.name = body.name
-    item.description = body.description
+    item.description = ""
     item.icon = body.image_url
     item.rarity = body.rarity
     item.category = "Ковбоксы"
@@ -1318,7 +1353,7 @@ def admin_update_lootbox(
     if pool.item is None:
         raise HTTPException(409, "У конфигурации отсутствует предмет ковбокса")
     pool.item.name = body.name
-    pool.item.description = body.description
+    pool.item.description = ""
     pool.item.icon = body.image_url
     pool.item.rarity = body.rarity
     pool.item.lootbox_pool_code = pool.code
@@ -1341,7 +1376,6 @@ def admin_duplicate_lootbox(
     copied = schemas.AdminLootboxBody(
         code=body.code,
         name=body.name,
-        description=source.description,
         rarity=source.rarity,
         image_url=source.image_url,
         is_active=False,

@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=231";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=233";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -688,6 +688,14 @@ async function renderMarket(body) {
 }
 
 // ---------- TASKS ----------
+function adminTaskRewardHtml(task) {
+  const rewards = [];
+  if (task.reward > 0) rewards.push(`${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${task.reward} ковбаксов`);
+  if (task.xp_reward > 0) rewards.push(`${iconHtml("/static/img/ui/spark.svg", "sm", "")} ${task.xp_reward} XP`);
+  if (task.reward_item_id && task.reward_item_quantity > 0) rewards.push(`${iconHtml(task.reward_item_icon || "/static/img/ui/box.svg", "sm", "")} ×${task.reward_item_quantity} ${escapeHtml(task.reward_item_name || "предмет")}`);
+  return rewards.join(" · ") || "Без награды";
+}
+
 async function renderTasks(body) {
   const rows = await get("/api/admin/tasks");
   const userTasks = await get("/api/admin/tasks/user");
@@ -697,8 +705,9 @@ async function renderTasks(body) {
       formGrid(
         field("Название", `<input class="input" id="t-name"/>`),
         field("Описание", `<textarea class="input" id="t-desc" rows="3"></textarea>`),
-        field("Награда (Ковбаксов)", `<input class="input" id="t-reward" type="number" value="10"/>`),
-        field("Награда (XP)", `<input class="input" id="t-xp-reward" type="number" min="0" value="0"/>`),
+        field("Ковбаксы", `<label class="row gap"><input type="checkbox" id="t-use-kovbucks" checked/> Давать</label><input class="input" id="t-reward" type="number" min="0" value="10"/>`),
+        field("XP", `<label class="row gap"><input type="checkbox" id="t-use-xp"/> Давать</label><input class="input" id="t-xp-reward" type="number" min="0" value="10"/>`),
+        field("Предмет", `<label class="row gap"><input type="checkbox" id="t-use-item"/> Давать</label><select class="input" id="t-item">${itemOptions()}</select><input class="input" id="t-item-qty" type="number" min="1" value="1"/>`),
         field("Цель", `<input class="input" id="t-target" type="number" value="1"/>`),
         field("Тип", `<select class="input" id="t-plan"><option value="0">Задание</option><option value="1">Ежедневный план</option></select>`),
       ) + `<button class="btn btn-sm" id="t-create">Добавить</button>`,
@@ -711,8 +720,9 @@ async function renderTasks(body) {
         ${formGrid(
           field("Название", `<input class="input" data-k="name" value="${escapeHtml(t.name)}"/>`),
           field("Описание", `<textarea class="input" data-k="description" rows="3">${escapeHtml(t.description || "")}</textarea>`),
-          field("Награда", `<input class="input" data-k="reward" type="number" value="${t.reward}"/>`),
-          field("Награда XP", `<input class="input" data-k="xp_reward" type="number" min="0" value="${t.xp_reward || 0}"/>`),
+          field("Ковбаксы", `<label class="row gap"><input type="checkbox" data-k="use_reward" ${t.reward > 0 ? "checked" : ""}/> Давать</label><input class="input" data-k="reward" type="number" min="0" value="${t.reward || 0}"/>`),
+          field("XP", `<label class="row gap"><input type="checkbox" data-k="use_xp" ${t.xp_reward > 0 ? "checked" : ""}/> Давать</label><input class="input" data-k="xp_reward" type="number" min="0" value="${t.xp_reward || 0}"/>`),
+          field("Предмет", `<label class="row gap"><input type="checkbox" data-k="use_item" ${t.reward_item_id ? "checked" : ""}/> Давать</label><select class="input" data-k="reward_item_id">${itemOptions(t.reward_item_id)}</select><input class="input" data-k="reward_item_quantity" type="number" min="1" value="${t.reward_item_quantity || 1}"/>`),
           field("Цель", `<input class="input" data-k="target_progress" type="number" value="${t.target_progress}"/>`),
         )}
         <div class="row gap">
@@ -733,6 +743,7 @@ async function renderTasks(body) {
             <div>
               <h3 class="admin-card-title">${escapeHtml(ut.task.name)}</h3>
               <div class="admin-sub">Игрок: <strong>${escapeHtml(ut.user_name)}</strong> · Статус: <span class="task-status task-status-${ut.status}">${statusLabel(ut.status)}</span></div>
+              <div class="admin-sub">Награда: ${adminTaskRewardHtml(ut.task)}</div>
               <div class="admin-sub">Начато: ${formatDate(ut.started_at)}${ut.finished_at ? ` · Завершено: ${formatDate(ut.finished_at)}` : ""}</div>
             </div>
           </div>
@@ -749,8 +760,10 @@ async function renderTasks(body) {
     const payload = {
       name: body.querySelector("#t-name").value.trim(),
       description: body.querySelector("#t-desc").value,
-      reward: Number(body.querySelector("#t-reward").value) || 0,
-      xp_reward: Number(body.querySelector("#t-xp-reward").value) || 0,
+      reward: body.querySelector("#t-use-kovbucks").checked ? (Number(body.querySelector("#t-reward").value) || 0) : 0,
+      xp_reward: body.querySelector("#t-use-xp").checked ? (Number(body.querySelector("#t-xp-reward").value) || 0) : 0,
+      reward_item_id: body.querySelector("#t-use-item").checked ? Number(body.querySelector("#t-item").value) : null,
+      reward_item_quantity: body.querySelector("#t-use-item").checked ? (Number(body.querySelector("#t-item-qty").value) || 1) : 0,
       target_progress: Number(body.querySelector("#t-target").value) || 1,
       is_active: true,
       is_daily_plan: body.querySelector("#t-plan").value === "1",
@@ -772,8 +785,10 @@ async function renderTasks(body) {
       const payload = {
         name: card.querySelector('[data-k="name"]').value,
         description: card.querySelector('[data-k="description"]').value,
-        reward: Number(card.querySelector('[data-k="reward"]').value),
-        xp_reward: Number(card.querySelector('[data-k="xp_reward"]').value) || 0,
+        reward: card.querySelector('[data-k="use_reward"]').checked ? (Number(card.querySelector('[data-k="reward"]').value) || 0) : 0,
+        xp_reward: card.querySelector('[data-k="use_xp"]').checked ? (Number(card.querySelector('[data-k="xp_reward"]').value) || 0) : 0,
+        reward_item_id: card.querySelector('[data-k="use_item"]').checked ? Number(card.querySelector('[data-k="reward_item_id"]').value) : null,
+        reward_item_quantity: card.querySelector('[data-k="use_item"]').checked ? (Number(card.querySelector('[data-k="reward_item_quantity"]').value) || 1) : 0,
         target_progress: Number(card.querySelector('[data-k="target_progress"]').value),
         is_active: true,
         is_daily_plan: original.is_daily_plan,
@@ -900,7 +915,6 @@ function readItemForm(card, fallback = {}) {
       const el = card.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value');
       return el ? el.value : null;
     })(),
-    description: get("description"),
     category: get("category") || "Ресурсы",
   };
 }
@@ -914,7 +928,6 @@ async function renderItems(body) {
         field("Название", `<input class="input" id="i-name"/>`),
         photoField("Фото товара", "JPG/PNG/WebP до 5 МБ — покажется в Магазине и инвентаре", null, "image_url"),
         field("Иконка (fallback)", `<input class="input" id="i-icon" value="/static/img/ui/box.svg"/>`),
-        field("Описание", `<textarea class="input" id="i-desc" rows="2"></textarea>`),
         field("Категория", `<input class="input" id="i-cat" value="Ресурсы"/>`),
       ) + `<button class="btn btn-sm" id="i-create">Добавить</button>`,
     )}
@@ -933,7 +946,6 @@ async function renderItems(body) {
           field("Название", `<input class="input" data-k="name" value="${escapeHtml(i.name)}"/>`),
           photoField("Фото товара", "JPG/PNG/WebP до 5 МБ", i.image_url, "image_url"),
           field("Иконка (fallback)", `<input class="input" data-k="icon" value="${escapeHtml(i.icon)}"/>`),
-          field("Описание", `<textarea class="input" data-k="description" rows="2">${escapeHtml(i.description || "")}</textarea>`),
           field("Категория", `<input class="input" data-k="category" value="${escapeHtml(i.category)}"/>`),
         )}
         <div class="row gap">
@@ -956,7 +968,6 @@ async function renderItems(body) {
       name: nameVal,
       icon: body.querySelector("#i-icon").value.trim(),
       image_url: photoVal,
-      description: body.querySelector("#i-desc").value,
       category: body.querySelector("#i-cat").value || "Ресурсы",
       rarity: "Обычный",
       can_gift: true,
@@ -981,7 +992,6 @@ async function renderItems(body) {
         name: form.name,
         icon: form.icon,
         image_url: form.image_url,
-        description: form.description,
         category: form.category,
         rarity: orig.rarity || "Обычный",
         can_gift: orig.can_gift,
@@ -1403,7 +1413,7 @@ function validateLootboxPayload(payload) {
 
 function openLootboxEditor(body, existing = null) {
   const box = existing || {
-    code: "", name: "", description: "", rarity: "Обычный",
+    code: "", name: "", rarity: "Обычный",
     image_url: "/static/img/items/lootbox_common.svg", is_active: false,
     is_droppable: false, is_archived: false, assembly_weight: 10,
     sale_price: null, sale_currency: "kovbucks", min_user_level: null,
@@ -1420,7 +1430,6 @@ function openLootboxEditor(body, existing = null) {
       <div class="admin-form-grid">
         ${field("Внутренний ID", `<input class="input" id="lb-code" value="${escapeHtml(box.code)}" ${existing ? "disabled" : ""} placeholder="winter_2026"/>`)}
         ${field("Название", `<input class="input" id="lb-name" value="${escapeHtml(box.name)}"/>`)}
-        ${field("Описание", `<textarea class="input" id="lb-description" rows="3">${escapeHtml(box.description || "")}</textarea>`)}
         ${field("Редкость", `<select class="input" id="lb-rarity">${LOOTBOX_RARITIES.map((rarity) => `<option ${box.rarity === rarity ? "selected" : ""}>${rarity}</option>`).join("")}</select>`)}
         ${field("Ассет", `<input class="input" id="lb-image" value="${escapeHtml(box.image_url)}"/>`)}
         ${field("Активен для открытия", `<select class="input" id="lb-active"><option value="true" ${box.is_active ? "selected" : ""}>Да</option><option value="false" ${!box.is_active ? "selected" : ""}>Нет</option></select>`)}
@@ -1487,7 +1496,6 @@ function openLootboxEditor(body, existing = null) {
     const payload = {
       code: overlay.querySelector("#lb-code").value.trim(),
       name: overlay.querySelector("#lb-name").value.trim(),
-      description: overlay.querySelector("#lb-description").value.trim(),
       rarity: overlay.querySelector("#lb-rarity").value,
       image_url: overlay.querySelector("#lb-image").value.trim(),
       is_active: overlay.querySelector("#lb-active").value === "true",

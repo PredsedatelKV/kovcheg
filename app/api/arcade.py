@@ -253,12 +253,15 @@ def _rocket_progress(row: models.CasinoRound, now: datetime | None = None) -> di
 
 @router.post("/casino/start")
 def casino_start(
-    game: str = Body(..., embed=True),
-    amount: StrictInt = Body(..., embed=True),
-    choice: str | None = Body(None, embed=True),
+    payload: dict = Body(...),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    game = payload.get("game")
+    amount = payload.get("amount")
+    choice = payload.get("choice")
+    if type(game) is not str or type(amount) is not int or (choice is not None and type(choice) is not str):
+        raise HTTPException(status_code=422, detail="Некорректный формат раунда")
     if game not in CASINO_GAMES or amount <= 0 or amount > 1_000_000:
         raise HTTPException(status_code=400, detail="Некорректный раунд")
     begin_game_write(db)

@@ -43,17 +43,10 @@ def _get_or_create_item(
 # Icons for existing rows are migrated to file paths on every startup so a
 # user can drop new SVG/PNG files into static/img/* without touching the DB.
 ITEM_ICON_BY_CODE: dict[str, str] = {
-    "snickers": "/static/img/items/snickers.svg",
-    "skittles": "/static/img/items/skittles.svg",
-    "bounty": "/static/img/items/bounty.svg",
-    "mars": "/static/img/items/mars.svg",
-    "nutella": "/static/img/items/nutella.svg",
-    "kitkat": "/static/img/items/kitkat.svg",
-    "twix": "/static/img/items/twix.svg",
-    "juice": "/static/img/items/juice.svg",
-    "popcorn": "/static/img/items/popcorn.svg",
-    "booster_1h": "/static/img/items/booster_1h.svg",
-    "exp_scroll": "/static/img/items/exp_scroll.svg",
+    "lootbox_common": "/static/img/items/lootbox_common.svg",
+    "lootbox_rare": "/static/img/items/lootbox_rare.svg",
+    "lootbox_epic": "/static/img/items/lootbox_epic.svg",
+    "lootbox_legendary": "/static/img/items/lootbox_legendary.svg",
     "box_fragment": "/static/img/items/box_fragment.svg",
 }
 
@@ -77,13 +70,8 @@ def migrate_icons(db: Session) -> None:
         task = db.query(models.Task).filter(models.Task.name == name).one_or_none()
         if task is not None and task.icon != path:
             task.icon = path
-    # This legacy booster never received a server-side effect.  Keeping it
-    # activatable exposes a button which always fails, so existing rows are
-    # normalised to an ordinary collectible until a real mechanic is designed.
-    booster = db.query(models.Item).filter(models.Item.code == "booster_1h").one_or_none()
-    if booster is not None:
-        booster.can_activate = False
-        booster.description = "Коллекционный ускоритель Федерации Ковчега."
+    for item in db.query(models.Item).all():
+        item.description = ""
     for pool in db.query(models.LootboxPool).all():
         sync_lootbox_shop_product(db, pool)
 
@@ -116,6 +104,14 @@ def migrate_schema(db: Session) -> None:
     cols = {row[1] for row in db.execute(text("PRAGMA table_info(items)")).fetchall()}
     if "image_url" not in cols:
         db.execute(text("ALTER TABLE items ADD COLUMN image_url VARCHAR(512)"))
+        db.commit()
+
+    task_cols = {row[1] for row in db.execute(text("PRAGMA table_info(tasks)")).fetchall()}
+    if task_cols:
+        if "reward_item_id" not in task_cols:
+            db.execute(text("ALTER TABLE tasks ADD COLUMN reward_item_id INTEGER REFERENCES items(id)"))
+        if "reward_item_quantity" not in task_cols:
+            db.execute(text("ALTER TABLE tasks ADD COLUMN reward_item_quantity INTEGER NOT NULL DEFAULT 0"))
         db.commit()
 
     # market_listings.target_user_id — добавлено в PR #6 (адресные объявления при продаже из инвентаря)
@@ -409,13 +405,13 @@ def seed_players(db: Session) -> None:
 
 WHEEL_PRIZES: list[dict] = [
     {"label": "50 Ковбаксов", "kind": "coins", "value": 50, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 25, "sort_order": 0},
-    {"label": "Сундук", "kind": "item", "value": 0, "item_code": "builders_chest", "icon": "/static/img/items/builders_chest.svg", "weight": 8, "sort_order": 1},
+    {"label": "5 Ковбаксов", "kind": "coins", "value": 5, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 35, "sort_order": 1},
     {"label": "25 Ковбаксов", "kind": "coins", "value": 25, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 30, "sort_order": 2},
     {"label": "200 Ковбаксов", "kind": "coins", "value": 200, "item_code": None, "icon": "/static/img/ui/money_bag.svg", "weight": 5, "sort_order": 3},
     {"label": "50 Ковбаксов", "kind": "coins", "value": 50, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 20, "sort_order": 4},
-    {"label": "Ускоритель", "kind": "item", "value": 0, "item_code": "booster_1h", "icon": "/static/img/items/booster_1h.svg", "weight": 6, "sort_order": 5},
+    {"label": "75 Ковбаксов", "kind": "coins", "value": 75, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 12, "sort_order": 5},
     {"label": "10 Ковбаксов", "kind": "coins", "value": 10, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 30, "sort_order": 6},
-    {"label": "Свиток опыта", "kind": "item", "value": 0, "item_code": "exp_scroll", "icon": "/static/img/items/exp_scroll.svg", "weight": 6, "sort_order": 7},
+    {"label": "15 Ковбаксов", "kind": "coins", "value": 15, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 25, "sort_order": 7},
 ]
 
 
@@ -427,141 +423,8 @@ def seed_wheel_prizes(db: Session) -> None:
 
 def seed(db: Session) -> None:
     seed_players(db)
-    # Items — сладости
-    snickers = _get_or_create_item(
-        db,
-        "snickers",
-        name="Сникерс",
-        icon="/static/img/items/snickers.svg",
-        description="Шоколадный батончик с нугой и арахисом.",
-        category="Сладости",
-    )
-    skittles = _get_or_create_item(
-        db,
-        "skittles",
-        name="Скитлз",
-        icon="/static/img/items/skittles.svg",
-        description="Фруктовые драже разных цветов.",
-        category="Сладости",
-    )
-    bounty = _get_or_create_item(
-        db,
-        "bounty",
-        name="Баунти",
-        icon="/static/img/items/bounty.svg",
-        description="Шоколад с кокосовой начинкой.",
-        category="Сладости",
-    )
-    mars = _get_or_create_item(
-        db,
-        "mars",
-        name="Марс",
-        icon="/static/img/items/mars.svg",
-        description="Шоколадный батончик с карамелью.",
-        category="Сладости",
-    )
-    nutella = _get_or_create_item(
-        db,
-        "nutella",
-        name="Нутелла",
-        icon="/static/img/items/nutella.svg",
-        description="Ореховая шоколадная паста.",
-        category="Сладости",
-        rarity="Редкий",
-    )
-    kitkat = _get_or_create_item(
-        db,
-        "kitkat",
-        name="КитКат",
-        icon="/static/img/items/kitkat.svg",
-        description="Вафельный батончик в шоколаде.",
-        category="Сладости",
-    )
-    twix = _get_or_create_item(
-        db,
-        "twix",
-        name="Твикс",
-        icon="/static/img/items/twix.svg",
-        description="Шоколадный батончик с карамелью и печеньем.",
-        category="Сладости",
-    )
-    juice = _get_or_create_item(
-        db,
-        "juice",
-        name="Сок",
-        icon="/static/img/items/juice.svg",
-        description="Натуральный фруктовый сок.",
-        category="Напитки",
-    )
-    popcorn = _get_or_create_item(
-        db,
-        "popcorn",
-        name="Попкорн",
-        icon="/static/img/items/popcorn.svg",
-        description="Воздушная кукуруза с солью.",
-        category="Сладости",
-    )
-    booster = _get_or_create_item(
-        db,
-        "booster_1h",
-        name="Ускорение 1ч",
-        icon="/static/img/items/booster_1h.svg",
-        description="Коллекционный ускоритель Федерации Ковчега.",
-        category="Ускорители",
-        can_activate=False,
-    )
-    scroll = _get_or_create_item(
-        db,
-        "exp_scroll",
-        name="Свиток опыта",
-        icon="/static/img/items/exp_scroll.svg",
-        description="Даёт небольшой буст опыта.",
-        category="Ускорители",
-        rarity="Редкий",
-        can_activate=True,
-    )
-    _get_or_create_item(
-        db,
-        "scroll_of_wisdom",
-        name="Свиток мудрости",
-        icon="/static/img/items/exp_scroll.svg",
-        description="Легендарный свиток, дарующий большой запас опыта.",
-        category="Ускорители",
-        rarity="Легендарный",
-        can_activate=True,
-    )
-    _get_or_create_item(
-        db,
-        "builders_chest",
-        name="Сундук строителя",
-        icon="/static/img/items/builders_chest.svg",
-        description="Сундук с полезными ресурсами для строительства.",
-        category="Ковбоксы",
-        rarity="Редкий",
-    )
-
-    # Shop products
-    shop_lines = [
-        (snickers, 30),
-        (skittles, 25),
-        (bounty, 35),
-        (mars, 30),
-        (nutella, 80),
-        (kitkat, 25),
-        (twix, 30),
-        (juice, 20),
-        (popcorn, 15),
-        (booster, 150),
-        (scroll, 220),
-    ]
-    for item, price in shop_lines:
-        existing = (
-            db.query(models.ShopProduct)
-            .filter(models.ShopProduct.item_id == item.id, models.ShopProduct.is_active.is_(True))
-            .first()
-        )
-        if existing is None:
-            db.add(models.ShopProduct(item_id=item.id, price=price, is_active=True))
+    # Pre-launch catalog intentionally starts with Kovboxes and their fragments
+    # only. New items may still be created later through the editor.
 
     # Tasks
     task_defs = [
@@ -698,17 +561,11 @@ def seed(db: Session) -> None:
         if ibragim:
             db.add(models.ChatMessage(user_id=ibragim.id, content="Привет всем!", message_type="text"))
 
-    # XP за задания (по умолчанию)
-    for t in db.query(models.Task).filter(models.Task.is_active.is_(True)).all():
-        if t.xp_reward == 0:
-            t.xp_reward = 10
-
     # Seed lootbox items
     lootbox_common = _get_or_create_item(
         db, "lootbox_common",
         name="Обычный ковбокс",
         icon="/static/img/items/lootbox_common.svg",
-        description="Обычный ковбокс. Содержит случайный предмет.",
         category="Ковбоксы",
         rarity="Обычный",
         lootbox_pool_code="common",
@@ -717,7 +574,6 @@ def seed(db: Session) -> None:
         db, "lootbox_rare",
         name="Редкий ковбокс",
         icon="/static/img/items/lootbox_rare.svg",
-        description="Редкий ковбокс. Повышенный шанс на редкий предмет.",
         category="Ковбоксы",
         rarity="Редкий",
         lootbox_pool_code="rare",
@@ -726,7 +582,6 @@ def seed(db: Session) -> None:
         db, "lootbox_epic",
         name="Эпический ковбокс",
         icon="/static/img/items/lootbox_epic.svg",
-        description="Эпический ковбокс. Гарантированный редкий или эпический предмет!",
         category="Ковбоксы",
         rarity="Эпический",
         lootbox_pool_code="epic",
@@ -735,7 +590,6 @@ def seed(db: Session) -> None:
         db, "lootbox_legendary",
         name="Легендарный ковбокс",
         icon="/static/img/items/lootbox_legendary.svg",
-        description="Легендарный ковбокс. Гарантированный легендарный предмет!",
         category="Ковбоксы",
         rarity="Легендарный",
         lootbox_pool_code="legendary",
@@ -744,17 +598,12 @@ def seed(db: Session) -> None:
         db, "box_fragment",
         name="Фрагмент ковбокса",
         icon="/static/img/items/box_fragment.svg",
-        description=(
-            f"Осколок ковбокса. Собери {models.LOOTBOX_FRAGMENT_COST} фрагментов, "
-            "чтобы получить случайный ковбокс."
-        ),
         category="Ресурсы",
         rarity="Обычный",
     )
-    fragment.description = (
-        f"Осколок ковбокса. Собери {models.LOOTBOX_FRAGMENT_COST} фрагментов, "
-        "чтобы получить случайный ковбокс."
-    )
+    fragment.description = ""
+    for item in (lootbox_common, lootbox_rare, lootbox_epic, lootbox_legendary):
+        item.description = ""
     seeded_lootbox_items = {
         "common": lootbox_common,
         "rare": lootbox_rare,
@@ -767,31 +616,39 @@ def seed(db: Session) -> None:
     db.flush()
 
     # Seed lootbox pools
-    props = ["snickers", "skittles", "bounty", "mars", "kitkat", "twix", "juice", "popcorn"]
-    rarities = ["nutella", "booster_1h", "exp_scroll"]
-    legendary = ["scroll_of_wisdom"] if db.query(models.Item).filter(models.Item.code == "scroll_of_wisdom").first() else []
-
-    def _fill_pool(code: str, entries: list[tuple[str, int]]) -> models.LootboxPool:
+    def _fill_pool(code: str) -> models.LootboxPool:
         pool = db.query(models.LootboxPool).filter(models.LootboxPool.code == code).first()
         if pool:
             return pool
         pool = models.LootboxPool(code=code, name=code.capitalize())
         db.add(pool)
         db.flush()
-        for item_code, weight in entries:
-            item = db.query(models.Item).filter(models.Item.code == item_code).first()
-            if item:
-                db.add(models.LootboxPoolEntry(pool_id=pool.id, item_id=item.id, weight=weight))
         return pool
 
     pools = {
-        "common": _fill_pool("common", [(c, 20) for c in props] + [(c, 1) for c in rarities]),
-        "rare": _fill_pool("rare", [(c, 15) for c in props] + [(c, 8) for c in rarities]),
-        "epic": _fill_pool("epic", [(c, 5) for c in props] + [(c, 15) for c in rarities] + [(c, 2) for c in legendary]),
-        "legendary": _fill_pool(
-            "legendary", [(c, 1) for c in props] + [(c, 20) for c in rarities] + [(c, 15) for c in legendary]
-        ),
+        "common": _fill_pool("common"),
+        "rare": _fill_pool("rare"),
+        "epic": _fill_pool("epic"),
+        "legendary": _fill_pool("legendary"),
     }
+    default_pool_rewards = {
+        "common": (("kovbucks", 1, 3, 70), ("xp", 5, 10, 30)),
+        "rare": (("kovbucks", 3, 6, 65), ("xp", 10, 20, 35)),
+        "epic": (("kovbucks", 6, 12, 60), ("xp", 20, 40, 40)),
+        "legendary": (("kovbucks", 12, 25, 55), ("xp", 40, 80, 45)),
+    }
+    for code, pool in pools.items():
+        if not pool.entries:
+            for order, (kind, amount_min, amount_max, weight) in enumerate(default_pool_rewards[code]):
+                pool.entries.append(models.LootboxPoolEntry(
+                    reward_kind=kind,
+                    item_id=None,
+                    amount_min=amount_min,
+                    amount_max=amount_max,
+                    weight=weight,
+                    is_active=True,
+                    sort_order=order,
+                ))
     pool_defaults = {
         "common": ("Обычный", "/static/img/items/lootbox_common.svg"),
         "rare": ("Редкий", "/static/img/items/lootbox_rare.svg"),
@@ -803,9 +660,7 @@ def seed(db: Session) -> None:
         if item:
             needs_backfill = pool.item_id is None
             pool.item_id = item.id
-            # Populate newly migrated fields without replacing later admin edits.
-            if needs_backfill and not pool.description:
-                pool.description = item.description
+            pool.description = ""
             if needs_backfill and (not pool.image_url or pool.image_url == "/static/img/items/lootbox_common.svg"):
                 pool.image_url = item.icon
             if needs_backfill and (not pool.rarity or pool.rarity == "Обычный"):

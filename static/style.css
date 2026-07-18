@@ -1271,6 +1271,24 @@ html.dark .admin-tab.active {
 .task-row:hover { box-shadow: 0 6px 16px rgba(24,39,75,0.08); }
 .task-row:active { transform: scale(0.99); }
 .task-row[data-in-progress="true"] { cursor: default; pointer-events: none; }
+.task-rewards {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  vertical-align: middle;
+}
+.task-reward-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.task-reward-badge .icon { width: 16px; height: 16px; }
 .task-row[data-in-progress="true"]:hover { box-shadow: none; }
 .tabbtn { transition: color 0.18s ease, transform 0.14s ease; }
 .tabbtn:active { transform: scale(0.92); }
@@ -3604,15 +3622,37 @@ html.dark .item-meta,
 html.dark .modal .item-actions-head h2 { color: var(--text); }
 html.dark .game-balance strong { color: var(--text); }
 
-/* iOS/WebView gesture ownership: horizontal drag stays with the banner while
-   the page keeps its normal vertical scroll. */
-.kc-carousel, .kc-viewport, .kc-track {
-  touch-action: pan-y;
+/* Native momentum scrolling is the most reliable path in iOS Telegram WebView. */
+.kc-carousel {
+  width: 100%;
+  overflow: visible;
+}
+.kc-viewport {
+  display: flex;
+  gap: 0;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 10%;
+  box-sizing: border-box;
+  scroll-padding-inline: 10%;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  touch-action: pan-x pan-y;
   -webkit-user-select: none;
   user-select: none;
 }
-.kc-track { cursor: grab; }
-.kc-track:active { cursor: grabbing; }
+.kc-viewport::-webkit-scrollbar { display: none; }
+.kc-slide {
+  flex: 0 0 80%;
+  min-width: 0;
+  padding: 0 6px;
+  box-sizing: border-box;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
 
 /* Reserve the badge corner so it never covers a title or game artwork. */
 .game-tile[data-game="moshonka"],

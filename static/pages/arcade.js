@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=231";
+import { post, get } from "/static/api.js?v=233";
 
-import { playUISound } from "/static/pages/settings.js?v=231";
+import { playUISound } from "/static/pages/settings.js?v=233";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -843,230 +843,270 @@ function gameCheckers() {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <h2>Шашки</h2>
-    <p class="card-sub">Играй против Мошонки!</p>
     <div class="game-result" id="checkers-result"></div>
-    <div id="checkers-board" style="display:grid;grid-template-columns:repeat(8,36px);gap:1px;margin:10px auto;width:fit-content"></div>
+    <div id="checkers-board" class="checkers-board arcade-checkers-board"></div>
     <div id="checkers-status" style="text-align:center;font-weight:700;margin-top:8px">Твой ход</div>
   `);
   const board = modal.querySelector("#checkers-board");
   const status = modal.querySelector("#checkers-status");
   const resultEl = modal.querySelector("#checkers-result");
-  let state = [];
+  const DIAG = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+  const PLAYER = "o", AI = "x";
+  const idx = (r, c) => r * 8 + c;
+  const rc = (i) => [Math.floor(i / 8), i % 8];
+  const owner = (piece) => piece === "x" || piece === "X" ? "x" : piece === "o" || piece === "O" ? "o" : null;
+  const isKing = (piece) => piece === "X" || piece === "O";
+  const opponent = (side) => side === "x" ? "o" : "x";
+  const kingRow = (side) => side === "x" ? 7 : 0;
+  const forward = (piece) => piece === "x" ? [[1, -1], [1, 1]] : [[-1, -1], [-1, 1]];
+
+  let state = Array(64).fill("_");
   let selected = null;
-  let turn = "white";
+  let turn = PLAYER;
   let destroyed = false;
-  // Очистка: при закрытии модалки отменяем отложенный ход ИИ.
+  let finished = false;
   registerGameCleanup(() => { destroyed = true; });
 
   function initBoard() {
-    state = Array(64).fill(null);
-    for (let i = 0; i < 64; i++) {
-      const row = Math.floor(i / 8), col = i % 8;
-      if ((row + col) % 2 === 1) {
-        if (row < 3) state[i] = { color: "black", king: false };
-        else if (row > 4) state[i] = { color: "white", king: false };
+    state = Array(64).fill("_");
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 8; c++) if ((r + c) % 2 === 1) state[idx(r, c)] = "x";
+    }
+    for (let r = 5; r < 8; r++) {
+      for (let c = 0; c < 8; c++) if ((r + c) % 2 === 1) state[idx(r, c)] = "o";
+    }
+  }
+
+  function captureSteps(st, at, captured) {
+    const piece = st[at], side = owner(piece);
+    if (!side) return [];
+    const [r, c] = rc(at), opp = opponent(side), result = [];
+    if (isKing(piece)) {
+      for (const [dr, dc] of DIAG) {
+        let nr = r + dr, nc = c + dc;
+        while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && (st[idx(nr, nc)] === "_" || captured.has(idx(nr, nc)))) {
+          nr += dr; nc += dc;
+        }
+        if (nr < 0 || nr >= 8 || nc < 0 || nc >= 8) continue;
+        const middle = idx(nr, nc);
+        if (owner(st[middle]) !== opp || captured.has(middle)) continue;
+        let lr = nr + dr, lc = nc + dc;
+        while (lr >= 0 && lr < 8 && lc >= 0 && lc < 8 && (st[idx(lr, lc)] === "_" || captured.has(idx(lr, lc)))) {
+          result.push([middle, idx(lr, lc)]);
+          lr += dr; lc += dc;
+        }
+      }
+    } else {
+      for (const [dr, dc] of DIAG) {
+        const mr = r + dr, mc = c + dc, tr = r + 2 * dr, tc = c + 2 * dc;
+        if (tr < 0 || tr >= 8 || tc < 0 || tc >= 8) continue;
+        const middle = idx(mr, mc), landing = idx(tr, tc);
+        if (owner(st[middle]) === opp && !captured.has(middle) && (st[landing] === "_" || captured.has(landing))) {
+          result.push([middle, landing]);
+        }
       }
     }
+    return result;
+  }
+
+  function captureChains(st, from) {
+    const results = [];
+    const dfs = (work, position, piece, captured, progressed) => {
+      const steps = captureSteps(work, position, captured);
+      if (!steps.length) {
+        if (progressed) results.push({ end: position, captured: new Set(captured) });
+        return;
+      }
+      for (const [middle, landing] of steps) {
+        const next = work.slice();
+        next[position] = "_";
+        let nextPiece = piece;
+        if (!isKing(piece) && rc(landing)[0] === kingRow(owner(piece))) nextPiece = owner(piece) === "x" ? "X" : "O";
+        next[landing] = nextPiece;
+        const nextCaptured = new Set(captured); nextCaptured.add(middle);
+        dfs(next, landing, nextPiece, nextCaptured, true);
+      }
+    };
+    dfs(st.slice(), from, st[from], new Set(), false);
+    return results;
+  }
+
+  function sideHasCapture(st, side) {
+    return st.some((piece, i) => owner(piece) === side && captureSteps(st, i, new Set()).length > 0);
+  }
+
+  function simpleMovesFrom(st, at) {
+    const piece = st[at], side = owner(piece);
+    if (!side) return [];
+    const [r, c] = rc(at), result = [];
+    if (isKing(piece)) {
+      for (const [dr, dc] of DIAG) {
+        let nr = r + dr, nc = c + dc;
+        while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && st[idx(nr, nc)] === "_") {
+          result.push(idx(nr, nc)); nr += dr; nc += dc;
+        }
+      }
+    } else {
+      for (const [dr, dc] of forward(piece)) {
+        const nr = r + dr, nc = c + dc;
+        if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && st[idx(nr, nc)] === "_") result.push(idx(nr, nc));
+      }
+    }
+    return result;
+  }
+
+  function legalMoves(st, side) {
+    const mustCapture = sideHasCapture(st, side), legal = {};
+    st.forEach((piece, i) => {
+      if (owner(piece) !== side) return;
+      const moves = mustCapture
+        ? [...new Set(captureChains(st, i).map((chain) => chain.end))].sort((a, b) => a - b)
+        : simpleMovesFrom(st, i).sort((a, b) => a - b);
+      if (moves.length) legal[i] = moves;
+    });
+    return legal;
+  }
+
+  function hasAnyMove(st, side) { return Object.keys(legalMoves(st, side)).length > 0; }
+
+  function applyCheckersMove(st, side, from, to) {
+    const piece = st[from];
+    if (owner(piece) !== side || st[to] !== "_") return null;
+    const next = st.slice();
+    if (sideHasCapture(st, side)) {
+      const matches = captureChains(st, from).filter((chain) => chain.end === to);
+      if (!matches.length) return null;
+      const chosen = matches.reduce((best, chain) => chain.captured.size > best.captured.size ? chain : best);
+      let moved = piece;
+      if (!isKing(piece) && rc(to)[0] === kingRow(side)) moved = side === "x" ? "X" : "O";
+      next[from] = "_";
+      chosen.captured.forEach((at) => { next[at] = "_"; });
+      next[to] = moved;
+    } else {
+      if (!simpleMovesFrom(st, from).includes(to)) return null;
+      next[from] = "_";
+      next[to] = piece;
+      if (!isKing(piece) && rc(to)[0] === kingRow(side)) next[to] = side === "x" ? "X" : "O";
+    }
+    const opp = opponent(side);
+    const won = !next.some((p) => owner(p) === opp) || !hasAnyMove(next, opp);
+    return { board: next, status: won ? `${side}_won` : "playing" };
   }
 
   function render() {
-    board.innerHTML = "";
-    for (let i = 0; i < 64; i++) {
-      const cell = document.createElement("div");
-      const row = Math.floor(i / 8), col = i % 8;
-      cell.style.cssText = "width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;border-radius:4px;";
-      cell.style.background = (row + col) % 2 === 0 ? "#f0d9b5" : "#b58863";
-      if (selected === i) cell.style.outline = "2px solid #ffd700";
-      const p = state[i];
-      if (p) {
-        cell.textContent = p.king ? "♛" : "●";
-        cell.style.color = p.color === "white" ? "#fff" : "#333";
-        cell.style.textShadow = p.color === "white" ? "0 1px 2px rgba(0,0,0,0.5)" : "0 1px 2px rgba(255,255,255,0.3)";
+    const legal = turn === PLAYER && !finished ? legalMoves(state, PLAYER) : {};
+    if (selected !== null && !legal[selected]) selected = null;
+    const targets = selected !== null ? legal[selected] || [] : [];
+    let html = "";
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const i = idx(r, c), p = state[i], mine = owner(p) === PLAYER;
+        const movable = !!legal[i], isSelected = selected === i, isTarget = targets.includes(i);
+        const pieceColor = p === "x" || p === "X" ? "#f5f5f5" : "#3a2a1a";
+        const pieceBorder = p === "x" || p === "X" ? "#bbb" : "#000";
+        const piece = p !== "_" ? `<div style="width:74%;height:74%;border-radius:50%;background:${pieceColor};border:2px solid ${pieceBorder};display:flex;align-items:center;justify-content:center;font-size:12px;color:#d4a017">${isKing(p) ? "♛" : ""}</div>` : "";
+        const bg = isSelected ? "#6cb6fb" : isTarget ? "#3fb950" : (r + c) % 2 === 1 ? "#7a8a5a" : "#e8e4cf";
+        const ring = isTarget ? "box-shadow:inset 0 0 0 3px #1f6f30;" : movable && !isSelected ? "box-shadow:inset 0 0 0 2px #6cb6fb;" : "";
+        const clickable = isTarget || (turn === PLAYER && mine && movable);
+        html += `<div data-i="${i}" data-mine="${mine}" style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:${bg};${ring}cursor:${clickable ? "pointer" : "default"}">${piece}</div>`;
       }
-      cell.addEventListener("click", () => handleClick(i));
-      board.appendChild(cell);
     }
+    board.innerHTML = html;
+    if (turn === PLAYER && !finished) board.querySelectorAll("[data-i]").forEach((cell) => {
+      cell.addEventListener("click", () => handleClick(Number(cell.dataset.i), cell.dataset.mine === "true"));
+    });
+    status.textContent = finished ? "Партия завершена" : turn === PLAYER ? "Твой ход" : "Ход Мошонки…";
   }
 
-  function getMoves(idx) {
-    const p = state[idx];
-    if (!p) return [];
-    const row = Math.floor(idx / 8), col = idx % 8;
-    const dirs = p.king ? [[-1,-1],[-1,1],[1,-1],[1,1]] : (p.color === "white" ? [[-1,-1],[-1,1]] : [[1,-1],[1,1]]);
-    const moves = [], jumps = [];
-    for (const [dr, dc] of dirs) {
-      const r1 = row + dr, c1 = col + dc;
-      if (r1 >= 0 && r1 < 8 && c1 >= 0 && c1 < 8) {
-        const ni = r1 * 8 + c1;
-        if (!state[ni]) { moves.push(ni); }
-        else if (state[ni].color !== p.color) {
-          const r2 = r1 + dr, c2 = c1 + dc;
-          if (r2 >= 0 && r2 < 8 && c2 >= 0 && c2 < 8) {
-            const ni2 = r2 * 8 + c2;
-            if (!state[ni2]) jumps.push({ to: ni2, cap: ni });
-          }
-        }
-      }
-    }
-    return jumps.length > 0 ? jumps.map(j => j.to) : moves;
+  function finishGame(gameStatus) {
+    if (gameStatus === "playing" || finished) return false;
+    finished = true;
+    const playerWon = gameStatus === `${PLAYER}_won`;
+    resultEl.innerHTML = playerWon ? '<div class="game-win">Ты победил!</div>' : '<div class="game-lose">Мошонка победил!</div>';
+    if (playerWon) {
+      playUISound("win");
+      const pieces = state.filter((piece) => owner(piece) === PLAYER).length;
+      awardFirstWin("checkers", { player_score: pieces, opponent_score: 0 });
+    } else playUISound("lose");
+    render();
+    return true;
   }
 
-  function handleClick(idx) {
-    if (turn !== "white") return;
-    const p = state[idx];
-    if (selected !== null && selected !== idx) {
-      const moves = getMoves(selected);
-      if (moves.includes(idx)) {
-        state[idx] = state[selected];
-        state[selected] = null;
-        const sr = Math.floor(selected / 8), sc = selected % 8;
-        const dr = Math.floor(idx / 8), dc = idx % 8;
-        if (Math.abs(dr - sr) === 2) {
-          state[((sr + dr) / 2) * 8 + ((sc + dc) / 2)] = null;
-        }
-        if ((state[idx].color === "white" && Math.floor(idx / 8) === 0) || (state[idx].color === "black" && Math.floor(idx / 8) === 7)) {
-          state[idx].king = true;
-        }
-        selected = null;
-        turn = "black";
-        render();
-        checkWin();
-        if (turn === "black") setTimeout(aiMove, 500);
-        return;
-      }
+  function handleClick(at, mine) {
+    if (finished || turn !== PLAYER) return;
+    const legal = legalMoves(state, PLAYER);
+    if (selected !== null && (legal[selected] || []).includes(at)) {
+      const result = applyCheckersMove(state, PLAYER, selected, at);
+      if (!result) return;
+      state = result.board; selected = null;
+      if (finishGame(result.status)) return;
+      turn = AI; render();
+      setTimeout(aiMove, 450);
+      return;
     }
-    selected = (p && p.color === "white") ? idx : null;
+    if (mine && legal[at]) selected = selected === at ? null : at;
+    else selected = null;
     render();
   }
 
-  // --- ИИ: минимакс с alpha-beta ---
-
-  // Ходы для произвольного состояния (не привязано к глобальному state).
-  function movesFor(st, idx) {
-    const p = st[idx];
-    if (!p) return { moves: [], jumps: [] };
-    const row = Math.floor(idx / 8), col = idx % 8;
-    const dirs = p.king ? [[-1,-1],[-1,1],[1,-1],[1,1]] : (p.color === "white" ? [[-1,-1],[-1,1]] : [[1,-1],[1,1]]);
-    const moves = [], jumps = [];
-    for (const [dr, dc] of dirs) {
-      const r1 = row + dr, c1 = col + dc;
-      if (r1 < 0 || r1 >= 8 || c1 < 0 || c1 >= 8) continue;
-      const ni = r1 * 8 + c1;
-      if (!st[ni]) { moves.push({ from: idx, to: ni, cap: null }); }
-      else if (st[ni].color !== p.color) {
-        const r2 = r1 + dr, c2 = c1 + dc;
-        if (r2 >= 0 && r2 < 8 && c2 >= 0 && c2 < 8) {
-          const ni2 = r2 * 8 + c2;
-          if (!st[ni2]) jumps.push({ from: idx, to: ni2, cap: ni });
-        }
-      }
-    }
-    return { moves, jumps };
+  function allMoves(st, side) {
+    const result = [];
+    const legal = legalMoves(st, side);
+    Object.entries(legal).forEach(([from, targets]) => targets.forEach((to) => result.push({ from: Number(from), to })));
+    return result;
   }
 
-  // Все легальные ходы цвета. Если есть взятия — обязаны бить.
-  function allMoves(st, color) {
-    const all = [], allJumps = [];
-    for (let i = 0; i < 64; i++) {
-      if (st[i] && st[i].color === color) {
-        const { moves, jumps } = movesFor(st, i);
-        all.push(...moves);
-        allJumps.push(...jumps);
-      }
-    }
-    return allJumps.length ? allJumps : all;
-  }
-
-  // Применяет ход к копии состояния, возвращает новую копию.
-  function applyMove(st, mv) {
-    const ns = st.map(c => c ? { color: c.color, king: c.king } : null);
-    ns[mv.to] = ns[mv.from];
-    ns[mv.from] = null;
-    if (mv.cap !== null) ns[mv.cap] = null;
-    const tr = Math.floor(mv.to / 8);
-    if (ns[mv.to].color === "white" && tr === 0) ns[mv.to].king = true;
-    if (ns[mv.to].color === "black" && tr === 7) ns[mv.to].king = true;
-    return ns;
-  }
-
-  // Эвристика с точки зрения чёрных (ИИ): больше — лучше для чёрных.
   function evaluate(st) {
-    let sc = 0;
-    for (let i = 0; i < 64; i++) {
-      const p = st[i];
-      if (!p) continue;
-      const row = Math.floor(i / 8);
-      let v = p.king ? 5 : 3;
-      // Продвижение к дамке: чёрные идут вниз, белые — вверх.
-      if (!p.king) v += p.color === "black" ? row * 0.12 : (7 - row) * 0.12;
-      sc += p.color === "black" ? v : -v;
-    }
-    return sc;
+    let score = 0;
+    st.forEach((piece, i) => {
+      const side = owner(piece);
+      if (!side) return;
+      const [r] = rc(i);
+      let value = isKing(piece) ? 5 : 3;
+      if (!isKing(piece)) value += side === AI ? r * 0.12 : (7 - r) * 0.12;
+      score += side === AI ? value : -value;
+    });
+    return score;
   }
 
-  function minimax(st, depth, alpha, beta, maximizing) {
-    const color = maximizing ? "black" : "white";
-    const moves = allMoves(st, color);
-    if (depth === 0 || moves.length === 0) {
-      let val = evaluate(st);
-      if (moves.length === 0) val += maximizing ? -1000 : 1000; // нет ходов = проигрыш стороны
-      return val;
-    }
-    if (maximizing) {
+  function minimax(st, side, depth, alpha, beta) {
+    const moves = allMoves(st, side);
+    if (depth === 0 || !moves.length) return evaluate(st) + (!moves.length ? (side === AI ? -1000 : 1000) : 0);
+    if (side === AI) {
       let best = -Infinity;
-      for (const mv of moves) {
-        const v = minimax(applyMove(st, mv), depth - 1, alpha, beta, false);
-        if (v > best) best = v;
-        if (best > alpha) alpha = best;
-        if (beta <= alpha) break;
-      }
-      return best;
-    } else {
-      let best = Infinity;
-      for (const mv of moves) {
-        const v = minimax(applyMove(st, mv), depth - 1, alpha, beta, true);
-        if (v < best) best = v;
-        if (best < beta) beta = best;
+      for (const move of moves) {
+        const applied = applyCheckersMove(st, side, move.from, move.to);
+        const value = minimax(applied.board, PLAYER, depth - 1, alpha, beta);
+        best = Math.max(best, value); alpha = Math.max(alpha, best);
         if (beta <= alpha) break;
       }
       return best;
     }
+    let best = Infinity;
+    for (const move of moves) {
+      const applied = applyCheckersMove(st, side, move.from, move.to);
+      const value = minimax(applied.board, AI, depth - 1, alpha, beta);
+      best = Math.min(best, value); beta = Math.min(beta, best);
+      if (beta <= alpha) break;
+    }
+    return best;
   }
 
   function aiMove() {
-    if (destroyed) return;
-    const moves = allMoves(state, "black");
-    if (moves.length === 0) { turn = "white"; render(); checkWin(); return; }
-
-    const DEPTH = 5;
-    let bestMove = null, bestVal = -Infinity;
-    for (const mv of moves) {
-      const v = minimax(applyMove(state, mv), DEPTH - 1, -Infinity, Infinity, false);
-      if (v > bestVal) { bestVal = v; bestMove = mv; }
+    if (destroyed || finished || turn !== AI) return;
+    const moves = allMoves(state, AI);
+    if (!moves.length) { finishGame(`${PLAYER}_won`); return; }
+    let chosen = moves[0], best = -Infinity;
+    for (const move of moves) {
+      const applied = applyCheckersMove(state, AI, move.from, move.to);
+      const value = minimax(applied.board, PLAYER, 3, -Infinity, Infinity);
+      if (value > best) { best = value; chosen = move; }
     }
-    const move = bestMove || moves[0];
-
-    state[move.to] = state[move.from];
-    state[move.from] = null;
-    if (move.cap !== null) state[move.cap] = null;
-    if (Math.floor(move.to / 8) === 7) state[move.to].king = true;
-    turn = "white";
+    const result = applyCheckersMove(state, AI, chosen.from, chosen.to);
+    state = result.board;
+    if (finishGame(result.status)) return;
+    turn = PLAYER;
     render();
-    checkWin();
-  }
-
-  function checkWin() {
-    let w = 0, b = 0;
-    for (let i = 0; i < 64; i++) {
-      if (state[i]) { if (state[i].color === "white") w++; else b++; }
-    }
-    if (w === 0) { resultEl.innerHTML = '<div class="game-lose">Мошонка победил!</div>'; }
-    else if (b === 0) {
-      resultEl.innerHTML = '<div class="game-win">Ты победил!</div>';
-      playUISound("win");
-      awardFirstWin("checkers", { player_score: w, opponent_score: 0 });
-    }
-    status.textContent = turn === "white" ? "Твой ход" : "Ход Мошонки...";
   }
 
   initBoard();
@@ -2306,7 +2346,6 @@ export async function renderArcade(root) {
       <div class="game-tile${clickerLocked ? ' game-tile-soon' : ''}" data-game="clicker" ${clickerLocked ? 'data-locked="1"' : ''} style="grid-column: 1 / -1">
         <div class="game-tile-icon"><img src="/static/img/ui/coin.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Кликер</div>
-        <div class="game-tile-desc">Тапай монету, прокачивайся</div>
         ${clickerLocked ? '<div class="game-tile-soon-badge">Скоро</div>' : ''}
       </div>
     </div>
@@ -2317,32 +2356,26 @@ export async function renderArcade(root) {
       <div class="game-tile" data-game="moshonka">
         <div class="game-tile-icon"><img src="/static/img/ui/bush.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Где Мошонка?</div>
-        <div class="game-tile-desc">Угадай, где спрятался житель</div>
       </div>
       <div class="game-tile" data-game="tictactoe">
         <div class="game-tile-icon"><img src="/static/img/ui/tictactoe.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Крестики-нолики</div>
-        <div class="game-tile-desc">Играй против Мошонки</div>
       </div>
       <div class="game-tile" data-game="minesweeper">
         <div class="game-tile-icon"><img src="/static/img/ui/stone_block.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Сапёр</div>
-        <div class="game-tile-desc">Найди безопасные клетки</div>
       </div>
       <div class="game-tile" data-game="harvest">
         <div class="game-tile-icon"><img src="/static/img/ui/harvest.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Собери урожай</div>
-        <div class="game-tile-desc">Собирай тыквы за время</div>
       </div>
       <div class="game-tile" data-game="checkers">
         <div class="game-tile-icon"><img src="/static/img/ui/checkers.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Шашки</div>
-        <div class="game-tile-desc">Играй против Мошонки</div>
       </div>
       <div class="game-tile" data-game="pingpong">
         <div class="game-tile-icon"><img src="/static/img/ui/pingpong.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Пинг-понг</div>
-        <div class="game-tile-desc">Игра до 5 очков</div>
       </div>
     </div>
 
@@ -2351,22 +2384,18 @@ export async function renderArcade(root) {
       <div class="game-tile casino" data-game="slots">
         <div class="game-tile-icon"><img src="/static/img/ui/slots.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Слоты</div>
-        <div class="game-tile-desc">3 одинаковых = x29</div>
       </div>
       <div class="game-tile casino" data-game="rocket">
         <div class="game-tile-icon"><img src="/static/img/ui/rocket.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Ракетка</div>
-        <div class="game-tile-desc">Кэшаут до краха</div>
       </div>
       <div class="game-tile casino" data-game="dice">
         <div class="game-tile-icon"><img src="/static/img/ui/dice.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Кубик</div>
-        <div class="game-tile-desc">Чёт/нечёт или число</div>
       </div>
       <div class="game-tile casino" data-game="roulette">
         <div class="game-tile-icon"><img src="/static/img/ui/roulette.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Рулетка</div>
-        <div class="game-tile-desc">От x0 до x3</div>
       </div>
     </div>
   `;

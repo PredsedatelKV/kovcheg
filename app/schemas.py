@@ -58,6 +58,10 @@ class TaskOut(BaseModel):
     icon: str
     reward: int
     xp_reward: int = 0
+    reward_item_id: int | None = None
+    reward_item_name: str | None = None
+    reward_item_icon: str | None = None
+    reward_item_quantity: int = 0
     target_progress: int
     is_daily_plan: bool
 
@@ -230,7 +234,6 @@ class AdminInventoryUpdate(BaseModel):
 class AdminItemBody(BaseModel):
     code: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]*$")
     name: str = Field(min_length=1, max_length=128)
-    description: str = Field(default="", max_length=2000)
     icon: str = Field(default="/static/img/ui/box.svg", max_length=512)
     image_url: str | None = Field(default=None, max_length=512)
     rarity: str = Field(default="Обычный", min_length=1, max_length=32)
@@ -265,10 +268,22 @@ class AdminTaskBody(BaseModel):
     icon: str = "/static/img/tasks/scroll.svg"
     reward: StrictInt = Field(default=10, ge=0, le=1_000_000)
     xp_reward: StrictInt = Field(default=0, ge=0, le=1_000_000)
+    reward_item_id: StrictInt | None = Field(default=None, gt=0)
+    reward_item_quantity: StrictInt = Field(default=0, ge=0, le=1_000_000)
     target_progress: StrictInt = Field(default=1, ge=1, le=1_000_000)
     is_active: bool = True
     is_daily_plan: bool = False
     sort_order: StrictInt = Field(default=0, ge=-100_000, le=100_000)
+
+    @model_validator(mode="after")
+    def validate_rewards(self):
+        if self.reward_item_id is None and self.reward_item_quantity != 0:
+            raise ValueError("Для предметной награды выберите предмет")
+        if self.reward_item_id is not None and self.reward_item_quantity < 1:
+            raise ValueError("Количество предметов должно быть не меньше 1")
+        if self.reward == 0 and self.xp_reward == 0 and self.reward_item_id is None:
+            raise ValueError("У задания должна быть хотя бы одна награда")
+        return self
 
 
 class AdminShopProductBody(BaseModel):
@@ -623,7 +638,6 @@ class AdminLootboxEntryBody(BaseModel):
 class AdminLootboxBody(BaseModel):
     code: str = Field(min_length=2, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]*$")
     name: str = Field(min_length=1, max_length=128)
-    description: str = Field(default="", max_length=2000)
     rarity: str = Field(default="Обычный", min_length=1, max_length=32)
     image_url: str = Field(default="/static/img/items/lootbox_common.svg", min_length=1, max_length=512)
     is_active: bool = True

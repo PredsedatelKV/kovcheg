@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=231";
+import { get, post, iconHtml } from "/static/api.js?v=233";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=231";
+import { openAssistantChat } from "/static/pages/assistant.js?v=233";
 
-import { playUISound } from "/static/pages/settings.js?v=231";
+import { playUISound } from "/static/pages/settings.js?v=233";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -26,23 +26,15 @@ function bannerCarousel(banners) {
       </div>
     </div>`;
 
-  const n = banners.length;
-  // Бесконечная карусель: клонируем по ДВА слайда с каждого края, чтобы при
-  // зацикливании peek-зона по бокам всегда была заполнена (никаких пустых/
-  // «подгружающихся» карточек на краях). Реальные слайды — индексы 2..n+1.
-  const at = (i) => banners[((i % n) + n) % n];
-  const seq = [at(-2), at(-1), ...banners, at(0), at(1)];
   const slideHtml = (b) => `
-    <div class="kc-slide" style="flex:0 0 80%;box-sizing:border-box;padding:0 6px">
+    <div class="kc-slide">
       <div class="banner" style="background-image:url('${escapeHtml(b.image_url)}');width:100%;aspect-ratio:16/9;background-size:cover;background-position:center;border-radius:var(--radius,12px);box-shadow:0 6px 18px rgba(24,39,75,.10)"></div>
     </div>`;
-  const slides = seq.map(slideHtml).join("");
+  const slides = banners.map(slideHtml).join("");
   const dots = banners.map(() => '<span class="dot" style="width:6px;height:6px;border-radius:50%;background:#D2D8E3;transition:all .25s ease"></span>').join("");
   return `
-    <div class="kc-carousel" id="bn-carousel" style="margin-bottom:14px;touch-action:pan-y;overscroll-behavior:none">
-      <div class="kc-viewport" style="overflow:hidden">
-        <div class="kc-track" id="bn-track" style="display:flex;will-change:transform;touch-action:pan-y">${slides}</div>
-      </div>
+    <div class="kc-carousel" id="bn-carousel" style="margin-bottom:14px">
+      <div class="kc-viewport" id="bn-track">${slides}</div>
       <div class="dots" id="bn-dots" style="display:flex;justify-content:center;gap:6px;padding:8px 0 2px">${dots}</div>
     </div>`;
 }
@@ -103,6 +95,16 @@ function bigSquareCard(opts) {
     </div>`;
 }
 
+function taskRewardsHtml(t) {
+  const rewards = [];
+  if (Number(t.reward) > 0) rewards.push(`<span class="task-reward-badge">${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${t.reward} ковбаксов</span>`);
+  if (Number(t.xp_reward) > 0) rewards.push(`<span class="task-reward-badge">${iconHtml("/static/img/ui/spark.svg", "sm", "")} ${t.xp_reward} XP</span>`);
+  if (t.reward_item_id && Number(t.reward_item_quantity) > 0) {
+    rewards.push(`<span class="task-reward-badge">${iconHtml(t.reward_item_icon || "/static/img/ui/box.svg", "sm", "")} ×${t.reward_item_quantity} ${escapeHtml(t.reward_item_name || "предмет")}</span>`);
+  }
+  return rewards.length ? `<span class="task-rewards">${rewards.join("")}</span>` : `<span class="task-rewards">Без награды</span>`;
+}
+
 function taskRow(t, userTasks) {
   const startedIds = userTasks ? userTasks.map(ut => String(ut.task.id)) : [];
   const isStarted = startedIds.includes(String(t.id));
@@ -110,7 +112,7 @@ function taskRow(t, userTasks) {
     <div class="task-row" data-task-id="${t.id}" ${isStarted ? 'data-in-progress="true"' : ''}>
       <div class="meta">
         <h4>${escapeHtml(t.name)}</h4>
-        <p>Награда: ${t.reward} K</p>
+        <p>Награда: ${taskRewardsHtml(t)}</p>
       </div>
       ${isStarted
         ? `<span class="task-status task-status-in_progress">В процессе</span>`
@@ -250,27 +252,22 @@ ${bannerCarousel(data.banners)}
   const bnTrack = carousel && carousel.querySelector("#bn-track");
   const bnDots = carousel ? Array.from(carousel.querySelectorAll("#bn-dots .dot")) : [];
   if (bnTrack && bnDots.length > 1) {
-    const n = bnDots.length;            // logical banner count
-    const slides = Array.from(bnTrack.children); // n + 4 (2 clones each side)
-    const realStart = 2, realEnd = n + 1;
-    let pos = realStart;                // index in `slides` (2 == first real banner)
-    const EASE = "transform .5s cubic-bezier(.22,.61,.36,1)";
-
-    const slideWidth = () => slides[0].getBoundingClientRect().width;
-    // Center the active slide: viewport shows ~80% slide, so peek = (100-80)/2 on each side.
-    const offsetFor = (i) => {
-      const w = slideWidth();
-      const vw = bnTrack.parentElement.getBoundingClientRect().width;
-      return -(i * w) + (vw - w) / 2;
+    const n = bnDots.length;
+    const slides = Array.from(bnTrack.children);
+    let pos = 0;
+    const targetLeft = (i) => {
+      const slide = slides[i];
+      if (!slide) return 0;
+      return slide.offsetLeft - (bnTrack.clientWidth - slide.offsetWidth) / 2;
     };
-    const applyTransform = (animate) => {
-      bnTrack.style.transition = animate ? EASE : "none";
-      bnTrack.style.transform = `translateX(${offsetFor(pos)}px)`;
+    const goTo = (next, behavior = "smooth") => {
+      pos = ((next % n) + n) % n;
+      bnTrack.scrollTo({ left: targetLeft(pos), behavior });
+      syncDots();
     };
     const syncDots = () => {
-      const real = ((pos - realStart) % n + n) % n;
       bnDots.forEach((d, i) => {
-        const on = i === real;
+        const on = i === pos;
         d.classList.toggle("active", on);
         d.style.background = on ? "var(--primary,#4D96FF)" : "#D2D8E3";
         d.style.width = on ? "18px" : "6px";
@@ -278,116 +275,53 @@ ${bannerCarousel(data.banners)}
       });
     };
 
-    let animating = false, animTimer = null;
-    // Завершение шага: снять блок и, если встали на клон, бесшумно прыгнуть на реальный слайд.
-    const settle = () => {
-      animating = false;
-      if (!slides[pos]) { pos = realStart; applyTransform(false); return; } // защита
-      // Встали на клон-зону — бесшумно прыгаем на эквивалентный реальный слайд.
-      if (pos < realStart) { pos += n; applyTransform(false); }
-      else if (pos > realEnd) { pos -= n; applyTransform(false); }
-    };
-    bnTrack.addEventListener("transitionend", (e) => {
-      if (e.propertyName && e.propertyName !== "transform") return;
-      if (animTimer) { clearTimeout(animTimer); animTimer = null; }
-      settle();
-    });
-
-    // Блокируем новый шаг, пока идёт анимация. Fallback-таймер снимает блок, даже если
-    // transitionend не сработал (например transform не изменился) — карусель не зависает.
-    const go = (delta) => {
-      if (animating) return;
-      pos += delta; animating = true; applyTransform(true); syncDots();
-      if (animTimer) clearTimeout(animTimer);
-      animTimer = setTimeout(() => { animTimer = null; settle(); }, 650);
-    };
-
-    // --- autoplay (smooth, single timer, reuses cleanup pattern below) ---
+    // Native overflow scrolling is deliberate: iOS/Telegram WebView provides
+    // momentum and direction arbitration more reliably than touchmove hacks.
     let bnTimer = null;
     const startAuto = () => {
       stopAuto();
       if (window.kov && window.kov.getTab && window.kov.getTab() !== "home") return;
-      bnTimer = setInterval(() => go(1), 4500);
+      bnTimer = setInterval(() => goTo(pos + 1), 4500);
     };
     function stopAuto() { if (bnTimer) { clearInterval(bnTimer); bnTimer = null; } }
 
-    // --- drag / swipe ---
-    // horiz: null = ещё не определили направление; true = горизонтальный свайп
-    // (забираем жест себе, страница/мини-апп не двигаются); false = вертикальный
-    // (отдаём прокрутке страницы).
-    let dragging = false, startX = 0, startY = 0, startTf = 0, horiz = null, suppressClick = false;
-    const beginDrag = (x, y) => {
-      dragging = true; startX = x; startY = y; horiz = null;
+    let scrollTimer = null;
+    const onScroll = () => {
       stopAuto();
-      const m = /translateX\(([-0-9.]+)px\)/.exec(bnTrack.style.transform);
-      startTf = m ? parseFloat(m[1]) : offsetFor(pos);
-      bnTrack.style.transition = "none";
+      if (scrollTimer) clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(() => {
+        const center = bnTrack.scrollLeft + bnTrack.clientWidth / 2;
+        let nearest = 0, distance = Infinity;
+        slides.forEach((slide, i) => {
+          const d = Math.abs(center - (slide.offsetLeft + slide.offsetWidth / 2));
+          if (d < distance) { distance = d; nearest = i; }
+        });
+        pos = nearest;
+        syncDots();
+        startAuto();
+      }, 120);
     };
-    const finishDrag = (x) => {
-      if (!dragging) return;
-      dragging = false;
-      if (horiz === false) { startAuto(); return; }
-      const dx = x - startX;
-      suppressClick = Math.abs(dx) > 8;
-      const threshold = slideWidth() * 0.18;
-      if (dx <= -threshold) go(1);
-      else if (dx >= threshold) go(-1);
-      else applyTransform(true);
-      startAuto();
-    };
-    // Touch: определяем направление по первому движению; горизонталь — preventDefault.
-    bnTrack.addEventListener("touchstart", (e) => beginDrag(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
-    bnTrack.addEventListener("touchmove", (e) => {
-      if (!dragging) return;
-      const t = e.touches[0];
-      const dx = t.clientX - startX, dy = t.clientY - startY;
-      if (horiz === null) {
-        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;       // ждём явного движения
-        horiz = Math.abs(dx) > Math.abs(dy);
-        if (!horiz) { dragging = false; applyTransform(true); startAuto(); return; } // вертикаль — странице
-      }
-      e.preventDefault();                                        // горизонталь — забираем жест
-      bnTrack.style.transform = `translateX(${startTf + dx}px)`;
-    }, { passive: false });
-    bnTrack.addEventListener("touchend", (e) => finishDrag((e.changedTouches[0] || {}).clientX || startX));
-    bnTrack.addEventListener("touchcancel", () => finishDrag(startX));
-    bnTrack.addEventListener("click", (e) => {
-      if (!suppressClick) return;
-      e.preventDefault();
-      e.stopPropagation();
-      suppressClick = false;
-    }, true);
-    // Mouse (десктоп): всегда трактуем как горизонтальный drag.
-    bnTrack.addEventListener("mousedown", (e) => { e.preventDefault(); beginDrag(e.clientX, e.clientY); horiz = true; });
-    const handleMouseMove = (e) => {
-      if (!dragging || horiz === false) return;
-      bnTrack.style.transform = `translateX(${startTf + (e.clientX - startX)}px)`;
-    };
-    const handleMouseUp = (e) => finishDrag(e.clientX);
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    bnTrack.addEventListener("scroll", onScroll, { passive: true });
 
     // Keep centering correct on resize / orientation change.
-    const handleResize = () => applyTransform(false);
+    const handleResize = () => goTo(pos, "auto");
     window.addEventListener("resize", handleResize);
     // Карусель пре-рендерится в скрытой вкладке (ширина 0). Пересчитываем центрирование,
     // как только вьюпорт получает реальные размеры (становится видимым).
     let ro = null;
     if (window.ResizeObserver) {
-      ro = new ResizeObserver(() => { if (!dragging) applyTransform(false); });
-      ro.observe(bnTrack.parentElement);
+      ro = new ResizeObserver(() => goTo(pos, "auto"));
+      ro.observe(bnTrack);
     }
     addHomeDisposer(() => {
       stopAuto();
-      if (animTimer) clearTimeout(animTimer);
-      animTimer = null;
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      if (scrollTimer) clearTimeout(scrollTimer);
+      bnTrack.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", handleResize);
       if (ro) ro.disconnect();
     });
 
-    requestAnimationFrame(() => { applyTransform(false); syncDots(); startAuto(); });
+    requestAnimationFrame(() => { goTo(0, "auto"); startAuto(); });
 
     if (window.kov && window.kov.onTabChange) {
       window.kov.onTabChange("home", () => stopAuto());
@@ -395,8 +329,7 @@ ${bannerCarousel(data.banners)}
     if (window.kov && window.kov.onTabShow) {
       window.kov.onTabShow("home", () => {
         requestAnimationFrame(() => {
-          applyTransform(false);
-          syncDots();
+          goTo(pos, "auto");
           startAuto();
         });
       });
@@ -480,7 +413,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=231").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=233").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {
@@ -700,7 +633,7 @@ function openTaskDetails(t) {
     <button class="close" onclick="closeModal()">×</button>
     <h2 style="text-align:center;margin-top:8px">${escapeHtml(t.name)}</h2>
     <p style="color:var(--text-soft);font-size:14px;margin:8px 0 16px;text-align:center">${escapeHtml(t.description)}</p>
-    <div class="task-card-reward">Награда: ${iconHtml("/static/img/ui/coin.svg", "sm", "")} ${t.reward} K</div>
+    <div class="task-card-reward">Награда: ${taskRewardsHtml(t)}</div>
     <button class="btn" id="start-btn" style="margin-top:16px">Начать</button>
   `);
   modal.querySelector("#start-btn").addEventListener("click", async () => {

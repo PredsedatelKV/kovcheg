@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=231";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=233";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
