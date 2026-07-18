@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=234";
+import { get, post, iconHtml } from "/static/api.js?v=235";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=234";
+import { openAssistantChat } from "/static/pages/assistant.js?v=235";
 
-import { playUISound } from "/static/pages/settings.js?v=234";
+import { playUISound } from "/static/pages/settings.js?v=235";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -34,7 +34,7 @@ function bannerCarousel(banners) {
 
 function assistantCard() {
   return `
-    <div class="card assistant-card-wide home-feature-locked" id="assistant-card" data-locked="1" aria-disabled="true" title="Скоро">
+    <div class="card assistant-card-wide is-coming-soon" id="assistant-card" data-locked="1" aria-disabled="true" title="Скоро">
       <div class="assistant-bust">
         <div class="assistant-bust-bg"></div>
         <div class="assistant-bust-img"></div>
@@ -42,9 +42,9 @@ function assistantCard() {
       <div class="assistant-text">
         <div class="assistant-label">ИИ-ассистент</div>
         <h3 class="assistant-name">Мошонка</h3>
-        <p class="assistant-sub">Скоро</p>
+        <p class="assistant-sub">Верный спутник граждан Ковчега</p>
       </div>
-      <span class="feature-lock" aria-hidden="true"></span>
+      <span class="coming-soon-badge" aria-hidden="true">Скоро</span>
     </div>`;
 }
 
@@ -152,11 +152,11 @@ export async function renderHome(root) {
     </div>
 
     <div class="chip-row">
-      <button class="chip big-chip home-feature-locked" type="button" disabled aria-disabled="true" title="Скоро">
-        ${iconHtml("/static/img/ui/constitution.svg", "md", "")}<span>Конституция</span><span class="feature-lock" aria-hidden="true"></span>
+      <button class="chip big-chip is-coming-soon" type="button" disabled aria-disabled="true" title="Скоро">
+        ${iconHtml("/static/img/ui/constitution.svg", "md", "")}<span>Конституция</span><span class="coming-soon-badge" aria-hidden="true">Скоро</span>
       </button>
-      <button class="chip big-chip home-feature-locked" type="button" disabled aria-disabled="true" title="Скоро">
-        ${iconHtml("/static/img/ui/scales.svg", "md", "")}<span>Законодательство</span><span class="feature-lock" aria-hidden="true"></span>
+      <button class="chip big-chip is-coming-soon" type="button" disabled aria-disabled="true" title="Скоро">
+        ${iconHtml("/static/img/ui/scales.svg", "md", "")}<span>Законодательство</span><span class="coming-soon-badge" aria-hidden="true">Скоро</span>
       </button>
       <button class="chip big-chip" data-action="channel">
         ${iconHtml("/static/img/ui/telegram.svg", "md", "")}<span>Телеграм канал</span>
@@ -293,7 +293,7 @@ export async function renderHome(root) {
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=234").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=235").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {

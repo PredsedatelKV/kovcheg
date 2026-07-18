@@ -383,58 +383,58 @@ body {
   font-weight: 300;
 }
 
-/* Temporarily unavailable home features. Keep the cards visible, but make the
-   disabled state unmistakable and non-interactive in both themes. */
-.home-feature-locked {
-  cursor: not-allowed !important;
-  filter: saturate(0.35);
-  opacity: 0.72;
+/* Unified pre-release treatment for all temporarily unavailable features. */
+.is-coming-soon {
+  position: relative;
+  cursor: default !important;
+  filter: grayscale(.18) brightness(.92);
+  opacity: .88;
   box-shadow: none !important;
   transform: none !important;
 }
-.assistant-card-wide.home-feature-locked {
-  background: linear-gradient(135deg, #edf0f3, #f8f9fa);
+.is-coming-soon:hover,
+.is-coming-soon:active {
+  transform: none !important;
+  box-shadow: none !important;
+}
+.coming-soon-badge {
+  position: absolute;
+  z-index: 4;
+  top: 9px;
+  right: 10px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 999px;
+  background: rgba(31,36,51,.76);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.35;
+  letter-spacing: .35px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.big-chip.is-coming-soon {
+  min-height: 66px;
+  padding-top: 22px;
+  color: var(--text-soft);
+  background: var(--surface-2);
   border-color: var(--border);
 }
-.feature-lock {
-  position: relative;
-  display: inline-block;
-  width: 22px;
-  height: 18px;
-  margin-left: auto;
-  flex: 0 0 auto;
-  border-radius: 5px;
-  background: var(--text-muted);
+.big-chip.is-coming-soon .coming-soon-badge {
+  top: 5px;
+  right: 7px;
+  padding: 2px 7px;
+  font-size: 9px;
 }
-.feature-lock::before {
-  content: "";
-  position: absolute;
-  left: 5px;
-  top: -9px;
-  width: 12px;
-  height: 12px;
-  border: 3px solid var(--text-muted);
-  border-bottom: 0;
-  border-radius: 8px 8px 0 0;
-  box-sizing: border-box;
+html.dark .is-coming-soon {
+  filter: grayscale(.15) brightness(.86);
+  opacity: .9;
 }
-.feature-lock::after {
-  content: "";
-  position: absolute;
-  left: 10px;
-  top: 6px;
-  width: 3px;
-  height: 6px;
-  border-radius: 2px;
-  background: var(--surface);
-}
-.big-chip.home-feature-locked:disabled {
-  color: var(--text-muted);
-  background: var(--surface-soft);
-  border-color: var(--border);
-}
-html.dark .assistant-card-wide.home-feature-locked {
-  background: linear-gradient(135deg, #20262d, #171b20);
+html.dark .coming-soon-badge {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.16);
+  color: var(--text);
 }
 
 /* Square row — wheel + news BIG */
@@ -3638,15 +3638,6 @@ html.dark .daily-dot b { color: var(--text-soft); }
   border: 1px solid var(--border); box-shadow: none; font-weight: 700;
 }
 html.dark .fw-badge.claimed { background: rgba(255,255,255,.08); color: var(--text-soft); border-color: var(--border); }
-
-/* --- Задача 14: кликер «Скоро» (недоступен обычным гражданам) --- */
-.game-tile-soon { opacity: .6; filter: grayscale(.35); cursor: default; }
-.game-tile-soon:hover { transform: none; box-shadow: none; }
-.game-tile-soon-badge {
-  position: absolute; top: 8px; right: 10px;
-  background: rgba(0,0,0,.62); color: #fff; font-size: 11px; font-weight: 700;
-  padding: 3px 10px; border-radius: 999px; letter-spacing: .5px;
-}
 
 /* --- Задача 4: поле «Сапёра» фиксированного размера (не зависит от содержимого) --- */
 .game-mine-board {

@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=234";
+import { post, get } from "/static/api.js?v=235";
 
-import { playUISound } from "/static/pages/settings.js?v=234";
+import { playUISound } from "/static/pages/settings.js?v=235";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -2327,10 +2327,7 @@ export async function renderArcade(root) {
     await fetchBalance();
   } catch (_) {}
 
-  // Кликер временно доступен только Омару (админу). Для остальных карточка видна,
-  // но затемнена и не запускается (проверка дублируется на сервере).
-  const canUseClicker = !!(window.kov && window.kov.me && window.kov.me.can_use_clicker);
-  const clickerLocked = !canUseClicker;
+  // До релиза карточка одинаково заблокирована для всех, включая администратора.
 
   root.innerHTML = `
     <section class="page-header">
@@ -2343,10 +2340,10 @@ export async function renderArcade(root) {
 
     <h2 class="section-title">Кликер</h2>
     <div class="game-grid">
-      <div class="game-tile${clickerLocked ? ' game-tile-soon' : ''}" data-game="clicker" ${clickerLocked ? 'data-locked="1"' : ''} style="grid-column: 1 / -1">
+      <div class="game-tile is-coming-soon" data-game="clicker" data-locked="1" aria-disabled="true" style="grid-column: 1 / -1">
         <div class="game-tile-icon"><img src="/static/img/ui/coin.svg" alt="" class="game-icon-lg"/></div>
         <div class="game-tile-title">Кликер</div>
-        ${clickerLocked ? '<div class="game-tile-soon-badge">Скоро</div>' : ''}
+        <div class="coming-soon-badge">Скоро</div>
       </div>
     </div>
 
