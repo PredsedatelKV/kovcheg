@@ -403,24 +403,6 @@ def seed_players(db: Session) -> None:
                 db.add(models.Wallet(user_id=user.id, balance=0))
 
 
-WHEEL_PRIZES: list[dict] = [
-    {"label": "50 Ковбаксов", "kind": "coins", "value": 50, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 25, "sort_order": 0},
-    {"label": "5 Ковбаксов", "kind": "coins", "value": 5, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 35, "sort_order": 1},
-    {"label": "25 Ковбаксов", "kind": "coins", "value": 25, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 30, "sort_order": 2},
-    {"label": "200 Ковбаксов", "kind": "coins", "value": 200, "item_code": None, "icon": "/static/img/ui/money_bag.svg", "weight": 5, "sort_order": 3},
-    {"label": "50 Ковбаксов", "kind": "coins", "value": 50, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 20, "sort_order": 4},
-    {"label": "75 Ковбаксов", "kind": "coins", "value": 75, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 12, "sort_order": 5},
-    {"label": "10 Ковбаксов", "kind": "coins", "value": 10, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 30, "sort_order": 6},
-    {"label": "15 Ковбаксов", "kind": "coins", "value": 15, "item_code": None, "icon": "/static/img/ui/coin.svg", "weight": 25, "sort_order": 7},
-]
-
-
-def seed_wheel_prizes(db: Session) -> None:
-    if db.query(models.WheelPrize).count() == 0:
-        for spec in WHEEL_PRIZES:
-            db.add(models.WheelPrize(**spec, is_active=True))
-
-
 def seed(db: Session) -> None:
     seed_players(db)
     # Pre-launch catalog intentionally starts with Kovboxes and their fragments
@@ -499,29 +481,6 @@ def seed(db: Session) -> None:
         if existing is None:
             db.add(models.Banner(image_url=url, title=title, sort_order=order, is_active=True))
 
-    # News
-    news_defs = [
-        (
-            "https://picsum.photos/seed/kovcheg-news/700/500",
-            "Новый сезон уже начался!",
-            "Исследуйте новые земли, выполняйте задания и получайте награды.",
-        ),
-        (
-            "https://picsum.photos/seed/kovcheg-news-2/700/500",
-            "Открыты заявки в Совет",
-            "Жителям Ковчега доступны выборы в Совет. Подайте заявку через бота, чтобы войти в число кандидатов.",
-        ),
-        (
-            "https://picsum.photos/seed/kovcheg-news-3/700/500",
-            "Рынок расширен",
-            "Теперь на рынке можно выставлять любые предметы из инвентаря — и сразу получать Ковбаксы после продажи.",
-        ),
-    ]
-    for url, title, body in news_defs:
-        existing = db.query(models.News).filter(models.News.image_url == url).one_or_none()
-        if existing is None:
-            db.add(models.News(image_url=url, title=title, body=body))
-
     # Legal texts (placeholders)
     if not db.query(models.LegalText).filter(models.LegalText.slug == "constitution").first():
         db.add(
@@ -554,12 +513,6 @@ def seed(db: Session) -> None:
                 ),
             )
         )
-
-    # Chat messages
-    if db.query(models.ChatMessage).count() == 0:
-        ibragim = db.query(models.User).filter(models.User.first_name == "Ибрагим").first()
-        if ibragim:
-            db.add(models.ChatMessage(user_id=ibragim.id, content="Привет всем!", message_type="text"))
 
     # Seed lootbox items
     lootbox_common = _get_or_create_item(
@@ -722,8 +675,6 @@ def seed(db: Session) -> None:
             ).first()
             if not ubp:
                 db.add(models.UserBattlePass(user_id=user.id, season_id=season.id))
-
-    seed_wheel_prizes(db)
 
     # clicker_states — таблица кликера
     existing_tables = {row[0] for row in db.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}

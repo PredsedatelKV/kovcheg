@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=235";
+import { post, get } from "/static/api.js?v=236";
 
-import { playUISound } from "/static/pages/settings.js?v=235";
+import { playUISound } from "/static/pages/settings.js?v=236";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -2321,6 +2321,10 @@ function gameClicker() {
 
 // ============ RENDER ============
 
+function arcadeIcon(name) {
+  return `<div class="game-tile-icon arcade-icon-frame"><span class="arcade-icon-sprite arcade-icon-${name}" aria-hidden="true"></span></div>`;
+}
+
 export async function renderArcade(root) {
   root.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
   try {
@@ -2341,7 +2345,7 @@ export async function renderArcade(root) {
     <h2 class="section-title">Кликер</h2>
     <div class="game-grid">
       <div class="game-tile is-coming-soon" data-game="clicker" data-locked="1" aria-disabled="true" style="grid-column: 1 / -1">
-        <div class="game-tile-icon"><img src="/static/img/ui/coin.svg" alt="" class="game-icon-lg"/></div>
+        ${arcadeIcon("clicker")}
         <div class="game-tile-title">Кликер</div>
         <div class="coming-soon-badge">Скоро</div>
       </div>
@@ -2351,27 +2355,27 @@ export async function renderArcade(root) {
     
     <div class="game-grid">
       <div class="game-tile" data-game="moshonka">
-        <div class="game-tile-icon"><img src="/static/img/ui/bush.svg" alt="" class="game-icon-lg"/></div>
+        ${arcadeIcon("moshonka")}
         <div class="game-tile-title">Где Мошонка?</div>
       </div>
       <div class="game-tile" data-game="tictactoe">
-        <div class="game-tile-icon"><img src="/static/img/ui/tictactoe.svg" alt="" class="game-icon-lg"/></div>
+        ${arcadeIcon("tictactoe")}
         <div class="game-tile-title">Крестики-нолики</div>
       </div>
       <div class="game-tile" data-game="minesweeper">
-        <div class="game-tile-icon"><img src="/static/img/ui/stone_block.svg" alt="" class="game-icon-lg"/></div>
+        ${arcadeIcon("minesweeper")}
         <div class="game-tile-title">Сапёр</div>
       </div>
       <div class="game-tile" data-game="harvest">
-        <div class="game-tile-icon"><img src="/static/img/ui/harvest.svg" alt="" class="game-icon-lg"/></div>
+        ${arcadeIcon("harvest")}
         <div class="game-tile-title">Собери урожай</div>
       </div>
       <div class="game-tile" data-game="checkers">
-        <div class="game-tile-icon"><img src="/static/img/ui/checkers.svg" alt="" class="game-icon-lg"/></div>
+        ${arcadeIcon("checkers")}
         <div class="game-tile-title">Шашки</div>
       </div>
       <div class="game-tile" data-game="pingpong">
-        <div class="game-tile-icon"><img src="/static/img/ui/pingpong.svg" alt="" class="game-icon-lg"/></div>
+        ${arcadeIcon("pingpong")}
         <div class="game-tile-title">Пинг-понг</div>
       </div>
     </div>
@@ -2379,19 +2383,19 @@ export async function renderArcade(root) {
     <h2 class="section-title">Казино</h2>
     <div class="game-grid">
       <div class="game-tile casino" data-game="slots">
-        <div class="game-tile-icon"><img src="/static/img/ui/slots.svg" alt="" class="game-icon-lg"/></div>
+        ${arcadeIcon("slots")}
         <div class="game-tile-title">Слоты</div>
       </div>
       <div class="game-tile casino" data-game="rocket">
-        <div class="game-tile-icon"><img src="/static/img/ui/rocket.svg" alt="" class="game-icon-lg"/></div>
+        ${arcadeIcon("rocket")}
         <div class="game-tile-title">Ракетка</div>
       </div>
       <div class="game-tile casino" data-game="dice">
-        <div class="game-tile-icon"><img src="/static/img/ui/dice.svg" alt="" class="game-icon-lg"/></div>
+        ${arcadeIcon("dice")}
         <div class="game-tile-title">Кубик</div>
       </div>
       <div class="game-tile casino" data-game="roulette">
-        <div class="game-tile-icon"><img src="/static/img/ui/roulette.svg" alt="" class="game-icon-lg"/></div>
+        ${arcadeIcon("roulette")}
         <div class="game-tile-title">Рулетка</div>
       </div>
     </div>

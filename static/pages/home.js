@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=235";
+import { get, post, iconHtml } from "/static/api.js?v=236";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=235";
+import { openAssistantChat } from "/static/pages/assistant.js?v=236";
 
-import { playUISound } from "/static/pages/settings.js?v=235";
+import { playUISound } from "/static/pages/settings.js?v=236";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -26,11 +26,17 @@ function bannerCarousel(banners) {
       </div>
     </div>`;
 
-  const slideHtml = (b) => `
-    <div class="kc-slide">
+  const slideHtml = (b, logicalIndex, clone = false) => `
+    <div class="kc-slide" data-slide-index="${logicalIndex}"${clone ? ' data-clone="1" aria-hidden="true"' : ''}>
       <div class="banner" style="background-image:url('${escapeHtml(b.image_url)}');width:100%;aspect-ratio:16/9;background-size:cover;background-position:center;border-radius:var(--radius,12px);box-shadow:0 6px 18px rgba(24,39,75,.10)"></div>
     </div>`;
-  const slides = banners.map(slideHtml).join("");
+  // Boundary clones keep native iOS overflow scrolling while making the
+  // carousel circular. The first real card is physical index 1 and is centred
+  // immediately after layout.
+  const realSlides = banners.map((banner, index) => slideHtml(banner, index)).join("");
+  const slides = slideHtml(banners[banners.length - 1], banners.length - 1, true)
+    + realSlides
+    + slideHtml(banners[0], 0, true);
   const dots = banners.map(() => '<span class="dot" style="width:6px;height:6px;border-radius:50%;background:#D2D8E3;transition:all .25s ease"></span>').join("");
   return `
     <div class="kc-carousel" id="bn-carousel" style="margin-bottom:14px">
@@ -255,14 +261,21 @@ ${bannerCarousel(data.banners)}
     const n = bnDots.length;
     const slides = Array.from(bnTrack.children);
     let pos = 0;
-    const targetLeft = (i) => {
-      const slide = slides[i];
+    let isBoundaryJump = false;
+    const targetLeft = (physicalIndex) => {
+      const slide = slides[physicalIndex];
       if (!slide) return 0;
       return slide.offsetLeft - (bnTrack.clientWidth - slide.offsetWidth) / 2;
     };
     const goTo = (next, behavior = "smooth") => {
+      const previous = pos;
       pos = ((next % n) + n) % n;
-      bnTrack.scrollTo({ left: targetLeft(pos), behavior });
+      let physicalIndex = pos + 1;
+      // Move through a boundary clone first; the scroll-end handler then jumps
+      // invisibly to the matching real card, producing an endless loop.
+      if (previous === n - 1 && next >= n) physicalIndex = n + 1;
+      else if (previous === 0 && next < 0) physicalIndex = 0;
+      bnTrack.scrollTo({ left: targetLeft(physicalIndex), behavior });
       syncDots();
     };
     const syncDots = () => {
@@ -274,6 +287,9 @@ ${bannerCarousel(data.banners)}
         d.style.borderRadius = on ? "6px" : "50%";
       });
     };
+    bnDots.forEach((dot, index) => {
+      dot.addEventListener("click", () => goTo(index));
+    });
 
     // Native overflow scrolling is deliberate: iOS/Telegram WebView provides
     // momentum and direction arbitration more reliably than touchmove hacks.
@@ -287,6 +303,7 @@ ${bannerCarousel(data.banners)}
 
     let scrollTimer = null;
     const onScroll = () => {
+      if (isBoundaryJump) return;
       stopAuto();
       if (scrollTimer) clearTimeout(scrollTimer);
       scrollTimer = setTimeout(() => {
@@ -296,7 +313,19 @@ ${bannerCarousel(data.banners)}
           const d = Math.abs(center - (slide.offsetLeft + slide.offsetWidth / 2));
           if (d < distance) { distance = d; nearest = i; }
         });
-        pos = nearest;
+        if (nearest === 0 || nearest === n + 1) {
+          pos = nearest === 0 ? n - 1 : 0;
+          const realPhysicalIndex = nearest === 0 ? n : 1;
+          isBoundaryJump = true;
+          bnTrack.scrollTo({ left: targetLeft(realPhysicalIndex), behavior: "auto" });
+          requestAnimationFrame(() => {
+            isBoundaryJump = false;
+            syncDots();
+            startAuto();
+          });
+          return;
+        }
+        pos = nearest - 1;
         syncDots();
         startAuto();
       }, 120);
@@ -413,7 +442,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=235").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=236").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {
