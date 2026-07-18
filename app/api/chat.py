@@ -13,6 +13,13 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 MSK = timezone(timedelta(hours=3))
 
+# Keep sticker identifiers bounded to the nine assets shipped with the chat.
+# This also prevents arbitrary file names from being reflected into the image URL.
+ALLOWED_STICKERS = frozenset({
+    "moshonka_hi", "moshonka_laugh", "moshonka_angry", "moshonka_middle",
+    "kovcheg", "mine", "coin", "heart", "fire",
+})
+
 
 def _to_msk(dt: datetime) -> str:
     if dt.tzinfo is None:
@@ -60,6 +67,10 @@ def send_message(
         raise HTTPException(status_code=400, detail="Пустое сообщение")
     if len(content) > 1000:
         raise HTTPException(status_code=400, detail="Слишком длинное сообщение")
+    if payload.message_type not in {"text", "sticker"}:
+        raise HTTPException(status_code=400, detail="Недопустимый тип сообщения")
+    if payload.message_type == "sticker" and content not in ALLOWED_STICKERS:
+        raise HTTPException(status_code=400, detail="Недопустимый стикер")
 
     m = models.ChatMessage(
         user_id=user.id,
