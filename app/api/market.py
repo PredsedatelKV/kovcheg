@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api._helpers import ensure_wallet
+from app.api._helpers import ensure_wallet, return_market_listing_to_seller
 from app.api.profile import _inventory_to_out, _item_to_out, _user_to_out
 from app.auth import current_user
 from app.db import begin_game_write, get_db
@@ -28,6 +28,7 @@ def _listing_to_out(listing: models.MarketListing) -> schemas.MarketListingOut:
         price=listing.price,
         target_user_id=listing.target_user_id,
         target_user_name=target_name,
+        is_active=listing.is_active,
     )
 
 
@@ -109,22 +110,7 @@ def unlist(
     listing = db.query(models.MarketListing).filter(models.MarketListing.id == listing_id).one_or_none()
     if listing is None or listing.seller_id != user.id:
         raise HTTPException(status_code=404, detail="Объявление не найдено")
-    if not listing.is_active:
-        raise HTTPException(status_code=400, detail="Объявление уже снято")
-    if not (1 <= listing.quantity <= MAX_LISTING_QUANTITY):
-        raise HTTPException(status_code=503, detail="Объявление настроено некорректно")
-    listing.is_active = False
-    inv = (
-        db.query(models.InventoryItem)
-        .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == listing.item_id)
-        .one_or_none()
-    )
-    if inv is None:
-        db.add(models.InventoryItem(user_id=user.id, item_id=listing.item_id, quantity=listing.quantity))
-    else:
-        if inv.quantity < 0 or inv.quantity > 2_000_000_000 - listing.quantity:
-            raise HTTPException(status_code=409, detail="Достигнут максимальный размер стака предмета")
-        inv.quantity += listing.quantity
+    return_market_listing_to_seller(db, listing)
     # Сохраняем строки ДО commit (expire_on_commit).
     item_name = listing.item.name
     seller_name = user.first_name

@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=239";
-import { renderProfile } from "/static/pages/profile.js?v=239";
-import { renderKoverna } from "/static/pages/koverna.js?v=239";
-import { renderArcade } from "/static/pages/arcade.js?v=239";
-import { renderAdmin } from "/static/pages/admin.js?v=239";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=239";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=239";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=239";
-import { get, post, prefetch, peekCached } from "/static/api.js?v=239";
+import { renderHome } from "/static/pages/home.js?v=240";
+import { renderProfile } from "/static/pages/profile.js?v=240";
+import { renderKoverna } from "/static/pages/koverna.js?v=240";
+import { renderArcade } from "/static/pages/arcade.js?v=240";
+import { renderAdmin } from "/static/pages/admin.js?v=240";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=240";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=240";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=240";
+import { get, post, prefetch, peekCached } from "/static/api.js?v=240";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -325,6 +325,7 @@ tabButtons.forEach((btn) => {
 // cleanup callback here instead of monkey-patching window.closeModal during
 // ES-module evaluation (dependencies run before this file's body).
 const modalBeforeCloseListeners = new Set();
+const modalStack = [];
 
 function notifyModalBeforeClose(reason) {
   for (const listener of [...modalBeforeCloseListeners]) {
@@ -341,7 +342,12 @@ function closeActiveModal(reason = "user") {
   const root = document.getElementById("modal-root");
   if (!root || !root.firstElementChild) return true;
   if (!notifyModalBeforeClose(reason)) return false;
-  root.innerHTML = "";
+  root.firstElementChild.remove();
+  if (reason === "user" && modalStack.length > 0) {
+    root.appendChild(modalStack.pop());
+  } else {
+    modalStack.length = 0;
+  }
   return true;
 }
 
@@ -369,9 +375,16 @@ window.kov = {
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 2800);
   },
-  showModal(html) {
+  showModal(html, options = {}) {
     const root = document.getElementById("modal-root");
-    root.innerHTML = `<div class="modal-overlay" data-close="1"><div class="modal" role="dialog">${html}</div></div>`;
+    if (options.stack && root.firstElementChild) {
+      modalStack.push(root.firstElementChild);
+      root.firstElementChild.remove();
+    } else {
+      modalStack.length = 0;
+      root.innerHTML = "";
+    }
+    root.insertAdjacentHTML("beforeend", `<div class="modal-overlay" data-close="1"><div class="modal" role="dialog">${html}</div></div>`);
     const overlay = root.firstElementChild;
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) window.closeModal();

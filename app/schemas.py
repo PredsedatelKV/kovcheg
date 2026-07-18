@@ -129,6 +129,7 @@ class MarketListingOut(BaseModel):
     price: int
     target_user_id: int | None = None
     target_user_name: str | None = None
+    is_active: bool = True
 
 
 class BuyRequest(BaseModel):

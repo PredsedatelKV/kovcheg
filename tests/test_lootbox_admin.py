@@ -182,6 +182,34 @@ def test_sale_settings_create_real_shop_product_and_disable_it(lootbox_api):
     assert all(row["id"] != product_id for row in client.get("/api/shop/products").json())
 
 
+def test_admin_can_unlist_player_offer_once_and_item_is_returned(lootbox_api):
+    client, sessions = lootbox_api
+    with sessions() as db:
+        item = db.query(models.Item).filter_by(code="prize").one()
+        listing = models.MarketListing(
+            seller_id=1,
+            item_id=item.id,
+            quantity=3,
+            price=17,
+            is_active=True,
+        )
+        db.add(listing)
+        db.commit()
+        listing_id = listing.id
+
+    assert client.post(f"/api/admin/market/{listing_id}/unlist", headers=_headers(1)).status_code == 403
+    first = client.post(f"/api/admin/market/{listing_id}/unlist", headers=_headers(2))
+    assert first.status_code == 200, first.text
+    assert first.json()["is_active"] is False
+
+    replay = client.post(f"/api/admin/market/{listing_id}/unlist", headers=_headers(2))
+    assert replay.status_code == 400
+    with sessions() as db:
+        stack = db.query(models.InventoryItem).filter_by(user_id=1, item_id=item.id).one()
+        assert stack.quantity == 3
+        assert db.get(models.MarketListing, listing_id).is_active is False
+
+
 @pytest.mark.parametrize("sale_price,sale_currency", [(0, "kovbucks"), (10, "kovcoins")])
 def test_unsupported_lootbox_sale_config_is_rejected(lootbox_api, sale_price, sale_currency):
     client, sessions = lootbox_api

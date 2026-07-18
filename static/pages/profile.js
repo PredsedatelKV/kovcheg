@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=239";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=240";
 
-import { playUISound } from "/static/pages/settings.js?v=239";
+import { playUISound } from "/static/pages/settings.js?v=240";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -459,17 +459,17 @@ async function _updateSections(sectionNames) {
   }
 }
 
-function bindCellActions(scope, inventory) {
+function bindCellActions(scope, inventory, options = {}) {
   scope.querySelectorAll(".inv-cell").forEach((cell) => {
     cell.addEventListener("click", () => {
       const id = Number(cell.dataset.itemId);
       const row = inventory.find((r) => r.item.id === id);
-      if (row) openItemActionsDialog(row);
+      if (row) openItemActionsDialog(row, options);
     });
   });
 }
 
-function openItemActionsDialog(row) {
+function openItemActionsDialog(row, options = {}) {
   const item = row.item;
   const canGift = item.can_gift;
   const assemblyCost = _profileData?.fragment_assembly_cost || 10;
@@ -504,7 +504,7 @@ function openItemActionsDialog(row) {
         <span>Активировать</span>
       </button>` : ""}
     </div>
-  `);
+  `, { stack: Boolean(options.stack) });
 
   modal.querySelector("#ia-gift").addEventListener("click", () => {
     if (!canGift) return;
@@ -579,7 +579,7 @@ function openAllInventory(inventory) {
       ? `<div class="empty">Пока пусто.</div>`
       : `<div class="inv-grid">${inventory.map(invCell).join("")}</div>`}
   `);
-  bindCellActions(modal, inventory);
+  bindCellActions(modal, inventory, { stack: true });
 }
 
 function openAllMyTasks(myTasks, root) {

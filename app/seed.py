@@ -589,6 +589,17 @@ def seed(db: Session) -> None:
         "epic": _fill_pool("epic"),
         "legendary": _fill_pool("legendary"),
     }
+    # Canonical pre-launch prices.  These four managed products are synced to
+    # the real shop below, so purchase price never comes from the client.
+    default_sale_prices = {
+        "common": 19,
+        "rare": 29,
+        "epic": 39,
+        "legendary": 59,
+    }
+    for code, pool in pools.items():
+        pool.sale_price = default_sale_prices[code]
+        pool.sale_currency = "kovbucks"
     default_pool_rewards = {
         "common": (("kovbucks", 1, 3, 70), ("xp", 5, 10, 30)),
         "rare": (("kovbucks", 3, 6, 65), ("xp", 10, 20, 35)),

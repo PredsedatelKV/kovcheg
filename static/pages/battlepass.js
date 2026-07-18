@@ -1,4 +1,4 @@
-import { get, post } from "/static/api.js?v=239";
+import { get, post } from "/static/api.js?v=240";
 
 var _bpRoot = null;
 var _bpData = null;
@@ -119,8 +119,6 @@ function _renderBP(data) {
     } else if ((isCurrent || isDone) && r) {
       // Кнопку «Забрать» показываем только если на уровне есть награда.
       html += '<button class="bp-isle-claim">Забрать</button>';
-    } else if (!isCurrent && !isDone) {
-      html += '<div class="bp-isle-lock"></div>';
     }
 
     html += "</div>";
@@ -204,7 +202,7 @@ function _renderBP(data) {
       var isDone = level <= currentIndex;
       island.classList.remove("is-claimed", "is-current", "is-ready", "is-locked");
       island.classList.add(isClaimed ? "is-claimed" : isCurrent ? "is-current" : isDone ? "is-ready" : "is-locked");
-      body.querySelectorAll(".bp-isle-check, .bp-isle-claim, .bp-isle-lock").forEach(function(control) { control.remove(); });
+      body.querySelectorAll(".bp-isle-check, .bp-isle-claim").forEach(function(control) { control.remove(); });
 
       if (isClaimed) {
         var check = document.createElement("div");
@@ -220,10 +218,6 @@ function _renderBP(data) {
           _handleClaim(claimButton, island, level);
         });
         body.appendChild(claimButton);
-      } else if (!isCurrent && !isDone) {
-        var lock = document.createElement("div");
-        lock.className = "bp-isle-lock";
-        body.appendChild(lock);
       }
     });
   }

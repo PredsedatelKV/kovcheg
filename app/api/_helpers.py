@@ -21,6 +21,8 @@ XP_MAX = 3000
 MAX_XP_AWARD = 1_000_000
 MAX_GAME_BALANCE = 2_000_000_000
 MAX_SHOP_PRICE = 1_000_000_000
+MAX_MARKET_LISTING_QUANTITY = 1_000_000
+MAX_INVENTORY_STACK = 2_000_000_000
 ACTIVATABLE_ITEM_XP = {"exp_scroll": 50, "scroll_of_wisdom": 250}
 
 
@@ -70,6 +72,42 @@ def sync_lootbox_shop_product(
     for duplicate in rows[1:]:
         duplicate.is_active = False
     return primary
+
+
+def return_market_listing_to_seller(
+    db: Session,
+    listing: models.MarketListing,
+) -> models.InventoryItem:
+    """Atomically mark an active listing inactive and restore its reserved item.
+
+    The caller owns the surrounding write transaction and commits only after
+    this function succeeds. Replays fail before changing inventory.
+    """
+    if not listing.is_active:
+        raise HTTPException(status_code=400, detail="Объявление уже снято")
+    if not (1 <= listing.quantity <= MAX_MARKET_LISTING_QUANTITY):
+        raise HTTPException(status_code=503, detail="Объявление настроено некорректно")
+    inventory = (
+        db.query(models.InventoryItem)
+        .filter(
+            models.InventoryItem.user_id == listing.seller_id,
+            models.InventoryItem.item_id == listing.item_id,
+        )
+        .one_or_none()
+    )
+    if inventory is None:
+        inventory = models.InventoryItem(
+            user_id=listing.seller_id,
+            item_id=listing.item_id,
+            quantity=listing.quantity,
+        )
+        db.add(inventory)
+    else:
+        if inventory.quantity < 0 or inventory.quantity > MAX_INVENTORY_STACK - listing.quantity:
+            raise HTTPException(status_code=409, detail="Достигнут максимальный размер стака предмета")
+        inventory.quantity += listing.quantity
+    listing.is_active = False
+    return inventory
 
 
 def award_xp(db: Session, user: models.User, amount: int) -> dict[str, int]:

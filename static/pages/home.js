@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=239";
+import { get, post, iconHtml } from "/static/api.js?v=240";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=239";
+import { openAssistantChat } from "/static/pages/assistant.js?v=240";
 
-import { playUISound } from "/static/pages/settings.js?v=239";
+import { playUISound } from "/static/pages/settings.js?v=240";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -26,17 +26,16 @@ function bannerCarousel(banners) {
       </div>
     </div>`;
 
-  const slideHtml = (b, logicalIndex, clone = false) => `
-    <div class="kc-slide" data-slide-index="${logicalIndex}"${clone ? ' data-clone="1" aria-hidden="true"' : ''}>
+  const slideHtml = (b, logicalIndex, copy) => `
+    <div class="kc-slide" data-slide-index="${logicalIndex}" data-copy="${copy}"${copy === 1 ? "" : ' aria-hidden="true"'}>
       <div class="banner" style="background-image:url('${escapeHtml(b.image_url)}');width:100%;aspect-ratio:16/9;background-size:cover;background-position:center;border-radius:var(--radius,12px);box-shadow:0 6px 18px rgba(24,39,75,.10)"></div>
     </div>`;
-  // Boundary clones keep native iOS overflow scrolling while making the
-  // carousel circular. The first real card is physical index 1 and is centred
-  // immediately after layout.
-  const realSlides = banners.map((banner, index) => slideHtml(banner, index)).join("");
-  const slides = slideHtml(banners[banners.length - 1], banners.length - 1, true)
-    + realSlides
-    + slideHtml(banners[0], 0, true);
+  // Three identical runs provide a full native-scroll buffer in both
+  // directions. Recentring happens only near the remote ends and lands on the
+  // pixel-identical card, so the loop has no visible boundary teleport.
+  const slides = [0, 1, 2].map((copy) =>
+    banners.map((banner, index) => slideHtml(banner, index, copy)).join(""),
+  ).join("");
   const dots = banners.map(() => '<span class="dot" style="width:6px;height:6px;border-radius:50%;background:#D2D8E3;transition:all .25s ease"></span>').join("");
   return `
     <div class="kc-carousel" id="bn-carousel" style="margin-bottom:14px">
@@ -261,23 +260,27 @@ ${bannerCarousel(data.banners)}
     const n = bnDots.length;
     const slides = Array.from(bnTrack.children);
     let pos = 0;
-    let isBoundaryJump = false;
+    let physicalPos = n;
     const targetLeft = (physicalIndex) => {
       const slide = slides[physicalIndex];
       if (!slide) return 0;
       return slide.offsetLeft - (bnTrack.clientWidth - slide.offsetWidth) / 2;
     };
-    const goTo = (next, behavior = "smooth") => {
-      const previous = pos;
-      pos = ((next % n) + n) % n;
-      let physicalIndex = pos + 1;
-      // Move through a boundary clone first; the scroll-end handler then jumps
-      // invisibly to the matching real card, producing an endless loop.
-      if (previous === n - 1 && next >= n) physicalIndex = n + 1;
-      else if (previous === 0 && next < 0) physicalIndex = 0;
-      bnTrack.scrollTo({ left: targetLeft(physicalIndex), behavior });
+    const scrollToPhysical = (index, behavior = "smooth") => {
+      physicalPos = Math.max(0, Math.min(slides.length - 1, index));
+      pos = Number(slides[physicalPos].dataset.slideIndex) || 0;
+      bnTrack.scrollTo({ left: targetLeft(physicalPos), behavior });
       syncDots();
     };
+    const goTo = (logicalIndex, behavior = "smooth") => {
+      const normalized = ((logicalIndex % n) + n) % n;
+      const candidates = [normalized, n + normalized, n * 2 + normalized];
+      const nearest = candidates.reduce((best, value) =>
+        Math.abs(value - physicalPos) < Math.abs(best - physicalPos) ? value : best,
+      candidates[0]);
+      scrollToPhysical(nearest, behavior);
+    };
+    const goForward = () => scrollToPhysical(physicalPos + 1, "smooth");
     const syncDots = () => {
       bnDots.forEach((d, i) => {
         const on = i === pos;
@@ -297,14 +300,12 @@ ${bannerCarousel(data.banners)}
     const startAuto = () => {
       stopAuto();
       if (window.kov && window.kov.getTab && window.kov.getTab() !== "home") return;
-      bnTimer = setInterval(() => goTo(pos + 1), 4500);
+      bnTimer = setInterval(goForward, 4500);
     };
     function stopAuto() { if (bnTimer) { clearInterval(bnTimer); bnTimer = null; } }
 
     let scrollTimer = null;
     const onScroll = () => {
-      if (isBoundaryJump) return;
-      stopAuto();
       if (scrollTimer) clearTimeout(scrollTimer);
       scrollTimer = setTimeout(() => {
         const center = bnTrack.scrollLeft + bnTrack.clientWidth / 2;
@@ -313,44 +314,55 @@ ${bannerCarousel(data.banners)}
           const d = Math.abs(center - (slide.offsetLeft + slide.offsetWidth / 2));
           if (d < distance) { distance = d; nearest = i; }
         });
-        if (nearest === 0 || nearest === n + 1) {
-          pos = nearest === 0 ? n - 1 : 0;
-          const realPhysicalIndex = nearest === 0 ? n : 1;
-          isBoundaryJump = true;
-          bnTrack.scrollTo({ left: targetLeft(realPhysicalIndex), behavior: "auto" });
-          requestAnimationFrame(() => {
-            isBoundaryJump = false;
-            syncDots();
-            startAuto();
-          });
-          return;
+        physicalPos = nearest;
+        pos = Number(slides[nearest].dataset.slideIndex) || 0;
+        // Normalise only at the distant ends. The destination contains the
+        // same image at the same centre coordinate, making this imperceptible.
+        if (nearest <= 1 || nearest >= slides.length - 2) {
+          const middle = n + pos;
+          bnTrack.classList.add("kc-normalizing");
+          physicalPos = middle;
+          bnTrack.scrollLeft = targetLeft(middle);
+          requestAnimationFrame(() => bnTrack.classList.remove("kc-normalizing"));
         }
-        pos = nearest - 1;
         syncDots();
         startAuto();
-      }, 120);
+      }, 180);
     };
     bnTrack.addEventListener("scroll", onScroll, { passive: true });
+    const pauseForUser = () => stopAuto();
+    bnTrack.addEventListener("pointerdown", pauseForUser, { passive: true });
+    bnTrack.addEventListener("touchstart", pauseForUser, { passive: true });
+    bnTrack.addEventListener("wheel", pauseForUser, { passive: true });
 
     // Keep centering correct on resize / orientation change.
-    const handleResize = () => goTo(pos, "auto");
+    const handleResize = () => scrollToPhysical(n + pos, "auto");
     window.addEventListener("resize", handleResize);
     // Карусель пре-рендерится в скрытой вкладке (ширина 0). Пересчитываем центрирование,
     // как только вьюпорт получает реальные размеры (становится видимым).
     let ro = null;
+    let observedWidth = 0;
     if (window.ResizeObserver) {
-      ro = new ResizeObserver(() => goTo(pos, "auto"));
+      ro = new ResizeObserver((entries) => {
+        const width = entries[0] && entries[0].contentRect.width;
+        if (!width || Math.abs(width - observedWidth) < 1) return;
+        observedWidth = width;
+        scrollToPhysical(n + pos, "auto");
+      });
       ro.observe(bnTrack);
     }
     addHomeDisposer(() => {
       stopAuto();
       if (scrollTimer) clearTimeout(scrollTimer);
       bnTrack.removeEventListener("scroll", onScroll);
+      bnTrack.removeEventListener("pointerdown", pauseForUser);
+      bnTrack.removeEventListener("touchstart", pauseForUser);
+      bnTrack.removeEventListener("wheel", pauseForUser);
       window.removeEventListener("resize", handleResize);
       if (ro) ro.disconnect();
     });
 
-    requestAnimationFrame(() => { goTo(0, "auto"); startAuto(); });
+    requestAnimationFrame(() => { scrollToPhysical(n, "auto"); startAuto(); });
 
     if (window.kov && window.kov.onTabChange) {
       window.kov.onTabChange("home", () => stopAuto());
@@ -358,7 +370,7 @@ ${bannerCarousel(data.banners)}
     if (window.kov && window.kov.onTabShow) {
       window.kov.onTabShow("home", () => {
         requestAnimationFrame(() => {
-          goTo(pos, "auto");
+          scrollToPhysical(n + pos, "auto");
           startAuto();
         });
       });
@@ -442,7 +454,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=239").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=240").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {

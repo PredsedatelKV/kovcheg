@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=239";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=240";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -674,17 +674,36 @@ async function renderShop(body) {
 async function renderMarket(body) {
   const rows = await get("/api/admin/market");
   body.innerHTML = `
-    ${cardBlock("Рынок", '<div class="admin-sub">Рынок доступен только для просмотра. Активный лот создаётся и снимается игроком: сервер резервирует или возвращает предмет атомарно.</div>')}
+    ${cardBlock("Рынок игроков", '<div class="admin-sub">Здесь видны все объявления. Активный лот можно безопасно снять с продажи — предмет целиком вернётся продавцу.</div>')}
+    ${rows.length === 0 ? '<div class="admin-sub" style="padding:12px 0">Объявлений пока нет</div>' : ""}
     ${rows
       .map(
         (l) => `
       <div class="admin-card" data-id="${l.id}">
-        <h3 class="admin-card-title"><img src="${escapeHtml(l.item.icon)}" class="icon icon-sm" alt=""/> ${escapeHtml(l.item.name)}</h3>
+        <h3 class="admin-card-title"><img src="${escapeHtml(l.item.icon)}" class="icon icon-sm" alt=""/> ${escapeHtml(l.item.name)} <span class="admin-badge">${l.is_active ? "в продаже" : "снято"}</span></h3>
         <div class="admin-sub">Продаёт: ${escapeHtml(l.seller_name)}${l.target_user_name ? ` → ${escapeHtml(l.target_user_name)}` : ""} · ${l.quantity} шт · <img src="/static/img/ui/kovbaks.png" alt="" class="icon icon-sm inline-coin"/> ${l.price}</div>
+        ${l.is_active ? '<div class="row gap" style="margin-top:10px"><button class="btn btn-sm btn-danger" data-action="market-unlist">Снять с продажи</button></div>' : ""}
       </div>`,
       )
       .join("")}
   `;
+  body.querySelectorAll('[data-action="market-unlist"]').forEach((button) => {
+    button.addEventListener("click", () => {
+      const card = button.closest(".admin-card");
+      const id = Number(card && card.dataset.id);
+      confirmAction("Снять лот с продажи и вернуть предмет игроку?", async () => {
+        button.disabled = true;
+        try {
+          await post(`/api/admin/market/${id}/unlist`);
+          window.kov.toast("Лот снят, предмет возвращён продавцу");
+          await renderMarket(body);
+        } catch (error) {
+          button.disabled = false;
+          throw error;
+        }
+      });
+    });
+  });
 }
 
 // ---------- TASKS ----------

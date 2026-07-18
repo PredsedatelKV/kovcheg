@@ -2996,7 +2996,14 @@ html.dark .bp-flowers {
   color: rgba(255,255,255,0.65); margin-bottom: 2px;
   text-shadow: 0 1px 2px rgba(0,0,0,0.25);
 }
-img.bp-head-icon-slot {display:block;width:auto;height:120px;margin:2px auto 4px;object-fit:contain;border-radius:12px;}
+img.bp-head-icon-slot {
+  display:block;
+  width:min(100%, 420px);
+  height:auto;
+  max-height:160px;
+  margin:2px auto 6px;
+  object-fit:contain;
+}
 .bp-head-xp { max-width: 320px; margin: 0 auto; }
 .bp-head-bar {
   height: 12px; background: rgba(255,255,255,0.55); border-radius:10px;
@@ -3153,7 +3160,16 @@ html.dark .bp-isle-body {
 }
 html.dark .bp-isle-lvl { background: linear-gradient(135deg, #2a4a6b 0%, #1a3a5c 100%); color:#cfe8ff; border-color:#5a8fc0; }
 
-.bp-isle-icon { width: 32px; height: 32px; object-fit: contain; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)); margin-top: 3px; }
+.bp-isle-icon {
+  display:block;
+  width:32px;
+  height:32px;
+  flex:0 0 32px;
+  align-self:center;
+  object-fit:contain;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+  margin:3px auto 0;
+}
 .bp-isle-empty {
   width:32px;height:32px;display:flex;align-items:center;justify-content:center;
   color:rgba(255,255,255,0.7); font-weight:800; font-size:18px;
@@ -3166,8 +3182,6 @@ html.dark .bp-isle-lvl { background: linear-gradient(135deg, #2a4a6b 0%, #1a3a5c
   margin-top: 3px;
 }
 
-.bp-isle-lock { width:18px;height:18px;opacity:0.5;background:rgba(255,255,255,0.25);border-radius:4px 4px 6px 6px;position:relative; }
-.bp-isle-lock::before { content:'';position:absolute;top:-6px;left:3px;width:12px;height:7px;border:2px solid rgba(255,255,255,0.35);border-bottom:none;border-radius:6px 6px 0 0; }
 .bp-isle-check {
   width: 22px; height: 22px; border-radius: 50%;
   background: linear-gradient(135deg, #6dd64a, #2fb028);
@@ -3766,6 +3780,10 @@ html.dark .game-balance strong { color: var(--text); }
   user-select: none;
 }
 .kc-viewport::-webkit-scrollbar { display: none; }
+.kc-viewport.kc-normalizing {
+  scroll-snap-type:none;
+  scroll-behavior:auto;
+}
 .kc-slide {
   flex: 0 0 80%;
   min-width: 0;

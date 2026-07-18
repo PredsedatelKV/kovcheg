@@ -11,7 +11,12 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api._helpers import award_xp, ensure_wallet, sync_lootbox_shop_product
+from app.api._helpers import (
+    award_xp,
+    ensure_wallet,
+    return_market_listing_to_seller,
+    sync_lootbox_shop_product,
+)
 from app.auth import is_admin, require_admin
 from app.db import begin_game_write, get_db
 from app.models import now_utc
@@ -78,6 +83,9 @@ def _shop_product_out(p: models.ShopProduct) -> schemas.ShopProductOut:
 
 
 def _market_listing_out(listing: models.MarketListing) -> schemas.MarketListingOut:
+    target_name = None
+    if listing.target_user_id is not None and listing.target_user is not None:
+        target_name = listing.target_user.first_name or f"Игрок #{listing.target_user.id}"
     return schemas.MarketListingOut(
         id=listing.id,
         seller_id=listing.seller_id,
@@ -85,6 +93,9 @@ def _market_listing_out(listing: models.MarketListing) -> schemas.MarketListingO
         item=_item_out(listing.item),
         quantity=listing.quantity,
         price=listing.price,
+        target_user_id=listing.target_user_id,
+        target_user_name=target_name,
+        is_active=listing.is_active,
     )
 
 
@@ -639,6 +650,26 @@ def delete_shop(product_id: int, db: Session = Depends(get_db)) -> dict:
 def list_market(db: Session = Depends(get_db)) -> list[schemas.MarketListingOut]:
     rows = db.query(models.MarketListing).order_by(models.MarketListing.id.desc()).all()
     return [_market_listing_out(listing) for listing in rows]
+
+
+@router.post("/market/{listing_id}/unlist", response_model=schemas.MarketListingOut)
+def admin_unlist_market(listing_id: int, db: Session = Depends(get_db)) -> schemas.MarketListingOut:
+    begin_game_write(db)
+    listing = db.query(models.MarketListing).filter(models.MarketListing.id == listing_id).one_or_none()
+    if listing is None:
+        raise HTTPException(status_code=404, detail="Объявление не найдено")
+    item_name = listing.item.name
+    seller_name = listing.seller.first_name or f"Игрок #{listing.seller_id}"
+    quantity = listing.quantity
+    return_market_listing_to_seller(db, listing)
+    db.commit()
+    db.refresh(listing)
+    from app.notify import notify_admins_bg
+
+    notify_admins_bg(
+        f"↩️ Администратор снял лот <b>{seller_name}</b>: <b>{item_name}</b> ×{quantity}. Предмет возвращён игроку."
+    )
+    return _market_listing_out(listing)
 
 
 @router.post("/market", response_model=schemas.MarketListingOut)
