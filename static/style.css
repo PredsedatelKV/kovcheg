@@ -1675,26 +1675,15 @@ html.dark .listing-row .price, html.dark .listing-row .coins { color: var(--text
   overflow: hidden;
   background: transparent;
 }
-.arcade-icon-sprite {
+.game-tile-icon img.arcade-icon-img {
   display: block;
   width: 74px;
   height: 74px;
   flex: 0 0 74px;
-  background-image: url(/static/img/ui/arcade-icons-sprite.png?v=236);
-  background-repeat: no-repeat;
-  background-size: 400% 300%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
 }
-.arcade-icon-clicker { background-position: 0 0; }
-.arcade-icon-moshonka { background-position: 33.333% 0; }
-.arcade-icon-tictactoe { background-position: 66.667% 0; }
-.arcade-icon-minesweeper { background-position: 100% 0; }
-.arcade-icon-harvest { background-position: 0 50%; }
-.arcade-icon-checkers { background-position: 33.333% 50%; }
-.arcade-icon-pingpong { background-position: 66.667% 50%; }
-.arcade-icon-slots { background-position: 0 100%; }
-.arcade-icon-rocket { background-position: 33.333% 100%; }
-.arcade-icon-dice { background-position: 66.667% 100%; }
-.arcade-icon-roulette { background-position: 100% 100%; }
 .game-tile-title { font-weight: 700; font-size: 14px; }
 .game-tile-desc { font-size: 11px; color: var(--text-soft); line-height: 1.3; }
 
