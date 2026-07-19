@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=240";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=243";
 
-import { playUISound } from "/static/pages/settings.js?v=240";
+import { playUISound } from "/static/pages/settings.js?v=243";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -160,7 +160,7 @@ export async function renderProfile(root) {
     </div>
 
     <div data-section="tasks">
-      <h2 class="section-title">Задания ${data.user_tasks.length > 3 ? `<button class="see-all" data-action="all-mytasks">Смотреть все</button>` : ""}</h2>
+      <h3 class="card-title profile-section-title">Задания ${data.user_tasks.length > 3 ? `<button class="see-all" data-action="all-mytasks">Смотреть все</button>` : ""}</h3>
       ${
         data.user_tasks.length === 0
           ? `<div class="empty">Нет активных заданий. Начни задание на вкладке «Главная».</div>`
@@ -449,7 +449,7 @@ async function _updateSections(sectionNames) {
         var body = data.user_tasks.length === 0
           ? '<div class="empty">Нет активных заданий. Начни задание на вкладке «Главная».</div>'
           : '<div class="tasks-list">' + data.user_tasks.slice(0, 3).map(userTaskRow).join("") + "</div>";
-        section.innerHTML = '<h2 class="section-title">Задания ' + titleBtn + "</h2>" + body;
+        section.innerHTML = '<h3 class="card-title profile-section-title">Задания ' + titleBtn + "</h3>" + body;
       }
     }
   } catch (err) {
@@ -548,6 +548,9 @@ function openItemActionsDialog(row, options = {}) {
     const button = modal.querySelector("#ia-open-lootbox");
     if (button.disabled) return;
     button.disabled = true;
+    // Initialise the shared WebAudio context while the user gesture is still
+    // active; Telegram/iOS may block contexts created only after network awaits.
+    playUISound("click");
     try {
       var pools = await get("/api/battlepass/lootbox-pools");
       var pool = pools.find(function(p) { return p.code === item.lootbox_pool_code; });
@@ -558,8 +561,8 @@ function openItemActionsDialog(row, options = {}) {
       });
       window.closeModal();
       _updateSections(["inventory", "balance"]);
-      if (result.rewards.length === 1 && result.item && poolItems.length > 1) {
-        await showLootboxRoulette(poolItems, result.item);
+      if (poolItems.length > 0 && result.rewards.length > 0) {
+        showLootboxRoulette(poolItems, result.rewards);
       } else {
         window.kov.toast("🎁 " + result.rewards.map(function(reward) { return reward.label; }).join(", "));
       }
@@ -800,52 +803,43 @@ function openUserTaskDialog(ut, root) {
   });
 }
 
-function _lootboxTick(ctx) {
-  var now = ctx.currentTime;
-  var osc = ctx.createOscillator();
-  var gain = ctx.createGain();
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.frequency.value = 1200 + Math.random() * 400;
-  osc.type = "sine";
-  gain.gain.setValueAtTime(0.08, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
-  osc.start(now);
-  osc.stop(now + 0.04);
+function _lootboxPoolVisual(entry) {
+  var kind = entry.reward_kind;
+  var range = entry.amount_min === entry.amount_max
+    ? String(entry.amount_min)
+    : entry.amount_min + "–" + entry.amount_max;
+  var names = { xp: "XP", kovbucks: "Ковбаксы", kovcoins: "Ковкойны" };
+  return {
+    name: kind === "item" ? entry.item_name : range + " " + (names[kind] || kind),
+    icon: entry.item_icon || (kind === "xp" ? "/static/img/ui/xp.png" : "/static/img/ui/kovbaks.png"),
+    rarity: entry.item_rarity || "Обычный",
+    weight: Math.max(1, Number(entry.weight) || 1),
+  };
 }
 
-function _lootboxFanfare(ctx) {
-  var now = ctx.currentTime;
-  var notes = [523, 659, 784, 1047];
-  notes.forEach(function(freq, i) {
-    var osc = ctx.createOscillator();
-    var gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.frequency.value = freq;
-    osc.type = "sine";
-    var t = now + i * 0.12;
-    gain.gain.setValueAtTime(0.15, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-    osc.start(t);
-    osc.stop(t + 0.2);
+function _lootboxRewardVisual(reward) {
+  return {
+    name: reward.label,
+    icon: reward.item?.icon || (reward.kind === "xp" ? "/static/img/ui/xp.png" : "/static/img/ui/kovbaks.png"),
+    rarity: reward.item?.rarity || "Обычный",
+  };
+}
+
+function showLootboxRoulette(poolItems, rewards) {
+  var wonRewards = rewards.map(_lootboxRewardVisual);
+  var winItem = wonRewards[0];
+  var visuals = poolItems.map(_lootboxPoolVisual);
+  var totalWeight = visuals.reduce(function(sum, item) { return sum + item.weight; }, 0);
+  var weighted = [];
+  visuals.forEach(function(item) {
+    var copies = Math.max(1, Math.min(24, Math.round(item.weight / totalWeight * 32)));
+    for (var copy = 0; copy < copies; copy++) weighted.push(item);
   });
-}
-
-function showLootboxRoulette(poolItems, winItem) {
-  var ctx = null;
-  try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch(_) {}
-
   var items = [];
-  var REPEAT = 6;
-  var totalPool = poolItems.length;
-  for (var r = 0; r < REPEAT; r++) {
-    for (var i = 0; i < totalPool; i++) {
-      items.push({ name: poolItems[i].item_name, icon: poolItems[i].item_icon });
-    }
-  }
-  var WIN_IDX = Math.floor(items.length / 2);
-  items[WIN_IDX] = { name: winItem.name, icon: winItem.icon, isWinner: true };
+  while (items.length < 72) items = items.concat(weighted);
+  items = items.slice(0, 72);
+  var WIN_IDX = 56;
+  items[WIN_IDX] = { ...winItem, isWinner: true };
 
   var overlay = document.createElement("div");
   overlay.className = "lootbox-overlay";
@@ -853,8 +847,8 @@ function showLootboxRoulette(poolItems, winItem) {
     '<div class="lootbox-title">Открытие ковбокса</div>' +
     '<div class="lootbox-track-wrap"><div class="lootbox-pointer"></div><div class="lootbox-track" id="lb-track"></div></div>' +
     '<div class="lootbox-result" id="lb-result">' +
-      '<div class="lootbox-result-name" id="lb-win-name"></div>' +
-      '<div class="lootbox-result-rarity" id="lb-win-rarity"></div>' +
+      '<div class="lootbox-result-name">Вы получили</div>' +
+      '<div class="lootbox-result-list" id="lb-win-list"></div>' +
       '<button class="btn lootbox-result-btn" id="lb-close">Отлично!</button>' +
     '</div>';
   document.body.appendChild(overlay);
@@ -863,16 +857,18 @@ function showLootboxRoulette(poolItems, winItem) {
   items.forEach(function(it) {
     var div = document.createElement("div");
     div.className = "lootbox-track-item" + (it.isWinner ? " win-target" : "");
-    div.innerHTML = '<img src="' + it.icon + '" alt=""/>';
+    var image = document.createElement("img");
+    image.src = it.icon;
+    image.alt = "";
+    div.appendChild(image);
     track.appendChild(div);
   });
 
   var tickInterval = null;
-  var tickSpeed = 50;
+  var tickSpeed = 70;
 
   function startTick() {
-    if (!ctx) return;
-    tickInterval = setInterval(function() { _lootboxTick(ctx); }, tickSpeed);
+    tickInterval = setInterval(function() { playUISound("spin"); }, tickSpeed);
   }
   function stopTick() {
     if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
@@ -906,7 +902,7 @@ function showLootboxRoulette(poolItems, winItem) {
     track.addEventListener("transitionend", function handler() {
       track.removeEventListener("transitionend", handler);
       stopTick();
-      if (ctx) _lootboxFanfare(ctx);
+      playUISound("win");
 
       var targetEl = track.querySelector(".win-target");
       if (targetEl) {
@@ -915,14 +911,24 @@ function showLootboxRoulette(poolItems, winItem) {
         targetEl.classList.add("win-rarity-" + (winItem.rarity || "Обычный"));
       }
       var result = overlay.querySelector("#lb-result");
-      result.querySelector("#lb-win-name").textContent = winItem.name;
-      result.querySelector("#lb-win-rarity").textContent = winItem.rarity || "";
-      result.querySelector("#lb-win-rarity").className = "lootbox-result-rarity rr-" + (winItem.rarity || "Обычный");
+      var resultList = result.querySelector("#lb-win-list");
+      wonRewards.forEach(function(reward) {
+        var row = document.createElement("div");
+        row.className = "lootbox-result-row";
+        var rewardImage = document.createElement("img");
+        rewardImage.src = reward.icon;
+        rewardImage.alt = "";
+        var label = document.createElement("span");
+        label.textContent = reward.name;
+        row.append(rewardImage, label);
+        resultList.appendChild(row);
+      });
       result.classList.add("show");
     });
   });
 
   overlay.querySelector("#lb-close").addEventListener("click", function() {
+    stopTick();
     overlay.remove();
   });
 }

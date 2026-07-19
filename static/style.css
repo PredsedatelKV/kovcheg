@@ -199,8 +199,8 @@ body {
 }
 .card-title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 700;
 }
 .card-sub {
   color: var(--text-soft);
@@ -1113,7 +1113,7 @@ html.dark .admin-tab.active {
   color: #6BA3FF;
   border-color: rgba(47, 123, 245, 0.4);
 }
-.admin-tab .icon-sm { width: 22px; height: 22px; }
+.admin-tab .icon-sm { width: 28px; height: 28px; }
 
 .admin-card {
   background: var(--surface);
@@ -1253,6 +1253,25 @@ html.dark .admin-tab.active {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 4px;
+}
+.admin-category-create,
+.admin-category-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 82px auto;
+  gap: 8px;
+  align-items: center;
+}
+.admin-category-create { margin-bottom: 10px; }
+.admin-category-row {
+  grid-template-columns: minmax(0, 1fr) 82px auto auto;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 480px) {
+  .admin-category-create,
+  .admin-category-row { grid-template-columns: minmax(0, 1fr) 70px; }
+  .admin-category-create .btn { grid-column: 1 / -1; }
+  .admin-category-row .btn { width: 100%; }
 }
 
 /* Uniform 1:1 product / inventory / listing image frame */
@@ -1437,6 +1456,7 @@ html.dark .toggle button.active {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 14px;
+  margin-bottom: 14px;
 }
 .kovbox-shop-card h2 {
   margin: 0 0 12px;
@@ -1486,6 +1506,23 @@ html.dark .toggle button.active {
 }
 .kovbox-shop-item .btn { margin-top: auto; }
 .shop-other-products { margin-top: 12px; }
+.koverna-mode-card { padding: 8px; }
+.koverna-mode-card .toggle { margin: 0; }
+.koverna-category-filter { margin: 0 0 14px; }
+.profile-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 18px 4px 8px;
+}
+.profile-section-title .see-all {
+  font-size: 14px;
+  font-weight: 500;
+  color: #6CB6FB;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
 
 img[src^="/static/img/ui/kovbaks.png"],
 img[src^="/static/img/ui/xp.png"] {
@@ -2998,9 +3035,9 @@ html.dark .bp-flowers {
 }
 img.bp-head-icon-slot {
   display:block;
-  width:min(100%, 420px);
+  width:min(70%, 294px);
   height:auto;
-  max-height:160px;
+  max-height:112px;
   margin:2px auto 6px;
   object-fit:contain;
 }
@@ -3304,6 +3341,9 @@ html.dark .bp-isle.bp-isle-gold .bp-isle-lvl {
 .lootbox-result { margin-top:20px;text-align:center;opacity:0;transition:opacity .4s; }
 .lootbox-result.show { opacity:1; }
 .lootbox-result-name { color:#fff;font-size:22px;font-weight:800;margin-bottom:2px; }
+.lootbox-result-list { display:flex;flex-direction:column;gap:8px;margin:10px auto 16px;max-width:320px; }
+.lootbox-result-row { display:flex;align-items:center;justify-content:center;gap:9px;color:#fff;font-size:15px;font-weight:750; }
+.lootbox-result-row img { width:30px;height:30px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35)); }
 .lootbox-result-rarity { font-size:12px;font-weight:600;margin-bottom:14px;padding:2px 12px;border-radius:8px;display:inline-block; }
 .lootbox-result-rarity.rr-Обычный { color:#bdbdbd;background:rgba(158,158,158,0.15); }
 .lootbox-result-rarity.rr-Редкий { color:#4caf50;background:rgba(76,175,80,0.12); }

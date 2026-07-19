@@ -13,6 +13,12 @@ router = APIRouter(prefix="/api/shop", tags=["shop"])
 MAX_PRODUCT_PRICE = 1_000_000_000
 
 
+@router.get("/categories", response_model=list[schemas.ItemCategoryOut])
+def list_categories(db: Session = Depends(get_db)) -> list[schemas.ItemCategoryOut]:
+    rows = db.query(models.ItemCategory).order_by(models.ItemCategory.sort_order, models.ItemCategory.name).all()
+    return [schemas.ItemCategoryOut(id=row.id, name=row.name, sort_order=row.sort_order) for row in rows]
+
+
 @router.get("/products", response_model=list[schemas.ShopProductOut])
 def list_products(db: Session = Depends(get_db)) -> list[schemas.ShopProductOut]:
     products = db.query(models.ShopProduct).filter(models.ShopProduct.is_active.is_(True)).order_by(models.ShopProduct.id).all()

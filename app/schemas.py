@@ -178,6 +178,17 @@ class LegalTextOut(BaseModel):
     body: str
 
 
+class LoginGiftOut(BaseModel):
+    id: int
+    kovbucks: int = 0
+    xp: int = 0
+    item_id: int | None = None
+    item_name: str | None = None
+    item_icon: str | None = None
+    item_quantity: int = 0
+    delivered_at: datetime | None = None
+
+
 class ProfilePayload(BaseModel):
     user: UserOut
     bp_level: int = 0
@@ -185,6 +196,7 @@ class ProfilePayload(BaseModel):
     inventory: list[InventoryItemOut]
     user_tasks: list[UserTaskOut]
     daily_plan: TaskOut | None = None
+    login_gifts: list[LoginGiftOut] = Field(default_factory=list)
 
 
 class KovernaPayload(BaseModel):
@@ -207,6 +219,24 @@ class AdminUserOut(BaseModel):
     balance: int
     xp: int = 0
     is_admin: bool = False
+    pending_login_gifts: int = 0
+
+
+class AdminLoginGiftBody(BaseModel):
+    kovbucks: StrictInt = Field(default=0, ge=0, le=1_000_000_000)
+    xp: StrictInt = Field(default=0, ge=0, le=1_000_000)
+    item_id: StrictInt | None = Field(default=None, gt=0)
+    item_quantity: StrictInt = Field(default=0, ge=0, le=1_000_000)
+
+    @model_validator(mode="after")
+    def validate_reward(self):
+        if self.item_id is None and self.item_quantity != 0:
+            raise ValueError("Количество предмета допустимо только при выбранном предмете")
+        if self.item_id is not None and self.item_quantity < 1:
+            raise ValueError("Укажите количество выбранного предмета")
+        if self.kovbucks == 0 and self.xp == 0 and self.item_id is None:
+            raise ValueError("Выберите хотя бы одну награду")
+        return self
 
 
 class AdminUserUpdate(BaseModel):
@@ -247,6 +277,17 @@ class AdminItemBody(BaseModel):
         if self.can_activate and self.code not in {"exp_scroll", "scroll_of_wisdom"}:
             raise ValueError("Для этого предмета не настроен серверный эффект активации")
         return self
+
+
+class ItemCategoryOut(BaseModel):
+    id: int
+    name: str
+    sort_order: int
+
+
+class AdminItemCategoryBody(BaseModel):
+    name: str = Field(min_length=1, max_length=32)
+    sort_order: StrictInt = Field(default=0, ge=-100_000, le=100_000)
 
 
 class AdminNewsBody(BaseModel):
@@ -345,6 +386,7 @@ class WheelPrizeOut(BaseModel):
 class AdminMeta(BaseModel):
     items: list[ItemOut]
     users: list[AdminUserOut]
+    categories: list[ItemCategoryOut] = Field(default_factory=list)
 
 
 # ----- Quiz DTOs -----

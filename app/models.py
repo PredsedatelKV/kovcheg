@@ -55,6 +55,34 @@ class User(Base):
     user_tasks: Mapped[list[UserTask]] = relationship(
         "UserTask", back_populates="user", cascade="all, delete-orphan"
     )
+    login_gifts: Mapped[list["PendingLoginGift"]] = relationship(
+        "PendingLoginGift",
+        foreign_keys="PendingLoginGift.user_id",
+        cascade="all, delete-orphan",
+    )
+
+
+class PendingLoginGift(Base):
+    """Admin-configured reward delivered once on the user's next app load."""
+
+    __tablename__ = "pending_login_gifts"
+    __table_args__ = (
+        CheckConstraint("kovbucks >= 0", name="ck_login_gift_kovbucks_nonnegative"),
+        CheckConstraint("xp >= 0", name="ck_login_gift_xp_nonnegative"),
+        CheckConstraint("item_quantity >= 0", name="ck_login_gift_item_quantity_nonnegative"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    kovbucks: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    xp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+    item_quantity: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    item: Mapped["Item | None"] = relationship("Item")
 
 
 class WebLoginRequest(Base):
@@ -132,6 +160,22 @@ class Item(Base):
     can_gift: Mapped[bool] = mapped_column(Boolean, default=True)
     can_activate: Mapped[bool] = mapped_column(Boolean, default=False)
     lootbox_pool_code: Mapped[str | None] = mapped_column(String(64), nullable=True)  # bronze/silver/gold
+
+
+class ItemCategory(Base):
+    """Admin-managed catalogue used by item editors and shop filters.
+
+    ``Item.category`` intentionally stays a string for backwards compatibility
+    with existing inventories and API payloads.  All new admin writes are
+    validated against this dictionary.
+    """
+
+    __tablename__ = "item_categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
 class InventoryItem(Base):

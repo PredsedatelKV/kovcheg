@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=240";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=243";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -20,21 +20,21 @@ function slugify(s = "") {
 }
 
 const SECTIONS = [
-  { id: "users", label: "Игроки", icon: "/static/img/tabs/users.svg" },
-  { id: "news", label: "Новости", icon: "/static/img/ui/mail.svg" },
-  { id: "banners", label: "Карусель", icon: "/static/img/ui/castle.svg" },
-  { id: "wheel", label: "Колесо", icon: "/static/img/ui/wheel.svg" },
-  { id: "shop", label: "Магазин", icon: "/static/img/tabs/shop.svg" },
-  { id: "market", label: "Рынок", icon: "/static/img/shop.svg" },
-  { id: "tasks", label: "Задания", icon: "/static/img/tasks/scroll.svg" },
-  { id: "quizzes", label: "Тесты", icon: "/static/img/ui/quiz.svg" },
-  { id: "items", label: "Предметы", icon: "/static/img/ui/box.svg" },
-  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/ui/lootbox.svg" },
-  { id: "legal", label: "Тексты", icon: "/static/img/ui/legal.svg" },
-  { id: "battlepass", label: "Пропуск", icon: "/static/img/tabs/battlepass.svg" },
+  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=243" },
+  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=243" },
+  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=243" },
+  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=243" },
+  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=243" },
+  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=243" },
+  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=243" },
+  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=243" },
+  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=243" },
+  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=243" },
+  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=243" },
+  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=243" },
 ];
 
-let META = { items: [], users: [] };
+let META = { items: [], users: [], categories: [] };
 
 export async function renderAdmin(root) {
   root.innerHTML = `<div class="card"><p>Загрузка админ-панели…</p></div>`;
@@ -111,6 +111,12 @@ function itemOptions(selectedId = null) {
     .join("");
 }
 
+function categoryOptions(selectedName = "") {
+  return (META.categories || [])
+    .map((category) => `<option value="${escapeHtml(category.name)}" ${category.name === selectedName ? "selected" : ""}>${escapeHtml(category.name)}</option>`)
+    .join("");
+}
+
 function userOptions(selectedId = null) {
   return META.users
     .map(
@@ -175,6 +181,14 @@ async function renderUsers(body) {
         <button class="btn btn-sm" data-action="inv" data-id="${u.id}">В инвентарь</button>
       </div>
       <hr class="admin-sep"/>
+      <div class="admin-sub" style="margin-bottom:8px"><strong>Подарок при следующем входе</strong> · ожидает: <span data-k="pending-gifts">${u.pending_login_gifts || 0}</span></div>
+      <div class="admin-form-grid login-gift-editor">
+        ${field("Ковбаксы", `<label class="row gap"><input type="checkbox" data-k="gift-use-kovbucks"/> Добавить</label><input class="input input-sm" data-k="gift-kovbucks" type="number" min="1" value="10" disabled/>`)}
+        ${field("XP", `<label class="row gap"><input type="checkbox" data-k="gift-use-xp"/> Добавить</label><input class="input input-sm" data-k="gift-xp" type="number" min="1" value="10" disabled/>`)}
+        ${field("Предмет", `<label class="row gap"><input type="checkbox" data-k="gift-use-item"/> Добавить</label><select class="input input-sm" data-k="gift-item" disabled>${itemOptions()}</select><input class="input input-sm" data-k="gift-item-qty" type="number" min="1" value="1" disabled/>`)}
+      </div>
+      <button class="btn btn-sm" data-action="login-gift" data-id="${u.id}">Запланировать подарок</button>
+      <hr class="admin-sep"/>
       <div class="row gap">
         <button class="btn btn-sm" data-action="view-inv" data-id="${u.id}">Инвентарь</button>
       </div>
@@ -183,6 +197,18 @@ async function renderUsers(body) {
   `,
     )
     .join("");
+
+  body.querySelectorAll(".login-gift-editor").forEach((editor) => {
+    const bindToggle = (checkboxKey, inputKeys) => {
+      const checkbox = editor.querySelector(`[data-k="${checkboxKey}"]`);
+      checkbox.addEventListener("change", () => {
+        inputKeys.forEach((key) => { editor.querySelector(`[data-k="${key}"]`).disabled = !checkbox.checked; });
+      });
+    };
+    bindToggle("gift-use-kovbucks", ["gift-kovbucks"]);
+    bindToggle("gift-use-xp", ["gift-xp"]);
+    bindToggle("gift-use-item", ["gift-item", "gift-item-qty"]);
+  });
 
   body.querySelectorAll('[data-action="save"]').forEach((b) =>
     b.addEventListener("click", async () => {
@@ -272,6 +298,35 @@ async function renderUsers(body) {
         window.kov.toast("Инвентарь обновлён");
       } catch (err) {
         window.kov.toast(err.message);
+      }
+    }),
+  );
+  body.querySelectorAll('[data-action="login-gift"]').forEach((button) =>
+    button.addEventListener("click", async () => {
+      const card = button.closest(".admin-card");
+      const useKovbucks = card.querySelector('[data-k="gift-use-kovbucks"]').checked;
+      const useXp = card.querySelector('[data-k="gift-use-xp"]').checked;
+      const useItem = card.querySelector('[data-k="gift-use-item"]').checked;
+      const payload = {
+        kovbucks: useKovbucks ? Number(card.querySelector('[data-k="gift-kovbucks"]').value) : 0,
+        xp: useXp ? Number(card.querySelector('[data-k="gift-xp"]').value) : 0,
+        item_id: useItem ? Number(card.querySelector('[data-k="gift-item"]').value) : null,
+        item_quantity: useItem ? Number(card.querySelector('[data-k="gift-item-qty"]').value) : 0,
+      };
+      if (!useKovbucks && !useXp && !useItem) return window.kov.toast("Выберите хотя бы одну награду");
+      if ((useKovbucks && payload.kovbucks < 1) || (useXp && payload.xp < 1) || (useItem && payload.item_quantity < 1)) {
+        return window.kov.toast("Количество награды должно быть больше нуля");
+      }
+      button.disabled = true;
+      try {
+        await post(`/api/admin/users/${button.dataset.id}/login-gifts`, payload);
+        const pending = card.querySelector('[data-k="pending-gifts"]');
+        pending.textContent = String((Number(pending.textContent) || 0) + 1);
+        window.kov.toast("Подарок будет выдан при следующем входе игрока");
+      } catch (error) {
+        window.kov.toast(error.message);
+      } finally {
+        button.disabled = false;
       }
     }),
   );
@@ -940,15 +995,34 @@ function readItemForm(card, fallback = {}) {
 
 async function renderItems(body) {
   const rows = await get("/api/admin/items");
+  const categories = META.categories || [];
   body.innerHTML = `
+    ${cardBlock(
+      "Категории предметов",
+      `<div class="admin-sub">Сначала создайте категории. Затем они появятся в редакторе предмета и в фильтрах Магазина и Рынка.</div>
+      <div class="admin-category-create">
+        <input class="input" id="category-name" maxlength="32" placeholder="Название категории"/>
+        <input class="input" id="category-order" type="number" value="0" aria-label="Порядок"/>
+        <button class="btn btn-sm" id="category-create">Создать</button>
+      </div>
+      <div class="admin-category-list">
+        ${categories.length ? categories.map((category) => `
+          <div class="admin-category-row" data-category-id="${category.id}">
+            <input class="input input-sm" data-category-key="name" maxlength="32" value="${escapeHtml(category.name)}"/>
+            <input class="input input-sm" data-category-key="sort_order" type="number" value="${category.sort_order}" aria-label="Порядок"/>
+            <button class="btn btn-sm" data-category-action="save">Сохранить</button>
+            <button class="btn btn-sm btn-danger" data-category-action="delete">Удалить</button>
+          </div>`).join("") : `<div class="admin-sub">Категорий пока нет</div>`}
+      </div>`,
+    )}
     ${cardBlock(
       "Новый предмет",
       formGrid(
         field("Название", `<input class="input" id="i-name"/>`),
         photoField("Фото товара", "JPG/PNG/WebP до 5 МБ — покажется в Магазине и инвентаре", null, "image_url"),
         field("Иконка (fallback)", `<input class="input" id="i-icon" value="/static/img/ui/box.svg"/>`),
-        field("Категория", `<input class="input" id="i-cat" value="Ресурсы"/>`),
-      ) + `<button class="btn btn-sm" id="i-create">Добавить</button>`,
+        field("Категория", `<select class="input" id="i-cat">${categoryOptions()}</select>`),
+      ) + `<button class="btn btn-sm" id="i-create" ${categories.length ? "" : "disabled"}>Добавить</button>`,
     )}
     ${rows
       .map(
@@ -965,7 +1039,7 @@ async function renderItems(body) {
           field("Название", `<input class="input" data-k="name" value="${escapeHtml(i.name)}"/>`),
           photoField("Фото товара", "JPG/PNG/WebP до 5 МБ", i.image_url, "image_url"),
           field("Иконка (fallback)", `<input class="input" data-k="icon" value="${escapeHtml(i.icon)}"/>`),
-          field("Категория", `<input class="input" data-k="category" value="${escapeHtml(i.category)}"/>`),
+          field("Категория", `<select class="input" data-k="category">${categoryOptions(i.category)}</select>`),
         )}
         <div class="row gap">
           <button class="btn btn-sm" data-action="save">Сохранить</button>
@@ -976,6 +1050,47 @@ async function renderItems(body) {
       .join("")}
   `;
   bindPhotoUploader(body);
+  body.querySelector("#category-create").addEventListener("click", async () => {
+    const name = body.querySelector("#category-name").value.trim();
+    const sortOrder = Number(body.querySelector("#category-order").value || 0);
+    if (!name) return window.kov.toast("Введите название категории");
+    try {
+      await post("/api/admin/item-categories", { name, sort_order: sortOrder });
+      META = await get("/api/admin/meta", { force: true });
+      window.kov.toast("Категория создана");
+      renderItems(body);
+    } catch (err) {
+      window.kov.toast(err.message);
+    }
+  });
+  body.querySelectorAll("[data-category-id]").forEach((row) => {
+    const id = row.dataset.categoryId;
+    row.querySelector('[data-category-action="save"]').addEventListener("click", async () => {
+      const name = row.querySelector('[data-category-key="name"]').value.trim();
+      const sortOrder = Number(row.querySelector('[data-category-key="sort_order"]').value || 0);
+      if (!name) return window.kov.toast("Введите название категории");
+      try {
+        await patch(`/api/admin/item-categories/${id}`, { name, sort_order: sortOrder });
+        META = await get("/api/admin/meta", { force: true });
+        window.kov.toast("Категория сохранена");
+        renderItems(body);
+      } catch (err) {
+        window.kov.toast(err.message);
+      }
+    });
+    row.querySelector('[data-category-action="delete"]').addEventListener("click", () =>
+      confirmAction("Удалить категорию?", async () => {
+        try {
+          await del(`/api/admin/item-categories/${id}`);
+          META = await get("/api/admin/meta", { force: true });
+          window.kov.toast("Категория удалена");
+          renderItems(body);
+        } catch (err) {
+          window.kov.toast(err.message);
+        }
+      }),
+    );
+  });
   body.querySelector("#i-create").addEventListener("click", async () => {
     const newCard = body.querySelector(".admin-card");  // first card = the "new item" form
     const photoEl = newCard.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value');
@@ -995,6 +1110,7 @@ async function renderItems(body) {
     if (!payload.name) return window.kov.toast("Название обязательно");
     try {
       await post("/api/admin/items", payload);
+      META = await get("/api/admin/meta", { force: true });
       window.kov.toast("Создано");
       renderItems(body);
     } catch (err) {
@@ -1018,6 +1134,7 @@ async function renderItems(body) {
       };
       try {
         await patch(`/api/admin/items/${id}`, payload);
+        META = await get("/api/admin/meta", { force: true });
         window.kov.toast("Сохранено");
       } catch (err) {
         window.kov.toast(err.message);
@@ -1027,6 +1144,7 @@ async function renderItems(body) {
       confirmAction("Удалить предмет?", async () => {
         try {
           await del(`/api/admin/items/${id}`);
+          META = await get("/api/admin/meta", { force: true });
           window.kov.toast("Предмет удалён");
           renderItems(body);
         } catch (err) {
@@ -1337,7 +1455,6 @@ const LOOTBOX_RARITIES = ["Обычный", "Редкий", "Эпический"
 const LOOTBOX_REWARD_LABELS = {
   item: "Предмет",
   kovbucks: "Ковбаксы",
-  kovcoins: "Ковкойны",
   xp: "XP",
 };
 
@@ -1354,6 +1471,9 @@ function lootboxDateValue(value) {
 
 function lootboxEntryTemplate(entry = {}) {
   const kind = entry.reward_kind || "item";
+  const rewardLabels = kind === "kovcoins"
+    ? { ...LOOTBOX_REWARD_LABELS, kovcoins: "Ковкойны (старый тип)" }
+    : LOOTBOX_REWARD_LABELS;
   const itemChoices = META.items
     .filter((item) => !item.lootbox_pool_code)
     .map((item) => `<option value="${item.id}" ${Number(entry.item_id) === item.id ? "selected" : ""}>${escapeHtml(item.name)}</option>`)
@@ -1361,11 +1481,11 @@ function lootboxEntryTemplate(entry = {}) {
   return `
     <div class="admin-card lootbox-entry" style="margin:8px 0;padding:10px">
       <div class="admin-form-grid">
-        ${field("Тип", `<select class="input lb-entry-kind">${Object.entries(LOOTBOX_REWARD_LABELS).map(([value, label]) => `<option value="${value}" ${kind === value ? "selected" : ""}>${label}</option>`).join("")}</select>`)}
+        ${field("Тип", `<select class="input lb-entry-kind">${Object.entries(rewardLabels).map(([value, label]) => `<option value="${value}" ${kind === value ? "selected" : ""}>${label}</option>`).join("")}</select>`)}
         ${field("Предмет", `<select class="input lb-entry-item"><option value="">—</option>${itemChoices}</select>`)}
         ${field("Мин.", `<input class="input lb-entry-min" type="number" min="1" max="1000000" value="${entry.amount_min || 1}"/>`)}
         ${field("Макс.", `<input class="input lb-entry-max" type="number" min="1" max="1000000" value="${entry.amount_max || 1}"/>`)}
-        ${field("Вес", `<input class="input lb-entry-weight" type="number" min="1" max="1000000" value="${entry.weight || 10}"/>`)}
+        ${field("Шанс / вес", `<input class="input lb-entry-weight" type="number" min="1" max="1000000" value="${entry.weight || 10}"/>`)}
         ${field("Порядок", `<input class="input lb-entry-order" type="number" value="${entry.sort_order || 0}"/>`)}
         ${field("Гарантированно", `<select class="input lb-entry-guaranteed"><option value="false" ${!entry.is_guaranteed ? "selected" : ""}>Нет</option><option value="true" ${entry.is_guaranteed ? "selected" : ""}>Да</option></select>`)}
         ${field("Активна", `<select class="input lb-entry-active"><option value="true" ${entry.is_active !== false ? "selected" : ""}>Да</option><option value="false" ${entry.is_active === false ? "selected" : ""}>Нет</option></select>`)}
@@ -1407,6 +1527,8 @@ function refreshLootboxProbabilities(overlay) {
   });
   const totalEl = overlay.querySelector("#lb-weight-total");
   if (totalEl) totalEl.textContent = `Сумма активных случайных весов: ${total}`;
+  const countEl = overlay.querySelector("#lb-entry-count");
+  if (countEl) countEl.textContent = `Вариантов наград в рулетке: ${rows.filter((row) => collectLootboxEntry(row).is_active).length}`;
 }
 
 function validateLootboxPayload(payload) {
@@ -1470,6 +1592,7 @@ function openLootboxEditor(body, existing = null) {
         <div class="admin-sub">Предпросмотр ассета · уже выданные ковбоксы используют актуальную конфигурацию; архивирование не удаляет экземпляры</div>
       </div>
       <div class="row gap wrap"><h4 style="margin:0;flex:1">Содержимое</h4><button class="btn btn-sm btn-secondary" id="lb-add-entry" type="button">+ Награда</button></div>
+      <div id="lb-entry-count" class="admin-sub"></div>
       <div id="lb-weight-total" class="admin-sub"></div>
       <div id="lb-entry-list">${(box.entries || []).map(lootboxEntryTemplate).join("")}</div>
       <div class="row gap" style="margin-top:12px">
@@ -1562,7 +1685,7 @@ async function renderLootboxes(body) {
         <select class="input input-sm" id="lb-rarity-filter"><option value="">Все редкости</option>${rarities.map((rarity) => `<option>${escapeHtml(rarity)}</option>`).join("")}</select>
         <button class="btn btn-sm" id="lb-create">Создать</button>
       </div>
-      <div class="admin-sub" style="margin-top:8px">Вероятности задаются целыми весами; проценты нормализуются сервером автоматически.</div>
+      <div class="admin-sub" style="margin-top:8px">В каждом из четырёх ковбоксов добавляйте варианты XP, ковбаксов и предметов. Число строк — число вариантов в рулетке; шанс задаётся целым весом, точный процент показывается сразу.</div>
     </div>
     <div id="lb-list"></div>`;
 

@@ -1,11 +1,15 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=240";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=243";
 
-import { playUISound } from "/static/pages/settings.js?v=240";
+import { playUISound } from "/static/pages/settings.js?v=243";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 let state = {
   mode: "shop", // shop | market
+  category: "all",
+  categories: [],
+  shopProducts: [],
+  marketListings: [],
 };
 const shopLoadVersions = new WeakMap();
 const marketLoadVersions = new WeakMap();
@@ -38,6 +42,61 @@ function renderKovboxShowcase(products = []) {
     </section>`;
 }
 
+function availableCategories() {
+  return (state.categories || []).filter((category) => category.name !== "Ковбоксы");
+}
+
+function renderCategoryFilters(root) {
+  const mount = root.querySelector("#category-filters");
+  if (!mount) return;
+  const categories = availableCategories();
+  if (state.category !== "all" && !categories.some((category) => category.name === state.category)) {
+    state.category = "all";
+  }
+  mount.innerHTML = `
+    <div class="chips-row koverna-category-filter" aria-label="Категории предметов">
+      <button class="pill ${state.category === "all" ? "active" : ""}" data-category="all">Все</button>
+      ${categories.map((category) => `<button class="pill ${state.category === category.name ? "active" : ""}" data-category="${escapeHtml(category.name)}">${escapeHtml(category.name)}</button>`).join("")}
+    </div>`;
+}
+
+function paintShop(root) {
+  const content = root.querySelector("#content");
+  if (!content) return;
+  const kovboxCodes = new Set(KOVBOX_SHOWCASE.map((box) => box.code));
+  const products = state.shopProducts
+    .filter((product) => !kovboxCodes.has(product.item.code))
+    .filter((product) => state.category === "all" || product.item.category === state.category);
+  content.innerHTML = products.length === 0
+    ? `<div class="empty">В этой категории пока нет товаров</div>`
+    : `<div class="product-grid shop-other-products">${products.map((p) => `
+        <div class="product${p.stock === 0 ? " product-out" : ""}">
+          ${productImg(p.item, "xl")}
+          <div class="name">${escapeHtml(p.item.name)}</div>
+          <div class="price">${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${p.price} ${p.stock === -1 ? "" : `×${p.stock}`}</div>
+          <button class="btn btn-sm" data-buy="${p.id}" ${p.stock === 0 ? "disabled" : ""}>${p.stock === 0 ? "Нет" : "Купить"}</button>
+        </div>`).join("")}</div>`;
+}
+
+function paintMarket(root) {
+  const content = root.querySelector("#content");
+  if (!content) return;
+  const listings = state.marketListings.filter(
+    (listing) => state.category === "all" || listing.item.category === state.category,
+  );
+  content.innerHTML = listings.length === 0
+    ? `<div class="empty">${state.marketListings.length ? "В этой категории пока нет объявлений" : "На рынке пока ничего — выставь товар, чтобы начать!"}</div>`
+    : `<div class="product-grid">${listings.map((l) => `
+        <div class="product${l.target_user_id ? " product-targeted" : ""}">
+          ${l.target_user_id ? `<span class="targeted-badge">Только тебе</span>` : ""}
+          ${productImg(l.item, "xl")}
+          <div class="name">${escapeHtml(l.item.name)}</div>
+          <div class="card-sub">от ${escapeHtml(l.seller_name)} · ×${l.quantity}</div>
+          <div class="price" style="margin-top:6px">${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${l.price}</div>
+          <button class="btn btn-sm" data-buy-listing="${l.id}">Купить</button>
+        </div>`).join("")}</div>`;
+}
+
 export async function renderKoverna(root) {
   root.innerHTML = `
     <section class="page-header">
@@ -48,33 +107,96 @@ export async function renderKoverna(root) {
       <div class="hero-art"><img src="/static/img/koverna_hero.svg" alt="Коверна" class="hero-img"/></div>
     </section>
 
-    <div class="toggle" id="mode-toggle">
-      <button data-mode="shop" class="${state.mode === "shop" ? "active" : ""}">Магазин</button>
-      <button data-mode="market" class="${state.mode === "market" ? "active" : ""}">Рынок</button>
+    <div id="kovbox-showcase">${renderKovboxShowcase()}</div>
+
+    <div class="card koverna-mode-card">
+      <div class="toggle" id="mode-toggle">
+        <button data-mode="shop" class="${state.mode === "shop" ? "active" : ""}">Магазин</button>
+        <button data-mode="market" class="${state.mode === "market" ? "active" : ""}">Рынок</button>
+      </div>
     </div>
 
+    <div id="category-filters"></div>
     <div id="market-tools"></div>
     <div id="content"></div>
   `;
 
-  root.querySelectorAll("#mode-toggle button").forEach((b) =>
-    b.addEventListener("click", async () => {
-      if (state.mode === b.dataset.mode) return;
-      state.mode = b.dataset.mode;
-      root.querySelectorAll("#mode-toggle button").forEach((button) => {
-        button.classList.toggle("active", button.dataset.mode === state.mode);
-      });
+  if (root._kovernaClickHandler) root.removeEventListener("click", root._kovernaClickHandler);
+  root._kovernaClickHandler = async (event) => {
+    const modeButton = event.target.closest("[data-mode]");
+    if (modeButton) {
+      if (state.mode === modeButton.dataset.mode) return;
+      state.mode = modeButton.dataset.mode;
+      state.category = "all";
+      root.querySelectorAll("#mode-toggle button").forEach((button) => button.classList.toggle("active", button.dataset.mode === state.mode));
       const subtitle = root.querySelector("#koverna-subtitle");
       if (subtitle) subtitle.textContent = state.mode === "shop"
         ? "Товары Ковчега с доставкой в инвентарь"
         : "Покупайте предметы у других граждан";
       if (state.mode === "shop") await renderShop(root, true);
       else await renderMarket(root, true);
-    }),
-  );
+      return;
+    }
+    const categoryButton = event.target.closest("[data-category]");
+    if (categoryButton) {
+      state.category = categoryButton.dataset.category;
+      renderCategoryFilters(root);
+      if (state.mode === "shop") paintShop(root);
+      else paintMarket(root);
+      return;
+    }
+    const buyButton = event.target.closest("[data-buy]");
+    if (buyButton && !buyButton.disabled) {
+      buyButton.disabled = true;
+      try {
+        const buyResult = await post("/api/shop/buy", { product_id: Number(buyButton.dataset.buy) });
+        playUISound("win");
+        window.kov.toast("Куплено! Предмет в инвентаре");
+        if (buyResult?.balance != null && window.kov?.me) {
+          window.kov.me.balance = buyResult.balance;
+          window.kov.emit?.("balance:update", { balance: buyResult.balance });
+        }
+        await renderShop(root, true);
+      } catch (error) {
+        buyButton.disabled = false;
+        window.kov.toast(error.message);
+      }
+      return;
+    }
+    const listingButton = event.target.closest("[data-buy-listing]");
+    if (listingButton && !listingButton.disabled) {
+      listingButton.disabled = true;
+      try {
+        const buyResult = await post("/api/market/buy", { listing_id: Number(listingButton.dataset.buyListing) });
+        window.kov.toast("Куплено! Предмет в инвентаре");
+        if (buyResult?.balance != null && window.kov?.me) {
+          window.kov.me.balance = buyResult.balance;
+          window.kov.emit?.("balance:update", { balance: buyResult.balance });
+        }
+        await renderMarket(root, true);
+      } catch (error) {
+        listingButton.disabled = false;
+        window.kov.toast(error.message);
+      }
+    }
+  };
+  root.addEventListener("click", root._kovernaClickHandler);
+
+  try {
+    const [products, categories] = await Promise.all([
+      get("/api/shop/products"),
+      get("/api/shop/categories"),
+    ]);
+    state.shopProducts = products;
+    state.categories = categories;
+    root.querySelector("#kovbox-showcase").innerHTML = renderKovboxShowcase(products);
+    renderCategoryFilters(root);
+  } catch (error) {
+    root.querySelector("#kovbox-showcase").innerHTML = `${renderKovboxShowcase()}<div class="empty">Ошибка загрузки ковбоксов: ${escapeHtml(error.message)}</div>`;
+  }
 
   if (state.mode === "shop") {
-    await renderShop(root);
+    await renderShop(root, true);
   } else {
     await renderMarket(root);
   }
@@ -86,51 +208,20 @@ async function renderShop(root, background) {
   const content = root.querySelector("#content");
   const requestVersion = (shopLoadVersions.get(root) || 0) + 1;
   shopLoadVersions.set(root, requestVersion);
-  if (content && !background) content.innerHTML = `${renderKovboxShowcase()}<div class="empty">Загрузка…</div>`;
+  if (content && !background) content.innerHTML = `<div class="empty">Загрузка…</div>`;
   let products;
   try {
     products = await get("/api/shop/products");
   } catch (e) {
-    if (content && shopLoadVersions.get(root) === requestVersion) content.innerHTML = `${renderKovboxShowcase()}<div class="empty">Ошибка загрузки: ${escapeHtml(e.message)}</div>`;
+    if (content && shopLoadVersions.get(root) === requestVersion) content.innerHTML = `<div class="empty">Ошибка загрузки: ${escapeHtml(e.message)}</div>`;
     return;
   }
   if (state.mode !== "shop" || shopLoadVersions.get(root) !== requestVersion || root.querySelector("#content") !== content) return;
-  const kovboxCodes = new Set(KOVBOX_SHOWCASE.map((box) => box.code));
-  const otherProducts = products.filter((product) => !kovboxCodes.has(product.item.code));
-  content.innerHTML = renderKovboxShowcase(products) +
-    (otherProducts.length === 0
-      ? ""
-      : `<div class="product-grid shop-other-products">${otherProducts
-          .map(
-            (p) => `
-            <div class="product${p.stock === 0 ? " product-out" : ""}">
-              ${productImg(p.item, "xl")}
-              <div class="name">${escapeHtml(p.item.name)}</div>
-              <div class="price">${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${p.price} ${p.stock === -1 ? "" : `×${p.stock}`}</div>
-              <button class="btn btn-sm" data-buy="${p.id}" ${p.stock === 0 ? "disabled" : ""}>${p.stock === 0 ? "Нет" : "Купить"}</button>
-            </div>`,
-          )
-          .join("")}</div>`);
-
-  content.querySelectorAll("[data-buy]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      if (b.disabled) return;
-      b.disabled = true;
-      try {
-        var buyResult = await post("/api/shop/buy", { product_id: Number(b.dataset.buy) });
-        playUISound("win");
-        window.kov.toast("Куплено! Предмет в инвентаре");
-        if (buyResult && buyResult.balance != null && window.kov && window.kov.me) {
-          window.kov.me.balance = buyResult.balance;
-          if (window.kov.emit) window.kov.emit("balance:update", { balance: buyResult.balance });
-        }
-        await renderShop(root, true);
-      } catch (e) {
-        b.disabled = false;
-        window.kov.toast(e.message);
-      }
-    }),
-  );
+  state.shopProducts = products;
+  const showcase = root.querySelector("#kovbox-showcase");
+  if (showcase) showcase.innerHTML = renderKovboxShowcase(products);
+  renderCategoryFilters(root);
+  paintShop(root);
 }
 
 async function renderMarket(root, background) {
@@ -157,41 +248,9 @@ async function renderMarket(root, background) {
     return;
   }
   if (state.mode !== "market" || marketLoadVersions.get(root) !== requestVersion || root.querySelector("#content") !== content) return;
-  content.innerHTML =
-    listings.length === 0
-      ? `<div class="empty">На рынке пока ничего — выставь товар, чтобы начать!</div>`
-      : `<div class="product-grid">${listings
-          .map(
-            (l) => `
-            <div class="product${l.target_user_id ? " product-targeted" : ""}">
-              ${l.target_user_id ? `<span class="targeted-badge">Только тебе</span>` : ""}
-              ${productImg(l.item, "xl")}
-              <div class="name">${escapeHtml(l.item.name)}</div>
-              <div class="card-sub">от ${escapeHtml(l.seller_name)} · ×${l.quantity}</div>
-              <div class="price" style="margin-top:6px">${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${l.price}</div>
-              <button class="btn btn-sm" data-buy-listing="${l.id}">Купить</button>
-            </div>`,
-          )
-          .join("")}</div>`;
-
-  content.querySelectorAll("[data-buy-listing]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      if (b.disabled) return;
-      b.disabled = true;
-      try {
-        var buyResult = await post("/api/market/buy", { listing_id: Number(b.dataset.buyListing) });
-        window.kov.toast("Куплено! Предмет в инвентаре");
-        if (buyResult && buyResult.balance != null && window.kov && window.kov.me) {
-          window.kov.me.balance = buyResult.balance;
-          if (window.kov.emit) window.kov.emit("balance:update", { balance: buyResult.balance });
-        }
-        await renderMarket(root, true);
-      } catch (e) {
-        b.disabled = false;
-        window.kov.toast(e.message);
-      }
-    }),
-  );
+  state.marketListings = listings;
+  renderCategoryFilters(root);
+  paintMarket(root);
 }
 
 async function openSellDialog(root) {

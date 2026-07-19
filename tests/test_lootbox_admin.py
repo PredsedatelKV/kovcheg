@@ -134,6 +134,80 @@ def _quantity(sessions, code: str) -> int:
         return row.quantity if row else 0
 
 
+def test_item_categories_drive_item_editor_and_public_filters(lootbox_api):
+    client, sessions = lootbox_api
+    admin_headers = _headers(2)
+
+    category = client.post(
+        "/api/admin/item-categories",
+        json={"name": "Артефакты", "sort_order": 5},
+        headers=admin_headers,
+    )
+    assert category.status_code == 200, category.text
+    category_id = category.json()["id"]
+    assert client.post(
+        "/api/admin/item-categories",
+        json={"name": "артефакты", "sort_order": 0},
+        headers=admin_headers,
+    ).status_code == 409
+
+    item_payload = {
+        "code": "test_artifact",
+        "name": "Тестовый артефакт",
+        "icon": "/static/img/ui/box.svg",
+        "image_url": None,
+        "rarity": "Обычный",
+        "category": "Артефакты",
+        "can_gift": True,
+        "can_activate": False,
+    }
+    created = client.post("/api/admin/items", json=item_payload, headers=admin_headers)
+    assert created.status_code == 200, created.text
+    item_id = created.json()["id"]
+
+    same_name = client.post("/api/admin/items", json=item_payload, headers=admin_headers)
+    assert same_name.status_code == 200, same_name.text
+    assert same_name.json()["code"] == "test_artifact-2"
+    duplicate_item_id = same_name.json()["id"]
+
+    invalid = dict(item_payload, code="bad_category_item", category="Несуществующая")
+    assert client.post("/api/admin/items", json=invalid, headers=admin_headers).status_code == 400
+
+    renamed = client.patch(
+        f"/api/admin/item-categories/{category_id}",
+        json={"name": "Реликвии", "sort_order": 2},
+        headers=admin_headers,
+    )
+    assert renamed.status_code == 200, renamed.text
+    with sessions() as db:
+        assert db.get(models.Item, item_id).category == "Реликвии"
+
+    public_categories = client.get("/api/shop/categories", headers=_headers())
+    assert public_categories.status_code == 200
+    assert any(row["name"] == "Реликвии" for row in public_categories.json())
+    assert client.delete(f"/api/admin/item-categories/{category_id}", headers=admin_headers).status_code == 409
+
+    fallback = client.post(
+        "/api/admin/item-categories",
+        json={"name": "Ресурсы", "sort_order": 0},
+        headers=admin_headers,
+    )
+    assert fallback.status_code == 200, fallback.text
+    moved = client.patch(
+        f"/api/admin/items/{item_id}",
+        json=dict(item_payload, category="Ресурсы"),
+        headers=admin_headers,
+    )
+    assert moved.status_code == 200, moved.text
+    moved_duplicate = client.patch(
+        f"/api/admin/items/{duplicate_item_id}",
+        json=dict(item_payload, code="test_artifact-2", category="Ресурсы"),
+        headers=admin_headers,
+    )
+    assert moved_duplicate.status_code == 200, moved_duplicate.text
+    assert client.delete(f"/api/admin/item-categories/{category_id}", headers=admin_headers).status_code == 200
+
+
 def test_admin_create_and_normal_user_forbidden(lootbox_api):
     client, sessions = lootbox_api
     with sessions() as db:
@@ -208,6 +282,53 @@ def test_admin_can_unlist_player_offer_once_and_item_is_returned(lootbox_api):
         stack = db.query(models.InventoryItem).filter_by(user_id=1, item_id=item.id).one()
         assert stack.quantity == 3
         assert db.get(models.MarketListing, listing_id).is_active is False
+
+
+def test_combined_login_gift_is_delivered_once_on_next_profile_load(lootbox_api):
+    client, sessions = lootbox_api
+    with sessions() as db:
+        prize_id = db.query(models.Item.id).filter_by(code="prize").scalar()
+
+    scheduled = client.post(
+        "/api/admin/users/1/login-gifts",
+        json={"kovbucks": 7, "xp": 11, "item_id": prize_id, "item_quantity": 3},
+        headers=_headers(2),
+    )
+    assert scheduled.status_code == 200, scheduled.text
+    assert scheduled.json()["delivered_at"] is None
+
+    delivered = client.get("/api/profile/me", headers=_headers(1))
+    assert delivered.status_code == 200, delivered.text
+    payload = delivered.json()
+    assert payload["user"]["balance"] == 107
+    assert payload["user"]["xp"] == 11
+    assert payload["login_gifts"] == [{
+        "id": scheduled.json()["id"],
+        "kovbucks": 7,
+        "xp": 11,
+        "item_id": prize_id,
+        "item_name": "Предмет-приз",
+        "item_icon": "prize.svg",
+        "item_quantity": 3,
+        "delivered_at": payload["login_gifts"][0]["delivered_at"],
+    }]
+
+    replay = client.get("/api/profile/me", headers=_headers(1))
+    assert replay.status_code == 200
+    assert replay.json()["login_gifts"] == []
+    assert replay.json()["user"]["balance"] == 107
+    assert replay.json()["user"]["xp"] == 11
+    assert _quantity(sessions, "prize") == 3
+
+
+def test_empty_login_gift_is_rejected(lootbox_api):
+    client, _sessions = lootbox_api
+    response = client.post(
+        "/api/admin/users/1/login-gifts",
+        json={"kovbucks": 0, "xp": 0, "item_id": None, "item_quantity": 0},
+        headers=_headers(2),
+    )
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize("sale_price,sale_currency", [(0, "kovbucks"), (10, "kovcoins")])

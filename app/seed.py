@@ -72,6 +72,14 @@ def migrate_icons(db: Session) -> None:
             task.icon = path
     for item in db.query(models.Item).all():
         item.description = ""
+    existing_categories = {
+        category.name.casefold(): category
+        for category in db.query(models.ItemCategory).all()
+    }
+    used_names = sorted({item.category.strip() for item in db.query(models.Item).all() if item.category.strip()})
+    for order, name in enumerate(used_names):
+        if name.casefold() not in existing_categories:
+            db.add(models.ItemCategory(name=name, sort_order=order))
     for pool in db.query(models.LootboxPool).all():
         sync_lootbox_shop_product(db, pool)
     for reward in db.query(models.BattlePassReward).all():
@@ -413,78 +421,8 @@ def seed(db: Session) -> None:
     # Pre-launch catalog intentionally starts with Kovboxes and their fragments
     # only. New items may still be created later through the editor.
 
-    # Tasks
-    task_defs = [
-        {
-            "name": "Добыча ресурсов",
-            "description": "Отправляйтесь в шахты и леса, добывайте ресурсы для развития вашего поселения. Соберите 50 единиц камня и 30 единиц дерева.",
-            "icon": "/static/img/tasks/mining.svg",
-            "reward": 25,
-            "target_progress": 80,
-            "is_daily_plan": False,
-            "sort_order": 1,
-        },
-        {
-            "name": "Помощь жителям",
-            "description": "Помогите соседям с их делами: посадите дерево, наколите дров или принесите воды.",
-            "icon": "/static/img/tasks/helping.svg",
-            "reward": 30,
-            "target_progress": 1,
-            "is_daily_plan": False,
-            "sort_order": 2,
-        },
-        {
-            "name": "Защита поселения",
-            "description": "Постойте на страже у врат Ковчега — отчитайтесь о смене в боте.",
-            "icon": "/static/img/tasks/defense.svg",
-            "reward": 20,
-            "target_progress": 1,
-            "is_daily_plan": False,
-            "sort_order": 3,
-        },
-        {
-            "name": "Посади 10 деревьев",
-            "description": "Внесите вклад в развитие поселения — посадите 10 деревьев в лесу или на свободных участках.",
-            "icon": "/static/img/tasks/trees.svg",
-            "reward": 25,
-            "target_progress": 10,
-            "is_daily_plan": False,
-            "sort_order": 4,
-        },
-        {
-            "name": "Добыть 50 камня",
-            "description": "Соберите 50 единиц камня для строительства главного зала.",
-            "icon": "/static/img/tasks/stone.svg",
-            "reward": 30,
-            "target_progress": 50,
-            "is_daily_plan": False,
-            "sort_order": 5,
-        },
-        {
-            "name": "Ежедневный план",
-            "description": "Выполняйте задания каждый день и становитесь сильнее. Этот план обязателен для всех жителей Ковчега.",
-            "icon": "/static/img/tasks/scroll.svg",
-            "reward": 0,
-            "target_progress": 5,
-            "is_daily_plan": True,
-            "sort_order": 0,
-        },
-    ]
-    for spec in task_defs:
-        existing = db.query(models.Task).filter(models.Task.name == spec["name"]).one_or_none()
-        if existing is None:
-            db.add(models.Task(**spec))
-
-    # Banners
-    banner_defs = [
-        ("https://picsum.photos/seed/kovcheg-castle/1280/720", "Замок Ковчега"),
-        ("https://picsum.photos/seed/kovcheg-island/1280/720", "Парящий остров"),
-        ("https://picsum.photos/seed/kovcheg-mountain/1280/720", "Горные земли"),
-    ]
-    for order, (url, title) in enumerate(banner_defs):
-        existing = db.query(models.Banner).filter(models.Banner.image_url == url).one_or_none()
-        if existing is None:
-            db.add(models.Banner(image_url=url, title=title, sort_order=order, is_active=True))
+    # Tasks, banners and news are fully admin-managed.  Do not recreate rows
+    # after an administrator deliberately deletes them.
 
     # Legal texts (placeholders)
     if not db.query(models.LegalText).filter(models.LegalText.slug == "constitution").first():

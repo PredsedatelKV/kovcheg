@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=240";
-import { renderProfile } from "/static/pages/profile.js?v=240";
-import { renderKoverna } from "/static/pages/koverna.js?v=240";
-import { renderArcade } from "/static/pages/arcade.js?v=240";
-import { renderAdmin } from "/static/pages/admin.js?v=240";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=240";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=240";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=240";
-import { get, post, prefetch, peekCached } from "/static/api.js?v=240";
+import { renderHome } from "/static/pages/home.js?v=243";
+import { renderProfile } from "/static/pages/profile.js?v=243";
+import { renderKoverna } from "/static/pages/koverna.js?v=243";
+import { renderArcade } from "/static/pages/arcade.js?v=243";
+import { renderAdmin } from "/static/pages/admin.js?v=243";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=243";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=243";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=243";
+import { get, post, prefetch, peekCached } from "/static/api.js?v=243";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -156,7 +156,7 @@ async function ensureTabRendered(name) {
 const TAB_QUERIES = {
   home: ["/api/home", "/api/quiz/available"],
   profile: ["/api/profile/me"],
-  koverna: ["/api/shop/products", "/api/market/listings"],
+  koverna: ["/api/shop/products", "/api/shop/categories", "/api/market/listings"],
   arcade: ["/api/profile/me", "/api/arcade/first-win-status"],
   battlepass: ["/api/battlepass"],
 };
@@ -452,10 +452,36 @@ async function renderBrowserLogin() {
   }
 }
 
+function showDeliveredLoginGifts(gifts) {
+  if (!Array.isArray(gifts) || gifts.length === 0) return;
+  playUISound("win");
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2 style="margin-top:0">Подарок от Ковчега</h2>
+    <p class="card-sub">Награды уже начислены:</p>
+    <div class="login-gift-receipts"></div>
+    <button class="btn" onclick="closeModal()" style="margin-top:14px">Забрать</button>
+  `);
+  const list = modal.querySelector(".login-gift-receipts");
+  gifts.forEach((gift) => {
+    const parts = [];
+    if (gift.kovbucks > 0) parts.push(`${gift.kovbucks} ковбаксов`);
+    if (gift.xp > 0) parts.push(`${gift.xp} XP`);
+    if (gift.item_id && gift.item_quantity > 0) parts.push(`${gift.item_name || "Предмет"} ×${gift.item_quantity}`);
+    const row = document.createElement("div");
+    row.className = "task-reward-badge";
+    row.style.margin = "4px";
+    row.textContent = parts.join(" · ");
+    list.appendChild(row);
+  });
+}
+
 (async () => {
+  let deliveredLoginGifts = [];
   try {
     const me = await get("/api/profile/me");
     window.kov.me = me.user;
+    deliveredLoginGifts = me.login_gifts || [];
     // Админка спрятана: в нижнюю навигацию НЕ выводится. Вход — тройным нажатием
     // по иконке справа сверху на «Главной» (см. home.js).
     // Глобальный поллер мультиплеера: приглашения и сессии приходят без перезагрузки.
@@ -476,6 +502,7 @@ async function renderBrowserLogin() {
   } catch (_) {}
   try {
     await setTab(initial);
+    showDeliveredLoginGifts(deliveredLoginGifts);
   } catch (_) {
     // `ensureTabRendered` already left a retryable error inside this tab. Do
     // not replace #view: doing so would detach every cached container and make

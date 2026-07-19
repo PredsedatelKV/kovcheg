@@ -28,7 +28,7 @@ const requestVersions = new Map();
 const MUTATION_RECOVERY_MS = 10 * 60 * 1000;
 
 const CACHE_POLICIES = [
-  { test: (p) => p === "/api/home", freshFor: 10_000, staleFor: 120_000 },
+  { test: (p) => p === "/api/home", freshFor: 30_000, staleFor: 7 * 24 * 60 * 60_000 },
   { test: (p) => p === "/api/home/news", freshFor: 30_000, staleFor: 300_000 },
   { test: (p) => p === "/api/home/daily-reward", freshFor: 5_000, staleFor: 30_000 },
   { test: (p) => p === "/api/profile/me", freshFor: 3_000, staleFor: 30_000 },
@@ -36,14 +36,49 @@ const CACHE_POLICIES = [
   { test: (p) => p === "/api/profile/transactions", freshFor: 5_000, staleFor: 30_000 },
   { test: (p) => p === "/api/battlepass", freshFor: 5_000, staleFor: 60_000 },
   { test: (p) => p === "/api/battlepass/lootbox-pools", freshFor: 30_000, staleFor: 300_000 },
-  { test: (p) => p === "/api/shop/products", freshFor: 15_000, staleFor: 120_000 },
-  { test: (p) => p === "/api/market/listings", freshFor: 5_000, staleFor: 30_000 },
+  { test: (p) => p === "/api/shop/products", freshFor: 30_000, staleFor: 7 * 24 * 60 * 60_000 },
+  { test: (p) => p === "/api/shop/categories", freshFor: 30_000, staleFor: 7 * 24 * 60 * 60_000 },
+  { test: (p) => p === "/api/market/listings", freshFor: 15_000, staleFor: 7 * 24 * 60 * 60_000 },
   { test: (p) => p === "/api/market/inventory", freshFor: 5_000, staleFor: 30_000 },
   { test: (p) => p === "/api/market/my", freshFor: 5_000, staleFor: 30_000 },
   { test: (p) => p === "/api/quiz/available", freshFor: 15_000, staleFor: 120_000 },
   { test: (p) => p === "/api/wheel/status", freshFor: 5_000, staleFor: 30_000 },
   { test: (p) => p === "/api/arcade/first-win-status", freshFor: 2_000, staleFor: 15_000 },
 ];
+
+const PERSISTED_CACHE_PATHS = new Set([
+  "/api/home",
+  "/api/home/news",
+  "/api/shop/products",
+  "/api/shop/categories",
+  "/api/market/listings",
+]);
+const cacheUserScope = tg?.initDataUnsafe?.user?.id || "browser";
+const PERSISTED_CACHE_KEY = `kovcheg.query-cache.v243.${cacheUserScope}`;
+
+function persistQueryCache() {
+  try {
+    const payload = {};
+    PERSISTED_CACHE_PATHS.forEach((path) => {
+      const cached = queryCache.get(path);
+      if (cached) payload[path] = cached;
+    });
+    localStorage.setItem(PERSISTED_CACHE_KEY, JSON.stringify(payload));
+  } catch (_) {
+    // Storage may be disabled or full in an embedded WebView; memory cache remains available.
+  }
+}
+
+try {
+  const persisted = JSON.parse(localStorage.getItem(PERSISTED_CACHE_KEY) || "{}");
+  const oldestAllowed = Date.now() - 7 * 24 * 60 * 60_000;
+  Object.entries(persisted).forEach(([path, cached]) => {
+    if (!PERSISTED_CACHE_PATHS.has(path) || !cached || cached.updatedAt < oldestAllowed) return;
+    queryCache.set(path, cached);
+  });
+} catch (_) {
+  // Corrupt or unavailable storage is ignored and replaced by the next good response.
+}
 
 function normalizedPath(path) {
   return String(path || "").split("#", 1)[0];
@@ -86,6 +121,7 @@ export function invalidateCache(match) {
     inFlightGets.delete(key);
     bumpVersion(key);
   });
+  persistQueryCache();
 }
 
 /**
@@ -202,7 +238,10 @@ async function fetchGet(path, options, policy) {
       if (requestVersions.get(key) !== version) {
         return get(path, { ...options, force: false });
       }
-      if (policy) queryCache.set(key, { data, updatedAt: Date.now() });
+      if (policy) {
+        queryCache.set(key, { data, updatedAt: Date.now() });
+        if (PERSISTED_CACHE_PATHS.has(key)) persistQueryCache();
+      }
       return data;
     })
     .finally(() => {

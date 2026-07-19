@@ -124,8 +124,75 @@ def _user_task_to_out(ut: models.UserTask) -> schemas.UserTaskOut:
         finished_at=ut.finished_at,
     )
 
+
+def _deliver_pending_login_gifts(db: Session, user: models.User) -> list[schemas.LoginGiftOut]:
+    """Deliver every pending admin gift once in one serialized transaction."""
+    begin_game_write(db)
+    gifts = (
+        db.query(models.PendingLoginGift)
+        .filter(
+            models.PendingLoginGift.user_id == user.id,
+            models.PendingLoginGift.delivered_at.is_(None),
+        )
+        .order_by(models.PendingLoginGift.id)
+        .all()
+    )
+    if not gifts:
+        db.rollback()
+        return []
+    delivered_at = models.now_utc()
+    receipts: list[schemas.LoginGiftOut] = []
+    for gift in gifts:
+        item = gift.item
+        if gift.kovbucks:
+            wallet = ensure_wallet(db, user)
+            if wallet.balance < 0 or wallet.balance > 2_000_000_000 - gift.kovbucks:
+                raise HTTPException(409, "Подарок не помещается на баланс ковбаксов")
+            wallet.balance += gift.kovbucks
+            db.add(models.Transaction(
+                sender_id=None,
+                recipient_id=user.id,
+                amount=gift.kovbucks,
+                note=f"login_gift:{gift.id}",
+            ))
+        if gift.xp:
+            award_xp(db, user, gift.xp)
+        if gift.item_id is not None:
+            if item is None or gift.item_quantity < 1:
+                raise HTTPException(409, "Предмет в подарке настроен некорректно")
+            inventory = db.query(models.InventoryItem).filter(
+                models.InventoryItem.user_id == user.id,
+                models.InventoryItem.item_id == gift.item_id,
+            ).one_or_none()
+            if inventory is None:
+                db.add(models.InventoryItem(
+                    user_id=user.id,
+                    item_id=gift.item_id,
+                    quantity=gift.item_quantity,
+                ))
+            else:
+                if inventory.quantity < 0 or inventory.quantity > 2_000_000_000 - gift.item_quantity:
+                    raise HTTPException(409, "Подарок не помещается в стек предмета")
+                inventory.quantity += gift.item_quantity
+        gift.delivered_at = delivered_at
+        receipts.append(schemas.LoginGiftOut(
+            id=gift.id,
+            kovbucks=gift.kovbucks,
+            xp=gift.xp,
+            item_id=gift.item_id,
+            item_name=item.name if item else None,
+            item_icon=item.icon if item else None,
+            item_quantity=gift.item_quantity,
+            delivered_at=delivered_at,
+        ))
+    db.commit()
+    db.refresh(user)
+    return receipts
+
+
 @router.get("/me", response_model=schemas.ProfilePayload)
 def me(user: models.User = Depends(current_user), db: Session = Depends(get_db)) -> schemas.ProfilePayload:
+    delivered_gifts = _deliver_pending_login_gifts(db, user)
     inventory = (
         db.query(models.InventoryItem).filter(models.InventoryItem.user_id == user.id, models.InventoryItem.quantity > 0).all()
     )
@@ -157,6 +224,7 @@ def me(user: models.User = Depends(current_user), db: Session = Depends(get_db))
             if daily_plan
             else None
         ),
+        login_gifts=delivered_gifts,
     )
 
 

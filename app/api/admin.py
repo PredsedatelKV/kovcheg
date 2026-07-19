@@ -59,6 +59,7 @@ def _admin_user_out(u: models.User) -> schemas.AdminUserOut:
         balance=u.wallet.balance if u.wallet else 0,
         xp=u.xp,
         is_admin=is_admin(u),
+        pending_login_gifts=sum(1 for gift in u.login_gifts if gift.delivered_at is None),
     )
 
 
@@ -76,6 +77,23 @@ def _item_out(i: models.Item) -> schemas.ItemOut:
         can_activate=i.can_activate,
         lootbox_pool_code=i.lootbox_pool_code,
     )
+
+
+def _category_out(category: models.ItemCategory) -> schemas.ItemCategoryOut:
+    return schemas.ItemCategoryOut(id=category.id, name=category.name, sort_order=category.sort_order)
+
+
+def _require_item_category(db: Session, name: str) -> models.ItemCategory:
+    normalized = name.strip()
+    # SQLite's lower() only handles ASCII, so use Python casefold for Russian
+    # category names too.
+    category = next(
+        (row for row in db.query(models.ItemCategory).all() if row.name.casefold() == normalized.casefold()),
+        None,
+    )
+    if category is None:
+        raise HTTPException(status_code=400, detail="Сначала создайте эту категорию предметов")
+    return category
 
 
 def _shop_product_out(p: models.ShopProduct) -> schemas.ShopProductOut:
@@ -149,9 +167,11 @@ def _wheel_prize_out(p: models.WheelPrize) -> schemas.WheelPrizeOut:
 def meta(db: Session = Depends(get_db)) -> schemas.AdminMeta:
     items = db.query(models.Item).order_by(models.Item.name).all()
     users = db.query(models.User).order_by(models.User.first_name).all()
+    categories = db.query(models.ItemCategory).order_by(models.ItemCategory.sort_order, models.ItemCategory.name).all()
     return schemas.AdminMeta(
         items=[_item_out(i) for i in items],
         users=[_admin_user_out(u) for u in users],
+        categories=[_category_out(category) for category in categories],
     )
 
 
@@ -177,6 +197,45 @@ def update_user(user_id: int, body: schemas.AdminUserUpdate, db: Session = Depen
     db.commit()
     db.refresh(u)
     return _admin_user_out(u)
+
+
+@router.post("/users/{user_id}/login-gifts", response_model=schemas.LoginGiftOut)
+def schedule_login_gift(
+    user_id: int,
+    body: schemas.AdminLoginGiftBody,
+    admin_user: models.User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> schemas.LoginGiftOut:
+    begin_game_write(db)
+    target = db.query(models.User).filter(models.User.id == user_id).one_or_none()
+    if target is None:
+        raise HTTPException(status_code=404, detail="Игрок не найден")
+    item = None
+    if body.item_id is not None:
+        item = db.query(models.Item).filter(models.Item.id == body.item_id).one_or_none()
+        if item is None:
+            raise HTTPException(status_code=404, detail="Предмет не найден")
+    gift = models.PendingLoginGift(
+        user_id=target.id,
+        created_by_id=admin_user.id,
+        kovbucks=body.kovbucks,
+        xp=body.xp,
+        item_id=item.id if item else None,
+        item_quantity=body.item_quantity if item else 0,
+    )
+    db.add(gift)
+    db.commit()
+    db.refresh(gift)
+    return schemas.LoginGiftOut(
+        id=gift.id,
+        kovbucks=gift.kovbucks,
+        xp=gift.xp,
+        item_id=gift.item_id,
+        item_name=item.name if item else None,
+        item_icon=item.icon if item else None,
+        item_quantity=gift.item_quantity,
+        delivered_at=gift.delivered_at,
+    )
 
 
 @router.post("/users/{user_id}/balance", response_model=schemas.AdminUserOut)
@@ -299,6 +358,77 @@ def remove_from_inventory(user_id: int, inv_id: int, db: Session = Depends(get_d
 
 # ------- items (catalog) -------
 
+@router.get("/item-categories", response_model=list[schemas.ItemCategoryOut])
+def list_item_categories(db: Session = Depends(get_db)) -> list[schemas.ItemCategoryOut]:
+    rows = db.query(models.ItemCategory).order_by(models.ItemCategory.sort_order, models.ItemCategory.name).all()
+    return [_category_out(row) for row in rows]
+
+
+@router.post("/item-categories", response_model=schemas.ItemCategoryOut)
+def create_item_category(
+    body: schemas.AdminItemCategoryBody, db: Session = Depends(get_db)
+) -> schemas.ItemCategoryOut:
+    begin_game_write(db)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Название категории обязательно")
+    duplicate = next(
+        (row for row in db.query(models.ItemCategory).all() if row.name.casefold() == name.casefold()),
+        None,
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Такая категория уже существует")
+    category = models.ItemCategory(name=name, sort_order=body.sort_order)
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    return _category_out(category)
+
+
+@router.patch("/item-categories/{category_id}", response_model=schemas.ItemCategoryOut)
+def update_item_category(
+    category_id: int, body: schemas.AdminItemCategoryBody, db: Session = Depends(get_db)
+) -> schemas.ItemCategoryOut:
+    begin_game_write(db)
+    category = db.get(models.ItemCategory, category_id)
+    if category is None:
+        raise HTTPException(status_code=404, detail="Категория не найдена")
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Название категории обязательно")
+    duplicate = next(
+        (
+            row for row in db.query(models.ItemCategory).all()
+            if row.id != category.id and row.name.casefold() == name.casefold()
+        ),
+        None,
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Такая категория уже существует")
+    old_name = category.name
+    if old_name != name:
+        db.query(models.Item).filter(models.Item.category == old_name).update(
+            {models.Item.category: name}, synchronize_session=False
+        )
+    category.name = name
+    category.sort_order = body.sort_order
+    db.commit()
+    db.refresh(category)
+    return _category_out(category)
+
+
+@router.delete("/item-categories/{category_id}")
+def delete_item_category(category_id: int, db: Session = Depends(get_db)) -> dict:
+    begin_game_write(db)
+    category = db.get(models.ItemCategory, category_id)
+    if category is None:
+        raise HTTPException(status_code=404, detail="Категория не найдена")
+    if db.query(models.Item).filter(models.Item.category == category.name).first():
+        raise HTTPException(status_code=409, detail="Сначала перенесите предметы в другую категорию")
+    db.delete(category)
+    db.commit()
+    return {"ok": True}
+
 @router.get("/items", response_model=list[schemas.ItemOut])
 def list_items(db: Session = Depends(get_db)) -> list[schemas.ItemOut]:
     rows = db.query(models.Item).order_by(models.Item.name).all()
@@ -308,9 +438,22 @@ def list_items(db: Session = Depends(get_db)) -> list[schemas.ItemOut]:
 @router.post("/items", response_model=schemas.ItemOut)
 def create_item(body: schemas.AdminItemBody, db: Session = Depends(get_db)) -> schemas.ItemOut:
     begin_game_write(db)
-    if db.query(models.Item).filter(models.Item.code == body.code).one_or_none() is not None:
-        raise HTTPException(status_code=400, detail="Предмет с таким кодом уже есть")
-    item = models.Item(description="", **body.model_dump())
+    # The editor derives the internal code from the visible name. Names can
+    # legitimately repeat, so pick a free suffix instead of rejecting it.
+    base_code = body.code
+    code = base_code
+    suffix_number = 2
+    while db.query(models.Item).filter(models.Item.code == code).one_or_none() is not None:
+        suffix = f"-{suffix_number}"
+        code = f"{base_code[:64 - len(suffix)]}{suffix}"
+        suffix_number += 1
+    category = _require_item_category(db, body.category)
+    item = models.Item(
+        description="",
+        **body.model_dump(exclude={"category", "code"}),
+        code=code,
+        category=category.name,
+    )
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -325,8 +468,10 @@ def update_item(item_id: int, body: schemas.AdminItemBody, db: Session = Depends
         raise HTTPException(status_code=404, detail="Предмет не найден")
     if item.lootbox_pool_code:
         raise HTTPException(409, "Ковбоксы изменяются только через редактор ковбоксов")
-    for k, v in body.model_dump().items():
+    category = _require_item_category(db, body.category)
+    for k, v in body.model_dump(exclude={"category"}).items():
         setattr(item, k, v)
+    item.category = category.name
     item.description = ""
     db.commit()
     db.refresh(item)

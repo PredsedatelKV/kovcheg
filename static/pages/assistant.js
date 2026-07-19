@@ -1,4 +1,4 @@
-import { get, post } from "/static/api.js?v=240";
+import { get, post } from "/static/api.js?v=243";
 
 const STORAGE_KEY = "kovcheg.assistant.chat";
 
