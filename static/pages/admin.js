@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=243";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=244";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -20,18 +20,18 @@ function slugify(s = "") {
 }
 
 const SECTIONS = [
-  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=243" },
-  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=243" },
-  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=243" },
-  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=243" },
-  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=243" },
-  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=243" },
-  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=243" },
-  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=243" },
-  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=243" },
-  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=243" },
-  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=243" },
-  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=243" },
+  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=244" },
+  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=244" },
+  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=244" },
+  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=244" },
+  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=244" },
+  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=244" },
+  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=244" },
+  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=244" },
+  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=244" },
+  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=244" },
+  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=244" },
+  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=244" },
 ];
 
 let META = { items: [], users: [], categories: [] };
@@ -1092,7 +1092,9 @@ async function renderItems(body) {
     );
   });
   body.querySelector("#i-create").addEventListener("click", async () => {
-    const newCard = body.querySelector(".admin-card");  // first card = the "new item" form
+    // Categories are also rendered as an admin card, so anchor the image
+    // picker to this actual create button instead of relying on card order.
+    const newCard = body.querySelector("#i-create").closest(".admin-card");
     const photoEl = newCard.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value');
     const photoVal = photoEl ? photoEl.value : null;
     const nameVal = body.querySelector("#i-name").value.trim();

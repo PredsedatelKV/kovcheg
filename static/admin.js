@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=243";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=244";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -974,7 +974,7 @@ async function renderItems(body) {
   `;
   bindPhotoUploader(body);
   body.querySelector("#i-create").addEventListener("click", async () => {
-    const newCard = body.querySelector(".admin-card");  // first card = the "new item" form
+    const newCard = body.querySelector("#i-create").closest(".admin-card");
     const photoEl = newCard.querySelector('.photo-uploader[data-photo-key="image_url"] .photo-value');
     const photoVal = photoEl ? photoEl.value : null;
     const nameVal = body.querySelector("#i-name").value.trim();

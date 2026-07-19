@@ -190,9 +190,35 @@ def _deliver_pending_login_gifts(db: Session, user: models.User) -> list[schemas
     return receipts
 
 
+def _pending_login_gifts(db: Session, user: models.User) -> list[schemas.LoginGiftOut]:
+    """Preview pending gifts without moving any value until the player claims."""
+    gifts = (
+        db.query(models.PendingLoginGift)
+        .filter(
+            models.PendingLoginGift.user_id == user.id,
+            models.PendingLoginGift.delivered_at.is_(None),
+        )
+        .order_by(models.PendingLoginGift.id)
+        .all()
+    )
+    return [
+        schemas.LoginGiftOut(
+            id=gift.id,
+            kovbucks=gift.kovbucks,
+            xp=gift.xp,
+            item_id=gift.item_id,
+            item_name=gift.item.name if gift.item else None,
+            item_icon=gift.item.icon if gift.item else None,
+            item_quantity=gift.item_quantity,
+            delivered_at=None,
+        )
+        for gift in gifts
+    ]
+
+
 @router.get("/me", response_model=schemas.ProfilePayload)
 def me(user: models.User = Depends(current_user), db: Session = Depends(get_db)) -> schemas.ProfilePayload:
-    delivered_gifts = _deliver_pending_login_gifts(db, user)
+    pending_gifts = _pending_login_gifts(db, user)
     inventory = (
         db.query(models.InventoryItem).filter(models.InventoryItem.user_id == user.id, models.InventoryItem.quantity > 0).all()
     )
@@ -224,8 +250,17 @@ def me(user: models.User = Depends(current_user), db: Session = Depends(get_db))
             if daily_plan
             else None
         ),
-        login_gifts=delivered_gifts,
+        login_gifts=pending_gifts,
     )
+
+
+@router.post("/login-gifts/claim", response_model=schemas.LoginGiftClaimOut)
+def claim_login_gifts(
+    user: models.User = Depends(current_user), db: Session = Depends(get_db)
+) -> schemas.LoginGiftClaimOut:
+    """Atomically grant gifts only after the player presses «Забрать»."""
+    gifts = _deliver_pending_login_gifts(db, user)
+    return schemas.LoginGiftClaimOut(user=_user_to_out(user), gifts=gifts)
 
 
 def _resolve_recipient(db: Session, recipient: str) -> models.User:

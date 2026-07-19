@@ -1598,6 +1598,41 @@ html.dark .listing-row .price, html.dark .listing-row .coins { color: var(--text
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(20px); opacity: .6; } to { transform: translateY(0); opacity: 1; } }
 
+/* Login gift: a deliberate full-screen claim flow, not a passive toast. */
+.login-gift-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+  background:
+    radial-gradient(circle at 50% 20%, rgba(255, 209, 78, .3), transparent 42%),
+    rgba(16, 22, 36, .94);
+  animation: fade .2s ease-out;
+}
+.login-gift-screen {
+  width: min(100%, 430px);
+  min-height: min(620px, calc(100dvh - 40px));
+  padding: 30px 22px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 28px;
+  background: linear-gradient(160deg, var(--surface), var(--surface-2));
+  box-shadow: 0 24px 70px rgba(0,0,0,.38);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.login-gift-sparkles { color: #ffd55c; font-size: 24px; letter-spacing: 14px; margin-left: 14px; }
+.login-gift-chest { width: min(180px, 48vw); height: min(180px, 48vw); object-fit: contain; margin: 12px 0; filter: drop-shadow(0 12px 20px rgba(0,0,0,.25)); }
+.login-gift-screen h1 { margin: 0; font-size: 27px; color: var(--text); }
+.login-gift-screen > p { margin: 8px 0 18px; color: var(--text-soft); }
+.login-gift-receipts { width: 100%; display: grid; gap: 8px; margin-bottom: 18px; }
+.login-gift-reward { padding: 11px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-size: 15px; font-weight: 700; }
+.login-gift-claim { width: 100%; max-width: 300px; padding: 14px 20px; font-size: 16px; font-weight: 800; }
+
 /* Task modal */
 .task-card-progress { font-size: 13px; color: var(--text-soft); margin-top: 8px; }
 .task-card-reward { display: flex; align-items: center; gap: 6px; margin: 10px 0; font-weight: 700; }

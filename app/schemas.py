@@ -189,6 +189,11 @@ class LoginGiftOut(BaseModel):
     delivered_at: datetime | None = None
 
 
+class LoginGiftClaimOut(BaseModel):
+    user: UserOut
+    gifts: list[LoginGiftOut] = Field(default_factory=list)
+
+
 class ProfilePayload(BaseModel):
     user: UserOut
     bp_level: int = 0

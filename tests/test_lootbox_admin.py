@@ -284,7 +284,7 @@ def test_admin_can_unlist_player_offer_once_and_item_is_returned(lootbox_api):
         assert db.get(models.MarketListing, listing_id).is_active is False
 
 
-def test_combined_login_gift_is_delivered_once_on_next_profile_load(lootbox_api):
+def test_combined_login_gift_requires_explicit_claim_and_is_delivered_once(lootbox_api):
     client, sessions = lootbox_api
     with sessions() as db:
         prize_id = db.query(models.Item.id).filter_by(code="prize").scalar()
@@ -297,11 +297,11 @@ def test_combined_login_gift_is_delivered_once_on_next_profile_load(lootbox_api)
     assert scheduled.status_code == 200, scheduled.text
     assert scheduled.json()["delivered_at"] is None
 
-    delivered = client.get("/api/profile/me", headers=_headers(1))
-    assert delivered.status_code == 200, delivered.text
-    payload = delivered.json()
-    assert payload["user"]["balance"] == 107
-    assert payload["user"]["xp"] == 11
+    preview = client.get("/api/profile/me", headers=_headers(1))
+    assert preview.status_code == 200, preview.text
+    payload = preview.json()
+    assert payload["user"]["balance"] == 100
+    assert payload["user"]["xp"] == 0
     assert payload["login_gifts"] == [{
         "id": scheduled.json()["id"],
         "kovbucks": 7,
@@ -310,12 +310,19 @@ def test_combined_login_gift_is_delivered_once_on_next_profile_load(lootbox_api)
         "item_name": "Предмет-приз",
         "item_icon": "prize.svg",
         "item_quantity": 3,
-        "delivered_at": payload["login_gifts"][0]["delivered_at"],
+        "delivered_at": None,
     }]
 
-    replay = client.get("/api/profile/me", headers=_headers(1))
+    claim = client.post("/api/profile/login-gifts/claim", headers=_headers(1))
+    assert claim.status_code == 200, claim.text
+    assert claim.json()["user"]["balance"] == 107
+    assert claim.json()["user"]["xp"] == 11
+    assert len(claim.json()["gifts"]) == 1
+    assert claim.json()["gifts"][0]["delivered_at"] is not None
+
+    replay = client.post("/api/profile/login-gifts/claim", headers=_headers(1))
     assert replay.status_code == 200
-    assert replay.json()["login_gifts"] == []
+    assert replay.json()["gifts"] == []
     assert replay.json()["user"]["balance"] == 107
     assert replay.json()["user"]["xp"] == 11
     assert _quantity(sessions, "prize") == 3
