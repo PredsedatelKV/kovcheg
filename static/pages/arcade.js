@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=245";
+import { post, get } from "/static/api.js?v=246";
 
-import { playUISound } from "/static/pages/settings.js?v=245";
+import { playUISound } from "/static/pages/settings.js?v=246";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -2322,7 +2322,7 @@ function gameClicker() {
 // ============ RENDER ============
 
 function arcadeIcon(name) {
-  return `<div class="game-tile-icon arcade-icon-frame"><img class="arcade-icon-img" src="/static/img/ui/arcade/${name}.png?v=245" alt="" draggable="false" decoding="async"></div>`;
+  return `<div class="game-tile-icon arcade-icon-frame"><img class="arcade-icon-img" src="/static/img/ui/arcade/${name}.png?v=246" alt="" draggable="false" decoding="async"></div>`;
 }
 
 export async function renderArcade(root) {

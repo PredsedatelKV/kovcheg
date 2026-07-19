@@ -9,7 +9,9 @@ event loop so HTTP endpoints stay snappy.
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
+import os
 from typing import Iterable
 
 from app.config import get_settings
@@ -85,6 +87,10 @@ def notify_user_bg(telegram_id: int, text: str, web_app_url: str | None = None) 
 
 def notify_admins_bg(text: str) -> None:
     """Schedule an admin broadcast without blocking the request."""
+    # Test fixtures exercise purchases with demo items.  They must never send
+    # real Telegram messages to administrators.
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return
     chat_ids = _resolve_admin_chat_ids()
     if not chat_ids:
         log.info("notify: no admin chat ids configured — message dropped: %s", text)
@@ -100,3 +106,11 @@ def notify_admins_bg(text: str) -> None:
             asyncio.run(_send_to_chats(chat_ids, text))
         except Exception as exc:  # noqa: BLE001
             log.warning("notify: sync send failed: %s", exc)
+
+
+def log_player_action(action: str, player_name: str, details: str) -> None:
+    """Send a compact, safe admin log for a meaningful player action only."""
+    notify_admins_bg(
+        f"📋 <b>{html.escape(action)}</b>\n"
+        f"👤 <b>{html.escape(player_name or 'Игрок')}</b> — {html.escape(details)}"
+    )

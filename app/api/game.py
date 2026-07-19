@@ -122,9 +122,6 @@ def send_invite(
         )
         delivered = "telegram"
 
-    from app.notify import notify_admins_bg
-    notify_admins_bg(f"⚔️ <b>{user.first_name}</b> пригласил(а) <b>{to_user.first_name}</b> в «<b>{game_name}</b>»")
-
     return {"id": invite.id, "status": "pending", "delivered": delivered}
 
 

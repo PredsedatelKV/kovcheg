@@ -67,10 +67,11 @@ def buy(
     db.commit()
     db.refresh(user)
     from app.api.profile import _user_to_out  # avoid cycle at module load
-    from app.notify import notify_admins_bg
+    from app.notify import log_player_action
 
-    notify_admins_bg(
-        f"🛒 <b>{buyer_name}</b> купил(а) <b>{item_name}</b> за {product_price} Ковбаксов"
-        + (f" · осталось: {product_stock}" if product_stock >= 0 else "")
+    log_player_action(
+        "Покупка в магазине", buyer_name,
+        f"{item_name} · {product_price} ковбаксов"
+        + (f" · остаток {product_stock}" if product_stock >= 0 else ""),
     )
     return _user_to_out(user)

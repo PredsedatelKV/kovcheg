@@ -45,6 +45,9 @@ CATALOG_SNACKS = (
     ("solonina_crayfish_dill", "Арахис со вкусом раков и укропом Solonina", "peanut_crayfish_dill.jpeg", 35, 1),
     ("solonina_sourcream_onion", "Арахис со вкусом сметаны и лука жареный Solonina", "peanut_sourcream_onion.jpeg", 35, 1),
     ("solonina_cheese", "Арахис со вкусом сыра Solonina", "peanut_cheese.jpeg", 35, 1),
+)
+
+CATALOG_SWEETS = (
     ("milky_way", "Шоколадный батончик Milky Way", "milky_way.jpeg", 25, 3),
     ("orbit_white_mint", "Жевательная резинка Orbit White Нежная мята без сахара", "orbit_white_mint.jpeg", 25, 2),
     ("orion_fresh_pie_passionfruit", "Пирожное бисквитное с начинкой Маракуйя Orion Fresh Pie", "orion_fresh_pie_passionfruit.jpeg", 15, 7),
@@ -69,11 +72,13 @@ def _ensure_item_category(db: Session, name: str, sort_order: int) -> models.Ite
 def _seed_catalog_snacks(db: Session, fragment: models.Item) -> None:
     """Add the pre-launch snack catalogue once, without refilling sold stock."""
     snack_category = _ensure_item_category(db, "Снеки", 20)
+    sweets_category = _ensure_item_category(db, "Сладости", 30)
     fragment_category = _ensure_item_category(db, "Фрагменты", 10)
     if fragment.category != fragment_category.name:
         fragment.category = fragment_category.name
 
-    for code, name, filename, price, stock in CATALOG_SNACKS:
+    for code, name, filename, price, stock in (*CATALOG_SNACKS, *CATALOG_SWEETS):
+        category = snack_category if code.startswith("solonina_") else sweets_category
         image_url = f"/static/img/items/catalog/{filename}"
         item = db.query(models.Item).filter(models.Item.code == code).one_or_none()
         if item is None:
@@ -89,7 +94,7 @@ def _seed_catalog_snacks(db: Session, fragment: models.Item) -> None:
                 icon=image_url,
                 image_url=image_url,
                 rarity="Обычный",
-                category=snack_category.name,
+                category=category.name,
                 can_gift=True,
                 can_activate=False,
             )
@@ -100,12 +105,12 @@ def _seed_catalog_snacks(db: Session, fragment: models.Item) -> None:
                 item.name != name,
                 item.icon != image_url,
                 item.image_url != image_url,
-                item.category != snack_category.name,
+                item.category != category.name,
             ))
             item.name = name
             item.icon = image_url
             item.image_url = image_url
-            item.category = snack_category.name
+            item.category = category.name
             item.description = ""
 
         products = db.query(models.ShopProduct).filter(models.ShopProduct.item_id == item.id).order_by(models.ShopProduct.id).all()

@@ -47,18 +47,6 @@ def start_task(
     db.add(ut)
     db.commit()
     db.refresh(ut)
-    from app.notify import notify_admins_bg
-    rewards = []
-    if task.reward:
-        rewards.append(f"{task.reward} ковбаксов")
-    if task.xp_reward:
-        rewards.append(f"{task.xp_reward} XP")
-    if task.reward_item and task.reward_item_quantity:
-        rewards.append(f"{task.reward_item.name} ×{task.reward_item_quantity}")
-    notify_admins_bg(
-        f"📥 <b>{user.first_name}</b> начал(а) задание «<b>{ut.task.name}</b>» "
-        f"(награда: {', '.join(rewards)})"
-    )
     return _user_task_to_out(ut)
 
 
@@ -87,8 +75,4 @@ def cancel_task(
     ut.finished_at = now_utc()
     db.commit()
     db.refresh(ut)
-    from app.notify import notify_admins_bg
-    notify_admins_bg(
-        f"🚫 <b>{user.first_name}</b> прервал(а) задание «<b>{ut.task.name}</b>»"
-    )
     return _user_task_to_out(ut)

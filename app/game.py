@@ -51,13 +51,6 @@ def send_invite(
     db.commit()
     db.refresh(game_invite)
 
-    from app.notify import notify_admins_bg
-    game_names = {"tictactoe": "Крестики-нолики", "checkers": "Шашки", "pingpong": "Пинг-понг"}
-    notify_admins_bg(
-        f"⚔️ <b>{user.first_name}</b> пригласил(а) <b>{to_user.first_name}</b> "
-        f"в игру <b>{game_names.get(payload.game, payload.game)}</b>"
-    )
-
     return {"id": game_invite.id, "status": "pending"}
 
 

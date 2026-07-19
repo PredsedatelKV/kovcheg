@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=245";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=246";
 
-import { playUISound } from "/static/pages/settings.js?v=245";
+import { playUISound } from "/static/pages/settings.js?v=246";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -43,7 +43,9 @@ function renderKovboxShowcase(products = []) {
 }
 
 function availableCategories() {
-  return (state.categories || []).filter((category) => category.name !== "Ковбоксы");
+  return (state.categories || []).filter(
+    (category) => !["Ковбоксы", "Фрагменты"].includes(category.name),
+  );
 }
 
 function renderCategoryFilters(root) {

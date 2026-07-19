@@ -93,10 +93,8 @@ def create_listing(
     db.add(listing)
     db.commit()
     db.refresh(listing)
-    from app.notify import notify_admins_bg
-    notify_admins_bg(
-        f"📜 <b>{seller_name}</b> выставил(а) на рынок: <b>{item_name}</b> ×{payload.quantity} за {payload.price} Ковбаксов"
-    )
+    from app.notify import log_player_action
+    log_player_action("Выставление на рынок", seller_name, f"{item_name} ×{payload.quantity} · {payload.price} ковбаксов")
     return _listing_to_out(listing)
 
 
@@ -117,10 +115,8 @@ def unlist(
     listing_quantity = listing.quantity
     db.commit()
     db.refresh(listing)
-    from app.notify import notify_admins_bg
-    notify_admins_bg(
-        f"↩️ <b>{seller_name}</b> снял(а) лот: <b>{item_name}</b> ×{listing_quantity}"
-    )
+    from app.notify import log_player_action
+    log_player_action("Снятие с рынка", seller_name, f"{item_name} ×{listing_quantity}")
     return _listing_to_out(listing)
 
 
@@ -177,9 +173,10 @@ def buy_listing(
     listing_price = listing.price
     db.commit()
     db.refresh(user)
-    from app.notify import notify_admins_bg
-    notify_admins_bg(
-        f"💱 <b>{buyer_name}</b> купил(а) на рынке <b>{item_name}</b> ×{listing_quantity} у <b>{seller_name}</b> за {listing_price} Ковбаксов"
+    from app.notify import log_player_action
+    log_player_action(
+        "Покупка на рынке", buyer_name,
+        f"{item_name} ×{listing_quantity} у {seller_name} · {listing_price} ковбаксов",
     )
     return _user_to_out(user)
 

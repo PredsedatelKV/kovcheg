@@ -378,10 +378,8 @@ def transfer(
         db.rollback()
         raise HTTPException(status_code=500, detail="Не удалось выполнить перевод") from exc
     db.refresh(user)
-    from app.notify import notify_admins_bg
-    notify_admins_bg(
-        f"💸 <b>{user.first_name}</b> перевел(а) <b>{payload.amount} Ковбаксов</b> → <b>{recipient.first_name}</b>"
-    )
+    from app.notify import log_player_action
+    log_player_action("Перевод ковбаксов", user.first_name, f"{payload.amount} ковбаксов → {recipient.first_name}")
     return _user_to_out(user)
 
 
@@ -421,10 +419,8 @@ def gift_item(
         recipient_inv.quantity += payload.quantity
     db.commit()
     db.refresh(user)
-    from app.notify import notify_admins_bg
-    notify_admins_bg(
-        f"🎁 <b>{user.first_name}</b> подарил(а) <b>{item_name}</b> ×{payload.quantity} → <b>{recipient.first_name}</b>"
-    )
+    from app.notify import log_player_action
+    log_player_action("Подарок предмета", user.first_name, f"{item_name} ×{payload.quantity} → {recipient.first_name}")
     return me(user=user, db=db)
 
 
@@ -464,9 +460,10 @@ def sell_item(
     db.add(listing)
     db.commit()
     db.refresh(user)
-    from app.notify import notify_admins_bg
-    notify_admins_bg(
-        f"🏷️ <b>{user.first_name}</b> выставил(а) на адресную продажу: <b>{item_name}</b> ×{payload.quantity} за {payload.price} Ковбаксов → <b>{recipient.first_name}</b>"
+    from app.notify import log_player_action
+    log_player_action(
+        "Адресная продажа", user.first_name,
+        f"{item_name} ×{payload.quantity} для {recipient.first_name} · {payload.price} ковбаксов",
     )
     return me(user=user, db=db)
 
@@ -490,7 +487,6 @@ def activate_item(
     xp_by_code = {"exp_scroll": 50, "scroll_of_wisdom": 250}
     if inv.item.code not in xp_by_code:
         raise HTTPException(status_code=400, detail="Для предмета не настроен эффект")
-    item_name = inv.item.name
     from app.api._helpers import award_xp
     award_xp(db, user, xp_by_code[inv.item.code])
     inv.quantity -= 1
@@ -498,10 +494,6 @@ def activate_item(
         db.delete(inv)
     db.commit()
     db.refresh(user)
-    from app.notify import notify_admins_bg
-    notify_admins_bg(
-        f"✨ <b>{user.first_name}</b> активировал(а) <b>{item_name}</b>"
-    )
     return me(user=user, db=db)
 
 
