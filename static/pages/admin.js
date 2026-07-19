@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=244";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=245";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -20,18 +20,18 @@ function slugify(s = "") {
 }
 
 const SECTIONS = [
-  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=244" },
-  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=244" },
-  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=244" },
-  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=244" },
-  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=244" },
-  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=244" },
-  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=244" },
-  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=244" },
-  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=244" },
-  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=244" },
-  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=244" },
-  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=244" },
+  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=245" },
+  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=245" },
+  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=245" },
+  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=245" },
+  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=245" },
+  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=245" },
+  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=245" },
+  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=245" },
+  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=245" },
+  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=245" },
+  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=245" },
+  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=245" },
 ];
 
 let META = { items: [], users: [], categories: [] };

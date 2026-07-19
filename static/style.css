@@ -1295,6 +1295,12 @@ html.dark .admin-tab.active {
 .img-frame > img.img-cover {
   object-fit: cover;
 }
+.img-frame > img.img-product-photo {
+  object-fit: contain;
+  padding: 0;
+  background: #fff;
+  image-rendering: auto;
+}
 .img-frame > img.img-contain {
   object-fit: contain;
   padding: 14%;
@@ -1549,10 +1555,11 @@ html.dark .listing-row { background: var(--surface); border-color: var(--border)
 html.dark .listing-row .price, html.dark .listing-row .coins { color: var(--text-soft); }
 .product:active { transform: scale(0.985); }
 .product .icon-big { font-size: 50px; line-height: 1; margin: 4px 0 8px; }
-.product .name { font-weight: 600; font-size: 14px; min-height: 36px; display: flex; align-items: center; justify-content: center; line-height: 1.2; }
-.product .price { color: var(--text-soft); font-size: 14px; margin: 4px 0 10px; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.product .name { font-weight: 600; font-size: 14px; min-height: 52px; display: flex; align-items: center; justify-content: center; line-height: 1.2; overflow: hidden; }
+.product .price { color: var(--text-soft); font-size: 14px; min-height: 26px; margin: 4px 0 10px; display: flex; align-items: center; justify-content: center; gap: 4px; }
 .product .price .coin { color: var(--accent); }
-.product .btn { padding: 8px 0; font-size: 14px; margin-top: auto; }
+.product .btn { width: 100%; padding: 8px 0; font-size: 14px; margin-top: auto; }
+.kovbox-shop-item .btn { width: 100%; }
 
 .listing-row {
   background: var(--surface);

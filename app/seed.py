@@ -40,6 +40,88 @@ def _get_or_create_item(
     return item
 
 
+CATALOG_SNACKS = (
+    ("solonina_flavour_mix", "Арахис Вкусовой микс Solonina", "peanut_flavour_mix.jpeg", 35, 1),
+    ("solonina_crayfish_dill", "Арахис со вкусом раков и укропом Solonina", "peanut_crayfish_dill.jpeg", 35, 1),
+    ("solonina_sourcream_onion", "Арахис со вкусом сметаны и лука жареный Solonina", "peanut_sourcream_onion.jpeg", 35, 1),
+    ("solonina_cheese", "Арахис со вкусом сыра Solonina", "peanut_cheese.jpeg", 35, 1),
+    ("milky_way", "Шоколадный батончик Milky Way", "milky_way.jpeg", 25, 3),
+    ("orbit_white_mint", "Жевательная резинка Orbit White Нежная мята без сахара", "orbit_white_mint.jpeg", 25, 2),
+    ("orion_fresh_pie_passionfruit", "Пирожное бисквитное с начинкой Маракуйя Orion Fresh Pie", "orion_fresh_pie_passionfruit.jpeg", 15, 7),
+    ("mms_peanut", "Драже с арахисом и молочным шоколадом M&M’s", "mms_peanut.jpeg", 45, 2),
+    ("babyfox_hippos", "Мармелад жевательный бегемоты Babyfox", "babyfox_hippos.jpeg", 35, 3),
+    ("zerfer_marshmallow_duo", "Маршмэллоу Duo клубника-ваниль Zerfer", "zerfer_marshmallow_duo.jpeg", 60, 2),
+)
+
+
+def _ensure_item_category(db: Session, name: str, sort_order: int) -> models.ItemCategory:
+    category = next(
+        (row for row in db.query(models.ItemCategory).all() if row.name.casefold() == name.casefold()),
+        None,
+    )
+    if category is None:
+        category = models.ItemCategory(name=name, sort_order=sort_order)
+        db.add(category)
+        db.flush()
+    return category
+
+
+def _seed_catalog_snacks(db: Session, fragment: models.Item) -> None:
+    """Add the pre-launch snack catalogue once, without refilling sold stock."""
+    snack_category = _ensure_item_category(db, "Снеки", 20)
+    fragment_category = _ensure_item_category(db, "Фрагменты", 10)
+    if fragment.category != fragment_category.name:
+        fragment.category = fragment_category.name
+
+    for code, name, filename, price, stock in CATALOG_SNACKS:
+        image_url = f"/static/img/items/catalog/{filename}"
+        item = db.query(models.Item).filter(models.Item.code == code).one_or_none()
+        if item is None:
+            # Two items may have been created manually before this catalogue.
+            # Match by public name to preserve their IDs and player inventory.
+            item = db.query(models.Item).filter(models.Item.name == name).one_or_none()
+        changed = item is None
+        if item is None:
+            item = models.Item(
+                code=code,
+                name=name,
+                description="",
+                icon=image_url,
+                image_url=image_url,
+                rarity="Обычный",
+                category=snack_category.name,
+                can_gift=True,
+                can_activate=False,
+            )
+            db.add(item)
+            db.flush()
+        else:
+            changed = any((
+                item.name != name,
+                item.icon != image_url,
+                item.image_url != image_url,
+                item.category != snack_category.name,
+            ))
+            item.name = name
+            item.icon = image_url
+            item.image_url = image_url
+            item.category = snack_category.name
+            item.description = ""
+
+        products = db.query(models.ShopProduct).filter(models.ShopProduct.item_id == item.id).order_by(models.ShopProduct.id).all()
+        product = products[0] if products else None
+        if product is None:
+            db.add(models.ShopProduct(item_id=item.id, price=price, stock=stock, is_active=True))
+        elif changed:
+            # Apply the requested initial stock once; later starts preserve
+            # purchases and administrator changes.
+            product.price = price
+            product.stock = stock
+            product.is_active = True
+        for duplicate in products[1:]:
+            duplicate.is_active = False
+
+
 # Icons for existing rows are migrated to file paths on every startup so a
 # user can drop new SVG/PNG files into static/img/* without touching the DB.
 ITEM_ICON_BY_CODE: dict[str, str] = {
@@ -510,6 +592,7 @@ def seed(db: Session) -> None:
         lootbox_item.lootbox_pool_code = code
         lootbox_item.category = "Ковбоксы"
     db.flush()
+    _seed_catalog_snacks(db, fragment)
 
     # Seed lootbox pools
     def _fill_pool(code: str) -> models.LootboxPool:

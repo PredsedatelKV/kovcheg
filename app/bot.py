@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 _bot: Bot | None = None
 _dp: Dispatcher | None = None
 _last_assistant_requests: dict[int, datetime] = {}
-WEBAPP_RELEASE = "244"
+WEBAPP_RELEASE = "245"
 
 
 def _versioned_webapp_url(public_url: str) -> str:
