@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=247";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=248";
 
-import { playUISound } from "/static/pages/settings.js?v=247";
+import { playUISound } from "/static/pages/settings.js?v=248";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -473,6 +473,9 @@ function openItemActionsDialog(row, options = {}) {
   const item = row.item;
   const canGift = item.can_gift;
   const assemblyCost = _profileData?.fragment_assembly_cost || 10;
+  const isFragment = item.code === "box_fragment";
+  const canActivate = !item.lootbox_pool_code && (item.can_activate || isFragment);
+  const activationLocked = isFragment && row.quantity < assemblyCost;
   const openRequestId = makeLootboxRequestId();
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
@@ -486,22 +489,18 @@ function openItemActionsDialog(row, options = {}) {
         <img src="/static/img/ui/gift.svg" alt="" class="icon icon-md"/>
         <span>Подарить</span>
       </button>
+      ${canActivate ? `<button class="btn btn-outline" id="ia-activate" ${activationLocked ? "disabled" : ""} title="${activationLocked ? `Нужно ${assemblyCost} фрагментов` : ""}">
+        <img src="/static/img/ui/spark.svg" alt="" class="icon icon-md"/>
+        <span>${isFragment ? (activationLocked ? `Активировать · нужно ${assemblyCost}` : `Активировать · ×${assemblyCost}`) : "Активировать"}</span>
+      </button>` : ""}
       <button class="btn btn-outline" id="ia-sell" ${canGift ? "" : "disabled"}>
         <img src="/static/img/ui/kovbaks.png" alt="" class="icon icon-md"/>
         <span>Продать</span>
       </button>
-      ${item.code === "box_fragment" && row.quantity >= assemblyCost ? `
-      <button class="btn" id="ia-assemble">
-        <img src="/static/img/ui/box.svg" alt="" class="icon icon-md"/>
-        <span>Собрать ковбокс (×${assemblyCost})</span>
-      </button>` : item.lootbox_pool_code ? `
+      ${item.lootbox_pool_code ? `
       <button class="btn" id="ia-open-lootbox">
         <img src="/static/img/ui/box.svg" alt="" class="icon icon-md"/>
         <span>Открыть</span>
-      </button>` : item.can_activate ? `
-      <button class="btn" id="ia-activate">
-        <img src="/static/img/ui/spark.svg" alt="" class="icon icon-md"/>
-        <span>Активировать</span>
       </button>` : ""}
     </div>
   `, { stack: Boolean(options.stack) });
@@ -521,24 +520,15 @@ function openItemActionsDialog(row, options = {}) {
     if (button.disabled) return;
     button.disabled = true;
     try {
-      await post("/api/profile/inventory/activate", { item_id: item.id, recipient: "", quantity: 1 });
+      if (isFragment) {
+        var assembled = await post("/api/profile/inventory/assemble-fragments");
+        window.kov.toast("🎁 Вы получили: " + assembled.item_name);
+      } else {
+        await post("/api/profile/inventory/activate", { item_id: item.id, recipient: "", quantity: 1 });
+        window.kov.toast(`✨ «${item.name}» активирован`);
+      }
       window.closeModal();
       _updateSections(["inventory", "balance"]);
-      window.kov.toast(`✨ «${item.name}» активирован`);
-    } catch (err) {
-      button.disabled = false;
-      window.kov.toast(err.message);
-    }
-  });
-  modal.querySelector("#ia-assemble")?.addEventListener("click", async () => {
-    const button = modal.querySelector("#ia-assemble");
-    if (button.disabled) return;
-    button.disabled = true;
-    try {
-      var res = await post("/api/profile/inventory/assemble-fragments");
-      window.closeModal();
-      _updateSections(["inventory", "balance"]);
-      window.kov.toast("🎁 Вы получили: " + res.item_name);
     } catch (err) {
       button.disabled = false;
       window.kov.toast(err.message);

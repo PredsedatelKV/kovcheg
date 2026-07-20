@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=247";
+import { get, post, iconHtml } from "/static/api.js?v=248";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=247";
+import { openAssistantChat } from "/static/pages/assistant.js?v=248";
 
-import { playUISound } from "/static/pages/settings.js?v=247";
+import { playUISound } from "/static/pages/settings.js?v=248";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -144,7 +144,9 @@ export async function renderHome(root) {
   root.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
   var data;
   try {
-    data = await get("/api/home");
+    // The page itself remains cached, but banners are admin-controlled and may
+    // be deleted between visits.  Render only the confirmed server snapshot.
+    data = await get("/api/home", { force: true });
   } catch (e) {
     root.innerHTML = '<div class="card"><p style="color:var(--danger)">Ошибка загрузки</p></div>';
     return;
@@ -454,7 +456,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=247").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=248").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {

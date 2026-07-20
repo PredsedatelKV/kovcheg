@@ -1379,7 +1379,37 @@ def _lootbox_item_code(code: str) -> str:
     return code if code.startswith("lootbox_") else f"lootbox_{code}"
 
 
-def _lootbox_out(pool: models.LootboxPool) -> schemas.AdminLootboxOut:
+def _ensure_lootbox_item_link(db: Session, pool: models.LootboxPool) -> models.Item:
+    """Repair pre-editor pools that were created without their inventory item."""
+    if pool.item is not None:
+        return pool.item
+    item_code = _lootbox_item_code(pool.code)
+    item = db.query(models.Item).filter(models.Item.code == item_code).one_or_none()
+    if item is None:
+        item = models.Item(
+            code=item_code,
+            name=pool.name,
+            icon=pool.image_url or "/static/img/items/lootbox_common.svg",
+            image_url=pool.image_url or "/static/img/items/lootbox_common.svg",
+            description="",
+            rarity=pool.rarity or "Обычный",
+            category="Ковбоксы",
+            can_gift=True,
+            can_activate=False,
+            lootbox_pool_code=pool.code,
+        )
+        db.add(item)
+        db.flush()
+    elif item.lootbox_pool_code not in (None, pool.code):
+        raise HTTPException(409, f"Предмет {item.code} уже связан с другим ковбоксом")
+    pool.item_id = item.id
+    item.lootbox_pool_code = pool.code
+    item.category = "Ковбоксы"
+    item.description = ""
+    return item
+
+
+def _lootbox_out(db: Session, pool: models.LootboxPool) -> schemas.AdminLootboxOut:
     active_random = [entry for entry in pool.entries if entry.is_active and not entry.is_guaranteed]
     active_guaranteed = [entry for entry in pool.entries if entry.is_active and entry.is_guaranteed]
     total = sum(entry.weight for entry in active_random)
@@ -1402,9 +1432,7 @@ def _lootbox_out(pool: models.LootboxPool) -> schemas.AdminLootboxOut:
             is_active=entry.is_active,
             sort_order=entry.sort_order,
         ))
-    item = pool.item
-    if item is None:
-        raise HTTPException(500, f"Ковбокс {pool.code} не связан с предметом")
+    item = _ensure_lootbox_item_link(db, pool)
     return schemas.AdminLootboxOut(
         id=pool.id,
         item_id=item.id,
@@ -1487,7 +1515,13 @@ def admin_list_lootboxes(
     if rarity:
         query = query.filter(models.LootboxPool.rarity == rarity)
     pools = query.order_by(models.LootboxPool.sort_order, models.LootboxPool.id).all()
-    return [_lootbox_out(pool) for pool in pools]
+    repaired = False
+    for pool in pools:
+        repaired = repaired or pool.item is None
+    result = [_lootbox_out(db, pool) for pool in pools]
+    if repaired:
+        db.commit()
+    return result
 
 
 @router.post("/lootboxes", response_model=schemas.AdminLootboxOut)
@@ -1524,7 +1558,7 @@ def admin_create_lootbox(
     except Exception as exc:
         db.rollback()
         raise HTTPException(409, "Не удалось сохранить ковбокс: проверьте уникальный ID") from exc
-    return _lootbox_out(pool)
+    return _lootbox_out(db, pool)
 
 
 @router.patch("/lootboxes/{pool_id}", response_model=schemas.AdminLootboxOut)
@@ -1552,7 +1586,7 @@ def admin_update_lootbox(
     pool.version += 1
     _replace_lootbox_entries(db, pool, body.entries)
     db.commit()
-    return _lootbox_out(pool)
+    return _lootbox_out(db, pool)
 
 
 @router.post("/lootboxes/{pool_id}/duplicate", response_model=schemas.AdminLootboxOut)
@@ -1610,7 +1644,7 @@ def admin_archive_lootbox(pool_id: int, db: Session = Depends(get_db)) -> schema
     pool.version += 1
     sync_lootbox_shop_product(db, pool)
     db.commit()
-    return _lootbox_out(pool)
+    return _lootbox_out(db, pool)
 
 
 # Unsafe row-by-row pool mutation was removed: it allowed temporarily empty or

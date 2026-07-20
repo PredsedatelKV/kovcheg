@@ -669,7 +669,7 @@ class AdminLootboxEntryBody(BaseModel):
     item_id: StrictInt | None = Field(default=None, gt=0)
     amount_min: StrictInt = Field(default=1, ge=1, le=1_000_000)
     amount_max: StrictInt = Field(default=1, ge=1, le=1_000_000)
-    weight: StrictInt = Field(default=10, ge=1, le=1_000_000)
+    weight: StrictInt = Field(default=10, ge=1, le=100)
     is_guaranteed: bool = False
     is_active: bool = True
     sort_order: StrictInt = Field(default=0, ge=-100_000, le=100_000)
@@ -718,6 +718,9 @@ class AdminLootboxBody(BaseModel):
         active_entries = [entry for entry in self.entries if entry.is_active]
         if self.is_active and not active_entries:
             raise ValueError("Активный ковбокс не может иметь пустой список наград")
+        random_total = sum(entry.weight for entry in active_entries if not entry.is_guaranteed)
+        if self.is_active and random_total != 100:
+            raise ValueError(f"Сумма шансов обычных наград должна быть ровно 100% (сейчас {random_total}%)")
         if sum(1 for entry in active_entries if entry.is_guaranteed) > 10:
             raise ValueError("Гарантированных наград не может быть больше 10")
         if not self.allow_duplicates:

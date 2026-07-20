@@ -104,7 +104,7 @@ def _box_payload(
             "item_id": prize_id if kind == "item" else None,
             "amount_min": amount,
             "amount_max": amount,
-            "weight": 10,
+            "weight": 100,
             "is_guaranteed": False,
             "is_active": True,
             "sort_order": 0,
@@ -220,6 +220,20 @@ def test_admin_create_and_normal_user_forbidden(lootbox_api):
     assert data["item_code"] == "lootbox_test"
     assert data["entries"][0]["normalized_percent"] == 100.0
     assert client.post("/api/admin/lootboxes", json=payload, headers=_headers(2)).status_code == 409
+
+
+def test_legacy_lootbox_without_item_is_repaired_in_editor(lootbox_api):
+    client, sessions = lootbox_api
+    with sessions() as db:
+        db.add(models.LootboxPool(code="bronze", name="Ковбокс bronze", item_id=None))
+        db.commit()
+    response = client.get("/api/admin/lootboxes", headers=_headers(2))
+    assert response.status_code == 200, response.text
+    bronze = next(row for row in response.json() if row["code"] == "bronze")
+    assert bronze["item_code"] == "lootbox_bronze"
+    with sessions() as db:
+        pool = db.query(models.LootboxPool).filter_by(code="bronze").one()
+        assert pool.item_id is not None
 
 
 def test_invalid_weights_and_deleted_item_are_rejected(lootbox_api):

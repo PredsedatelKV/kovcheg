@@ -482,13 +482,15 @@ def activate_item(
     )
     if inv is None or inv.quantity < 1:
         raise HTTPException(status_code=400, detail="Нет предмета")
+    if inv.item.lootbox_pool_code or inv.item.code == "box_fragment":
+        raise HTTPException(status_code=400, detail="Этот предмет активируется отдельным действием")
     if not inv.item.can_activate:
         raise HTTPException(status_code=400, detail="Этот предмет нельзя активировать")
     xp_by_code = {"exp_scroll": 50, "scroll_of_wisdom": 250}
-    if inv.item.code not in xp_by_code:
-        raise HTTPException(status_code=400, detail="Для предмета не настроен эффект")
+    xp_reward = xp_by_code.get(inv.item.code, 0)
     from app.api._helpers import award_xp
-    award_xp(db, user, xp_by_code[inv.item.code])
+    if xp_reward:
+        award_xp(db, user, xp_reward)
     inv.quantity -= 1
     if inv.quantity == 0:
         db.delete(inv)
@@ -543,6 +545,9 @@ def _validate_openable_pool(db: Session, pool: models.LootboxPool, user: models.
             raise HTTPException(409, "Предмет награды ковбокса удалён или создаёт циклическую награду")
     if not 1 <= pool.guaranteed_slots <= 10:
         raise HTTPException(409, "Количество слотов ковбокса настроено некорректно")
+    random_total = sum(entry.weight for entry in entries if not entry.is_guaranteed)
+    if random_total != 100:
+        raise HTTPException(409, f"Сумма шансов ковбокса должна быть ровно 100% (сейчас {random_total}%)")
     return entries
 
 

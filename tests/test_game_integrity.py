@@ -68,7 +68,7 @@ def game_api(tmp_path):
         pool = models.LootboxPool(code="common", name="Обычный", item_id=lootbox.id)
         db.add(pool)
         db.flush()
-        db.add(models.LootboxPoolEntry(pool_id=pool.id, item_id=prize.id, weight=1))
+        db.add(models.LootboxPoolEntry(pool_id=pool.id, item_id=prize.id, weight=100))
         db.commit()
 
     yield TestClient(app), sessions

@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=247";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=248";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -20,18 +20,18 @@ function slugify(s = "") {
 }
 
 const SECTIONS = [
-  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=247" },
-  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=247" },
-  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=247" },
-  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=247" },
-  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=247" },
-  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=247" },
-  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=247" },
-  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=247" },
-  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=247" },
-  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=247" },
-  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=247" },
-  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=247" },
+  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=248" },
+  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=248" },
+  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=248" },
+  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=248" },
+  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=248" },
+  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=248" },
+  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=248" },
+  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=248" },
+  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=248" },
+  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=248" },
+  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=248" },
+  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=248" },
 ];
 
 let META = { items: [], users: [], categories: [] };
@@ -1499,7 +1499,7 @@ function lootboxEntryTemplate(entry = {}) {
         ${field("Предмет", `<select class="input lb-entry-item"><option value="">—</option>${itemChoices}</select>`)}
         ${field("Мин.", `<input class="input lb-entry-min" type="number" min="1" max="1000000" value="${entry.amount_min || 1}"/>`)}
         ${field("Макс.", `<input class="input lb-entry-max" type="number" min="1" max="1000000" value="${entry.amount_max || 1}"/>`)}
-        ${field("Шанс / вес", `<input class="input lb-entry-weight" type="number" min="1" max="1000000" value="${entry.weight || 10}"/>`)}
+        ${field("Шанс, %", `<input class="input lb-entry-weight" type="number" min="1" max="100" value="${entry.weight || 10}"/>`)}
         ${field("Порядок", `<input class="input lb-entry-order" type="number" value="${entry.sort_order || 0}"/>`)}
         ${field("Гарантированно", `<select class="input lb-entry-guaranteed"><option value="false" ${!entry.is_guaranteed ? "selected" : ""}>Нет</option><option value="true" ${entry.is_guaranteed ? "selected" : ""}>Да</option></select>`)}
         ${field("Активна", `<select class="input lb-entry-active"><option value="true" ${entry.is_active !== false ? "selected" : ""}>Да</option><option value="false" ${entry.is_active === false ? "selected" : ""}>Нет</option></select>`)}
@@ -1526,21 +1526,19 @@ function refreshLootboxProbabilities(overlay) {
   const rows = Array.from(overlay.querySelectorAll(".lootbox-entry"));
   const random = rows.map((row) => ({ row, entry: collectLootboxEntry(row) }))
     .filter(({ entry }) => entry.is_active && !entry.is_guaranteed && Number.isFinite(entry.weight) && entry.weight > 0);
-  const guaranteed = rows.map((row) => ({ row, entry: collectLootboxEntry(row) }))
-    .filter(({ entry }) => entry.is_active && entry.is_guaranteed && Number.isFinite(entry.weight) && entry.weight > 0);
   const total = random.reduce((sum, value) => sum + value.entry.weight, 0);
-  const guaranteedTotal = guaranteed.reduce((sum, value) => sum + value.entry.weight, 0);
   rows.forEach((row) => {
     const entry = collectLootboxEntry(row);
     const itemField = row.querySelector(".lb-entry-item").closest(".admin-field");
     itemField.style.display = entry.reward_kind === "item" ? "" : "none";
-    const denominator = entry.is_guaranteed ? guaranteedTotal : total;
-    row.querySelector(".lb-entry-percent").textContent = entry.is_active && denominator > 0
-      ? `${entry.is_guaranteed ? "Шанс в гарантированном слоте" : "Нормализованный шанс"}: ${(entry.weight / denominator * 100).toFixed(2)}%`
+    row.querySelector(".lb-entry-percent").textContent = entry.is_active
+      ? (entry.is_guaranteed ? "Гарантированная награда" : `Шанс: ${entry.weight}%`)
       : "Не участвует в розыгрыше";
   });
   const totalEl = overlay.querySelector("#lb-weight-total");
-  if (totalEl) totalEl.textContent = `Сумма активных случайных весов: ${total}`;
+  if (totalEl) totalEl.textContent = total === 100
+    ? "Сумма шансов: 100% — готово."
+    : `Сумма шансов: ${total}% из 100%. Осталось: ${100 - total}%.`;
   const countEl = overlay.querySelector("#lb-entry-count");
   if (countEl) countEl.textContent = `Вариантов наград в рулетке: ${rows.filter((row) => collectLootboxEntry(row).is_active).length}`;
 }
@@ -1556,10 +1554,12 @@ function validateLootboxPayload(payload) {
     const numbers = [entry.amount_min, entry.amount_max, entry.weight, entry.sort_order];
     if (numbers.some((number) => !Number.isFinite(number) || !Number.isInteger(number))) return "Все числовые поля наград должны быть целыми";
     if (entry.amount_min < 1 || entry.amount_max < entry.amount_min) return "Проверьте диапазон количества награды";
-    if (entry.weight < 1) return "Вес должен быть больше нуля";
+    if (entry.weight < 1 || entry.weight > 100) return "Шанс должен быть целым числом от 1 до 100";
     if (entry.reward_kind === "item" && !entry.item_id) return "Выберите предмет для каждой предметной награды";
   }
   const guaranteedCount = active.filter((entry) => entry.is_guaranteed).length;
+  const randomChanceTotal = active.filter((entry) => !entry.is_guaranteed).reduce((sum, entry) => sum + entry.weight, 0);
+  if (payload.is_active && randomChanceTotal !== 100) return `Сумма шансов обычных наград должна быть ровно 100% (сейчас ${randomChanceTotal}%)`;
   if (!payload.allow_duplicates && guaranteedCount && payload.guaranteed_slots > guaranteedCount) return "Без дубликатов число гарантированных слотов превышает число гарантированных наград";
   if (payload.min_user_level != null && payload.max_user_level != null && payload.max_user_level < payload.min_user_level) return "Максимальный уровень меньше минимального";
   if (payload.starts_at && payload.ends_at && new Date(payload.ends_at) <= new Date(payload.starts_at)) return "Дата окончания должна быть позже начала";
@@ -1699,7 +1699,7 @@ async function renderLootboxes(body) {
         <select class="input input-sm" id="lb-rarity-filter"><option value="">Все редкости</option>${rarities.map((rarity) => `<option>${escapeHtml(rarity)}</option>`).join("")}</select>
         <button class="btn btn-sm" id="lb-create">Создать</button>
       </div>
-      <div class="admin-sub" style="margin-top:8px">В каждом из четырёх ковбоксов добавляйте варианты XP, ковбаксов и предметов. Число строк — число вариантов в рулетке; шанс задаётся целым весом, точный процент показывается сразу.</div>
+      <div class="admin-sub" style="margin-top:8px">Выберите ковбокс, добавьте нужное число наград XP, ковбаксов и предметов, затем задайте им реальные шансы. Сумма обычных наград должна быть 100%.</div>
     </div>
     <div id="lb-list"></div>`;
 

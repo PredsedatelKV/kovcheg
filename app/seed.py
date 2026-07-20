@@ -96,7 +96,7 @@ def _seed_catalog_snacks(db: Session, fragment: models.Item) -> None:
                 rarity="Обычный",
                 category=category.name,
                 can_gift=True,
-                can_activate=False,
+                can_activate=True,
             )
             db.add(item)
             db.flush()
@@ -112,6 +112,7 @@ def _seed_catalog_snacks(db: Session, fragment: models.Item) -> None:
             item.image_url = image_url
             item.category = category.name
             item.description = ""
+            item.can_activate = True
 
         products = db.query(models.ShopProduct).filter(models.ShopProduct.item_id == item.id).order_by(models.ShopProduct.id).all()
         product = products[0] if products else None
@@ -660,6 +661,27 @@ def seed(db: Session) -> None:
                 pool.image_url = item.icon
             if needs_backfill and (not pool.rarity or pool.rarity == "Обычный"):
                 pool.rarity = pool_defaults[code][0]
+
+    # Older editor versions could create a pool without its inventory item.
+    # Repair every such row on startup, including legacy "bronze" pools.
+    for pool in db.query(models.LootboxPool).filter(models.LootboxPool.item_id.is_(None)).all():
+        item_code = pool.code if pool.code.startswith("lootbox_") else f"lootbox_{pool.code}"
+        item = db.query(models.Item).filter(models.Item.code == item_code).one_or_none()
+        if item is None:
+            item = models.Item(
+                code=item_code, name=pool.name, description="",
+                icon=pool.image_url or "/static/img/items/lootbox_common.svg",
+                image_url=pool.image_url or "/static/img/items/lootbox_common.svg",
+                rarity=pool.rarity or "Обычный", category="Ковбоксы",
+                can_gift=True, can_activate=False, lootbox_pool_code=pool.code,
+            )
+            db.add(item)
+            db.flush()
+        if item.lootbox_pool_code in (None, pool.code):
+            item.lootbox_pool_code = pool.code
+            item.category = "Ковбоксы"
+            item.description = ""
+            pool.item_id = item.id
 
     # Seed Battle Pass season
     if db.query(models.BattlePassSeason).count() == 0:
