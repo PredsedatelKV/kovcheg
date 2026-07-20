@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=249";
-import { renderProfile } from "/static/pages/profile.js?v=249";
-import { renderKoverna } from "/static/pages/koverna.js?v=249";
-import { renderArcade } from "/static/pages/arcade.js?v=249";
-import { renderAdmin } from "/static/pages/admin.js?v=249";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=249";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=249";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=249";
-import { get, post, prefetch, peekCached } from "/static/api.js?v=249";
+import { renderHome } from "/static/pages/home.js?v=250";
+import { renderProfile } from "/static/pages/profile.js?v=250";
+import { renderKoverna } from "/static/pages/koverna.js?v=250";
+import { renderArcade } from "/static/pages/arcade.js?v=250";
+import { renderAdmin } from "/static/pages/admin.js?v=250";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=250";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=250";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=250";
+import { get, post, prefetch, peekCached } from "/static/api.js?v=250";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -454,19 +454,50 @@ async function renderBrowserLogin() {
 
 function showPendingLoginGifts(gifts) {
   if (!Array.isArray(gifts) || gifts.length === 0) return;
+  const totals = { kovbucks: 0, xp: 0, items: [] };
+  gifts.forEach((gift) => {
+    totals.kovbucks += Number(gift.kovbucks) || 0;
+    totals.xp += Number(gift.xp) || 0;
+    if (gift.item_id && Number(gift.item_quantity) > 0) {
+      totals.items.push({
+        name: gift.item_name || "Предмет",
+        icon: gift.item_icon || "/static/img/ui/box.svg",
+        quantity: Number(gift.item_quantity),
+      });
+    }
+  });
+  const visualRewards = [];
+  if (totals.kovbucks > 0) visualRewards.push({ kind: "kovbucks", label: `${totals.kovbucks} ковбаксов`, icon: "/static/img/ui/kovbaks.png" });
+  if (totals.xp > 0) visualRewards.push({ kind: "xp", label: `${totals.xp} XP`, icon: "/static/img/ui/xp.png" });
+  if (totals.items.length > 0) {
+    const names = totals.items.map((item) => `${item.name} ×${item.quantity}`).join(" · ");
+    visualRewards.push({ kind: "item", label: names, icon: totals.items[0].icon });
+  }
   const modalRoot = document.getElementById("modal-root");
   modalRoot.innerHTML = `
     <div class="login-gift-overlay" role="dialog" aria-modal="true" aria-label="Подарок от Ковчега">
       <div class="login-gift-screen">
         <div class="login-gift-sparkles" aria-hidden="true">✦ ✧ ✦</div>
-        <img src="/static/img/items/lootbox_legendary.svg" alt="Подарок" class="login-gift-chest"/>
         <h1>Подарок от Ковчега</h1>
         <p>Для вас подготовлены награды</p>
+        <div class="login-gift-visual ${visualRewards.length === 1 ? "single" : "multiple"}" aria-label="Состав подарка"></div>
         <div class="login-gift-receipts"></div>
         <button class="btn login-gift-claim" id="login-gift-claim">Забрать</button>
       </div>
     </div>`;
   const list = modalRoot.querySelector(".login-gift-receipts");
+  const visual = modalRoot.querySelector(".login-gift-visual");
+  visualRewards.forEach((reward) => {
+    const token = document.createElement("div");
+    token.className = `login-gift-token ${reward.kind}`;
+    const icon = document.createElement("img");
+    icon.src = reward.icon;
+    icon.alt = "";
+    const label = document.createElement("span");
+    label.textContent = reward.label;
+    token.append(icon, label);
+    visual.appendChild(token);
+  });
   gifts.forEach((gift) => {
     const parts = [];
     if (gift.kovbucks > 0) parts.push(`${gift.kovbucks} ковбаксов`);

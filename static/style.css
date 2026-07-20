@@ -1633,9 +1633,19 @@ html.dark .listing-row .price, html.dark .listing-row .coins { color: var(--text
   justify-content: center;
 }
 .login-gift-sparkles { color: #ffd55c; font-size: 24px; letter-spacing: 14px; margin-left: 14px; }
-.login-gift-chest { width: min(180px, 48vw); height: min(180px, 48vw); object-fit: contain; margin: 12px 0; filter: drop-shadow(0 12px 20px rgba(0,0,0,.25)); }
 .login-gift-screen h1 { margin: 0; font-size: 27px; color: var(--text); }
 .login-gift-screen > p { margin: 8px 0 18px; color: var(--text-soft); }
+.login-gift-visual { position: relative; width: min(280px, 76vw); height: 210px; margin: 0 auto 18px; }
+.login-gift-token { position: absolute; width: 112px; min-height: 112px; padding: 8px 6px; border: 1px solid var(--border); border-radius: 20px; background: linear-gradient(145deg, var(--surface), var(--surface-2)); box-shadow: 0 10px 24px rgba(0,0,0,.13); display: flex; flex-direction: column; align-items: center; justify-content:center; gap: 5px; color: var(--text); font-size: 12px; font-weight: 800; line-height: 1.15; overflow: hidden; }
+.login-gift-token img { width: 66px; height: 66px; object-fit: contain; filter: drop-shadow(0 6px 8px rgba(0,0,0,.15)); }
+.login-gift-token span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.login-gift-visual.single { height: 210px; }
+.login-gift-visual.single .login-gift-token { width: min(180px, 58vw); min-height: 180px; left: 50%; top: 50%; transform: translate(-50%, -50%); border-radius: 28px; font-size: 15px; }
+.login-gift-visual.single .login-gift-token img { width: 118px; height: 118px; }
+.login-gift-visual.multiple .login-gift-token.kovbucks { left: 0; top: 0; }
+.login-gift-visual.multiple .login-gift-token.xp { right: 0; top: 0; }
+.login-gift-visual.multiple .login-gift-token.item { left: 50%; bottom: 0; transform: translateX(-50%); }
+.login-gift-visual.multiple .login-gift-token:only-child { left: 50%; top: 50%; transform: translate(-50%, -50%); }
 .login-gift-receipts { width: 100%; display: grid; gap: 8px; margin-bottom: 18px; }
 .login-gift-reward { padding: 11px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-size: 15px; font-weight: 700; }
 .login-gift-claim { width: 100%; max-width: 300px; padding: 14px 20px; font-size: 16px; font-weight: 800; }
