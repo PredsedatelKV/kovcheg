@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=250";
-import { renderProfile } from "/static/pages/profile.js?v=250";
-import { renderKoverna } from "/static/pages/koverna.js?v=250";
-import { renderArcade } from "/static/pages/arcade.js?v=250";
-import { renderAdmin } from "/static/pages/admin.js?v=250";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=250";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=250";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=250";
-import { get, post, prefetch, peekCached } from "/static/api.js?v=250";
+import { renderHome } from "/static/pages/home.js?v=251";
+import { renderProfile } from "/static/pages/profile.js?v=251";
+import { renderKoverna } from "/static/pages/koverna.js?v=251";
+import { renderArcade } from "/static/pages/arcade.js?v=251";
+import { renderAdmin } from "/static/pages/admin.js?v=251";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=251";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=251";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=251";
+import { get, post, prefetch, peekCached } from "/static/api.js?v=251";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -481,12 +481,11 @@ function showPendingLoginGifts(gifts) {
         <h1>Подарок от Ковчега</h1>
         <p>Для вас подготовлены награды</p>
         <div class="login-gift-visual ${visualRewards.length === 1 ? "single" : "multiple"}" aria-label="Состав подарка"></div>
-        <div class="login-gift-receipts"></div>
         <button class="btn login-gift-claim" id="login-gift-claim">Забрать</button>
       </div>
     </div>`;
-  const list = modalRoot.querySelector(".login-gift-receipts");
   const visual = modalRoot.querySelector(".login-gift-visual");
+  visual.setAttribute("aria-label", `Состав подарка: ${visualRewards.map((reward) => reward.label).join(", ")}`);
   visualRewards.forEach((reward) => {
     const token = document.createElement("div");
     token.className = `login-gift-token ${reward.kind}`;
@@ -497,16 +496,6 @@ function showPendingLoginGifts(gifts) {
     label.textContent = reward.label;
     token.append(icon, label);
     visual.appendChild(token);
-  });
-  gifts.forEach((gift) => {
-    const parts = [];
-    if (gift.kovbucks > 0) parts.push(`${gift.kovbucks} ковбаксов`);
-    if (gift.xp > 0) parts.push(`${gift.xp} XP`);
-    if (gift.item_id && gift.item_quantity > 0) parts.push(`${gift.item_name || "Предмет"} ×${gift.item_quantity}`);
-    const row = document.createElement("div");
-    row.className = "login-gift-reward";
-    row.textContent = parts.join(" · ");
-    list.appendChild(row);
   });
   const claimButton = modalRoot.querySelector("#login-gift-claim");
   claimButton.addEventListener("click", async () => {
