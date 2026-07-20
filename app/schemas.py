@@ -354,7 +354,9 @@ class AdminWheelPrizeBody(BaseModel):
     value: StrictInt = Field(default=0, ge=0, le=1_000_000)
     item_code: str | None = Field(default=None, max_length=64)
     icon: str = "/static/img/ui/kovbaks.png"
-    weight: StrictInt = Field(ge=1, le=1_000_000, default=10)
+    # For the Wheel of Fortune this is a direct probability in percent, not a
+    # relative weight.  Active sectors must add up to 100 on the server.
+    weight: StrictInt = Field(ge=1, le=100, default=10)
     sort_order: StrictInt = Field(default=0, ge=-100_000, le=100_000)
     is_active: bool = True
 

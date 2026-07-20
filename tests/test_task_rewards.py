@@ -106,3 +106,24 @@ def test_task_reward_configuration_rejects_incomplete_item_and_empty_reward(task
         "reward_item_id": 1,
         "reward_item_quantity": 0,
     }).status_code == 422
+
+
+def test_wheel_uses_direct_percentages_and_rejects_total_above_100(task_api):
+    client, _sessions = task_api
+    first = {
+        "label": "70 ковбаксов",
+        "kind": "coins",
+        "value": 70,
+        "item_code": None,
+        "icon": "/coin.svg",
+        "weight": 70,
+        "sort_order": 0,
+        "is_active": True,
+    }
+    assert client.post("/api/admin/wheel", json=first).status_code == 200
+    too_much = {**first, "label": "Ещё 31", "weight": 31}
+    rejected = client.post("/api/admin/wheel", json=too_much)
+    assert rejected.status_code == 400
+    assert "100%" in rejected.json()["detail"]
+    assert client.post("/api/admin/wheel", json={**first, "label": "Остальные 30", "weight": 30}).status_code == 200
+    assert client.post("/api/admin/wheel", json={**first, "label": "101", "weight": 101}).status_code == 422

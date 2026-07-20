@@ -45,13 +45,25 @@ def _load_sectors(db: Session) -> list[dict]:
             "item_code": p.item_code,
             "weight": p.weight,
         })
+    total_percent = sum(sector["weight"] for sector in sectors)
+    if total_percent != 100:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Сумма шансов колеса должна быть ровно 100% (сейчас {total_percent}%)",
+        )
     return sectors
 
 
 def _pick_sector(sectors: list[dict]) -> tuple[int, dict]:
-    weights = [s["weight"] for s in sectors]
-    idx = SYSTEM_RANDOM.choices(range(len(sectors)), weights=weights, k=1)[0]
-    return idx, sectors[idx]
+    ticket = SYSTEM_RANDOM.randrange(1, 101)
+    current = 0
+    for idx, sector in enumerate(sectors):
+        current += sector["weight"]
+        if ticket <= current:
+            return idx, sector
+    # Protected by _load_sectors; keep an explicit failure if DB data changes
+    # between validation and picking.
+    raise HTTPException(status_code=503, detail="Не удалось выбрать сектор колеса")
 
 
 @router.get("/status")

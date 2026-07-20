@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=246";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=247";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -20,18 +20,18 @@ function slugify(s = "") {
 }
 
 const SECTIONS = [
-  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=246" },
-  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=246" },
-  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=246" },
-  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=246" },
-  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=246" },
-  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=246" },
-  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=246" },
-  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=246" },
-  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=246" },
-  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=246" },
-  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=246" },
-  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=246" },
+  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=247" },
+  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=247" },
+  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=247" },
+  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=247" },
+  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=247" },
+  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=247" },
+  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=247" },
+  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=247" },
+  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=247" },
+  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=247" },
+  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=247" },
+  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=247" },
 ];
 
 let META = { items: [], users: [], categories: [] };
@@ -537,7 +537,13 @@ async function renderBanners(body) {
 // ---------- WHEEL ----------
 async function renderWheel(body) {
   const rows = await get("/api/admin/wheel");
+  const activePercent = rows.filter((p) => p.is_active).reduce((sum, p) => sum + p.weight, 0);
+  const remainingPercent = 100 - activePercent;
+  const chanceHint = activePercent === 100
+    ? `<span style="color:var(--success)">Сумма шансов: 100% — готово.</span>`
+    : `<span style="color:var(--danger)">Сумма шансов: ${activePercent}% из 100%. Осталось распределить: ${remainingPercent}%.</span>`;
   body.innerHTML = `
+    <div class="admin-sub" style="margin:0 0 12px">Укажите реальный шанс каждого сектора в процентах. ${chanceHint}</div>
     ${cardBlock(
       "Новый сектор",
       formGrid(
@@ -557,7 +563,7 @@ async function renderWheel(body) {
           `<select class="input" id="w-item"><option value="">—</option>${META.items.map((i) => `<option value="${i.code}">${escapeHtml(i.name)}</option>`).join("")}</select>`,
         ),
         field("Иконка (URL)", `<input class="input" id="w-icon" value="/static/img/ui/kovbaks.png"/>`),
-        field("Вес", `<input class="input" id="w-weight" type="number" value="10" min="1"/>`),
+        field("Шанс, %", `<input class="input" id="w-weight" type="number" value="10" min="1" max="100"/>`),
       ) + `<button class="btn btn-sm" id="w-create">Добавить</button>`,
     )}
     ${rows
@@ -582,7 +588,7 @@ async function renderWheel(body) {
             `<select class="input" data-k="item_code"><option value="">—</option>${META.items.map((i) => `<option value="${i.code}" ${i.code === p.item_code ? "selected" : ""}>${escapeHtml(i.name)}</option>`).join("")}</select>`,
           ),
           field("Иконка", `<input class="input" data-k="icon" value="${escapeHtml(p.icon)}"/>`),
-          field("Вес", `<input class="input" data-k="weight" type="number" value="${p.weight}" min="1"/>`),
+          field("Шанс, %", `<input class="input" data-k="weight" type="number" value="${p.weight}" min="1" max="100"/>`),
         )}
         <div class="row gap">
           <button class="btn btn-sm" data-action="save">Сохранить</button>
@@ -607,13 +613,15 @@ async function renderWheel(body) {
         label = it ? it.name : "Предмет";
       } else label = "Ничего";
     }
+    const weight = Number(body.querySelector("#w-weight").value) || 10;
+    if (activePercent + weight > 100) return window.kov.toast(`Сумма шансов не может быть больше 100% (получится ${activePercent + weight}%)`);
     const payload = {
       label,
       kind,
       value,
       item_code: kind === "item" ? itemCode : null,
       icon: body.querySelector("#w-icon").value.trim(),
-      weight: Number(body.querySelector("#w-weight").value) || 10,
+      weight,
       sort_order: 0,
       is_active: true,
     };
@@ -628,13 +636,17 @@ async function renderWheel(body) {
   body.querySelectorAll('.admin-card[data-id]').forEach((card) => {
     const id = card.dataset.id;
     card.querySelector('[data-action="save"]').addEventListener("click", async () => {
+      const weight = Number(card.querySelector('[data-k="weight"]').value) || 10;
+      const currentPrize = rows.find((p) => String(p.id) === String(id));
+      const otherPercent = activePercent - (currentPrize?.is_active ? Number(currentPrize.weight) : 0);
+      if (otherPercent + weight > 100) return window.kov.toast(`Сумма шансов не может быть больше 100% (получится ${otherPercent + weight}%)`);
       const payload = {
         label: card.querySelector('[data-k="label"]').value,
         kind: card.querySelector('[data-k="kind"]').value,
         value: Number(card.querySelector('[data-k="value"]').value) || 0,
         item_code: card.querySelector('[data-k="kind"]').value === "item" ? (card.querySelector('[data-k="item_code"]').value || null) : null,
         icon: card.querySelector('[data-k="icon"]').value,
-        weight: Number(card.querySelector('[data-k="weight"]').value) || 10,
+        weight,
         sort_order: 0,
         is_active: true,
       };

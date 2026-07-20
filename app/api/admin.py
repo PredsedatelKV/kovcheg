@@ -855,6 +855,19 @@ def delete_market(listing_id: int, db: Session = Depends(get_db)) -> dict:
 
 # ------- wheel prizes -------
 
+def _validate_wheel_percent_total(
+    db: Session,
+    body: schemas.AdminWheelPrizeBody,
+    replacing_id: int | None = None,
+) -> None:
+    """Keep Wheel of Fortune sectors as real percentages, never weights."""
+    rows = db.query(models.WheelPrize).filter(models.WheelPrize.is_active.is_(True)).all()
+    total = sum(row.weight for row in rows if row.id != replacing_id)
+    if body.is_active:
+        total += body.weight
+    if total > 100:
+        raise HTTPException(400, f"Сумма шансов активных секторов не может быть больше 100% (сейчас {total}%)")
+
 @router.get("/wheel", response_model=list[schemas.WheelPrizeOut])
 def list_wheel(db: Session = Depends(get_db)) -> list[schemas.WheelPrizeOut]:
     rows = db.query(models.WheelPrize).order_by(models.WheelPrize.sort_order, models.WheelPrize.id).all()
@@ -866,6 +879,7 @@ def create_wheel(body: schemas.AdminWheelPrizeBody, db: Session = Depends(get_db
     begin_game_write(db)
     if body.kind == "item" and not db.query(models.Item).filter(models.Item.code == body.item_code).first():
         raise HTTPException(400, "Предмет приза не найден")
+    _validate_wheel_percent_total(db, body)
     p = models.WheelPrize(**body.model_dump())
     db.add(p)
     db.commit()
@@ -881,6 +895,7 @@ def update_wheel(prize_id: int, body: schemas.AdminWheelPrizeBody, db: Session =
     p = db.query(models.WheelPrize).filter(models.WheelPrize.id == prize_id).one_or_none()
     if p is None:
         raise HTTPException(status_code=404, detail="Приз не найден")
+    _validate_wheel_percent_total(db, body, replacing_id=p.id)
     for k, v in body.model_dump().items():
         setattr(p, k, v)
     db.commit()
