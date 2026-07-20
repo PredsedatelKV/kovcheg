@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=248";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=249";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -20,18 +20,18 @@ function slugify(s = "") {
 }
 
 const SECTIONS = [
-  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=248" },
-  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=248" },
-  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=248" },
-  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=248" },
-  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=248" },
-  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=248" },
-  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=248" },
-  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=248" },
-  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=248" },
-  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=248" },
-  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=248" },
-  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=248" },
+  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=249" },
+  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=249" },
+  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=249" },
+  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=249" },
+  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=249" },
+  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=249" },
+  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=249" },
+  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=249" },
+  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=249" },
+  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=249" },
+  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=249" },
+  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=249" },
 ];
 
 let META = { items: [], users: [], categories: [] };
@@ -1466,6 +1466,7 @@ function openQuestionEditor(body, quizId, existing) {
 
 // ---------- KOVBOX EDITOR ----------
 const LOOTBOX_RARITIES = ["Обычный", "Редкий", "Эпический", "Легендарный"];
+const EDITABLE_LOOTBOX_CODES = ["common", "rare", "epic", "legendary"];
 const LOOTBOX_REWARD_LABELS = {
   item: "Предмет",
   kovbucks: "Ковбаксы",
@@ -1689,7 +1690,13 @@ function openLootboxEditor(body, existing = null) {
 }
 
 async function renderLootboxes(body) {
-  const rows = await get("/api/admin/lootboxes");
+  const allRows = await get("/api/admin/lootboxes");
+  // The live economy deliberately has exactly four Kovboxes. Legacy/custom
+  // pools remain safely stored for already-issued inventory, but are never
+  // surfaced as editable game types.
+  const rows = EDITABLE_LOOTBOX_CODES
+    .map((code) => allRows.find((row) => row.code === code))
+    .filter(Boolean);
   const rarities = Array.from(new Set(rows.map((row) => row.rarity))).sort();
   body.innerHTML = `
     <div class="admin-card">
@@ -1697,9 +1704,8 @@ async function renderLootboxes(body) {
         <input class="input input-sm" id="lb-search" placeholder="Поиск по названию или ID" style="flex:1;min-width:180px"/>
         <select class="input input-sm" id="lb-active-filter"><option value="">Все статусы</option><option value="active">Активные</option><option value="inactive">Отключённые</option><option value="archived">Архив</option></select>
         <select class="input input-sm" id="lb-rarity-filter"><option value="">Все редкости</option>${rarities.map((rarity) => `<option>${escapeHtml(rarity)}</option>`).join("")}</select>
-        <button class="btn btn-sm" id="lb-create">Создать</button>
       </div>
-      <div class="admin-sub" style="margin-top:8px">Выберите ковбокс, добавьте нужное число наград XP, ковбаксов и предметов, затем задайте им реальные шансы. Сумма обычных наград должна быть 100%.</div>
+      <div class="admin-sub" style="margin-top:8px">Доступны четыре ковбокса Коверны и Пропуска. Выберите нужный, добавьте награды XP, ковбаксов и предметов, затем задайте реальные шансы с суммой 100%.</div>
     </div>
     <div id="lb-list"></div>`;
 
@@ -1722,13 +1728,12 @@ async function renderLootboxes(body) {
           <img src="${escapeHtml(row.image_url)}" alt="" style="width:64px;height:64px;object-fit:contain;flex:0 0 auto" onerror="this.src='/static/img/ui/box.svg'"/>
           <div style="min-width:0;flex:1">
             <h3 class="admin-card-title">${escapeHtml(row.name)} ${row.is_archived ? '<span class="admin-badge">архив</span>' : row.is_active ? '<span class="admin-badge">активен</span>' : ""}</h3>
-            <div class="admin-sub">${escapeHtml(row.code)} · ${escapeHtml(row.rarity)} · версия ${row.version} · случайный вес ${row.weight_total}</div>
+            <div class="admin-sub">${escapeHtml(row.code)} · ${escapeHtml(row.rarity)} · версия ${row.version} · сумма шансов ${row.weight_total}%</div>
             <div class="admin-sub">${row.entries.length} наград · гарант. слотов ${row.guaranteed_slots} · сборка вес ${row.assembly_weight}</div>
           </div>
         </div>
         <div class="row gap wrap" style="margin-top:10px">
           <button class="btn btn-sm" data-lb-action="edit">Редактировать</button>
-          <button class="btn btn-sm btn-secondary" data-lb-action="duplicate">Дублировать</button>
           ${row.is_archived ? "" : '<button class="btn btn-sm btn-danger" data-lb-action="archive">Архивировать</button>'}
         </div>
       </div>`).join("") : '<div class="admin-card"><div class="admin-sub">Ковбоксы не найдены</div></div>';
@@ -1736,25 +1741,6 @@ async function renderLootboxes(body) {
     list.querySelectorAll("[data-lb-id]").forEach((card) => {
       const row = rows.find((value) => value.id === Number(card.dataset.lbId));
       card.querySelector('[data-lb-action="edit"]').addEventListener("click", () => openLootboxEditor(body, row));
-      card.querySelector('[data-lb-action="duplicate"]').addEventListener("click", async (event) => {
-        const button = event.currentTarget;
-        if (button.disabled) return;
-        const code = prompt("Новый внутренний ID", `${row.code}_copy`);
-        if (!code) return;
-        const name = prompt("Название копии", `${row.name} — копия`);
-        if (!name) return;
-        button.disabled = true;
-        button.textContent = "Создаём…";
-        try {
-          await post(`/api/admin/lootboxes/${row.id}/duplicate`, { code: code.trim(), name: name.trim() });
-          window.kov.toast("Копия создана отключённой");
-          renderLootboxes(body);
-        } catch (error) {
-          button.disabled = false;
-          button.textContent = "Дублировать";
-          window.kov.toast(error.message);
-        }
-      });
       card.querySelector('[data-lb-action="archive"]')?.addEventListener("click", (event) => {
         const button = event.currentTarget;
         if (button.disabled) return;
@@ -1774,7 +1760,6 @@ async function renderLootboxes(body) {
       });
     });
   }
-  body.querySelector("#lb-create").addEventListener("click", () => openLootboxEditor(body));
   body.querySelector("#lb-search").addEventListener("input", draw);
   body.querySelector("#lb-active-filter").addEventListener("change", draw);
   body.querySelector("#lb-rarity-filter").addEventListener("change", draw);
