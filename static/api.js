@@ -373,7 +373,9 @@ export function productImg(item, size = "xl") {
   const safe = String(src).trim();
   const alt = (item.name || "").replace(/"/g, "");
   if (safe.startsWith("/") || safe.startsWith("http")) {
-  const mode = item.image_url ? "product-photo" : "contain";
+  const mode = (item.lootbox_pool_code || String(item.code || "").includes("fragment"))
+    ? "contain"
+    : (item.image_url ? "product-photo" : "contain");
     return `<div class="img-frame img-frame-${size}"><img src="${safe}" alt="${alt}" class="img-${mode}" data-kov-fallback="${DEFAULT_ITEM_ICON}"/></div>`;
   }
   // emoji fallback for legacy DB rows

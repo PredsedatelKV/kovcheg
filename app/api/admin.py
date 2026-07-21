@@ -1379,7 +1379,7 @@ def _lootbox_item_code(code: str) -> str:
     return code if code.startswith("lootbox_") else f"lootbox_{code}"
 
 
-CANONICAL_CHEST_CODES = {"common", "rare", "epic", "legendary", "seasonal"}
+CANONICAL_CHEST_CODES = {"common", "rare", "epic", "legendary", "seasonal", "consolation"}
 
 
 def _validate_managed_lootbox_mode(code: str, opening_mode: str) -> None:
@@ -1482,6 +1482,8 @@ def _validate_lootbox_entries(
     opening_mode: str | None = None,
     bonus_item_chance: int = 0,
     is_active: bool = False,
+    guaranteed_slots: int = 1,
+    allow_duplicates: bool = True,
 ) -> None:
     item_ids = {entry.item_id for entry in entries if entry.reward_kind == "item" and entry.item_id}
     items = db.query(models.Item).filter(models.Item.id.in_(item_ids)).all() if item_ids else []
@@ -1492,12 +1494,26 @@ def _validate_lootbox_entries(
     for item in items:
         if item.lootbox_pool_code:
             raise HTTPException(400, "Ковбокс не может выпадать из ковбокса: это создаёт циклическую награду")
-    if opening_mode != "chest_v2" or not is_active:
+    if not is_active:
         return
 
     active = [entry for entry in entries if entry.is_active]
     guaranteed = [entry for entry in active if entry.is_guaranteed]
     optional = [entry for entry in active if not entry.is_guaranteed]
+    if opening_mode == "choice_v2":
+        if guaranteed:
+            raise HTTPException(400, "В мегаковбоксе все варианты должны участвовать в выборе")
+        if len(optional) < 2:
+            raise HTTPException(400, "Для выбора нужны минимум две разные награды")
+        if not 1 <= guaranteed_slots <= 10:
+            raise HTTPException(400, "Количество выборов должно быть от 1 до 10")
+        if not allow_duplicates and len(optional) < guaranteed_slots * 2:
+            raise HTTPException(400, "Для выборов без повторов нужно по две разные награды на каждый выбор")
+        if sum(entry.weight for entry in optional) != 100:
+            raise HTTPException(400, "Сумма шансов вариантов должна быть ровно 100%")
+        return
+    if opening_mode != "chest_v2":
+        return
     fragment_entries = [
         entry for entry in guaranteed
         if entry.reward_kind == "item" and item_map.get(entry.item_id) is not None
@@ -1594,6 +1610,8 @@ def admin_create_lootbox(
         opening_mode=effective_mode,
         bonus_item_chance=effective_bonus_chance,
         is_active=body.is_active,
+        guaranteed_slots=body.guaranteed_slots,
+        allow_duplicates=body.allow_duplicates,
     )
     item_code = _lootbox_item_code(body.code)
     item = db.query(models.Item).filter(models.Item.code == item_code).first()
@@ -1647,6 +1665,8 @@ def admin_update_lootbox(
         opening_mode=effective_mode,
         bonus_item_chance=effective_bonus_chance,
         is_active=body.is_active,
+        guaranteed_slots=body.guaranteed_slots,
+        allow_duplicates=body.allow_duplicates,
     )
     _apply_lootbox_body(pool, body)
     if pool.item is None:

@@ -34,6 +34,7 @@ CRITICAL_PREFIXES = (
     "/api/wheel/spin",
     "/api/arcade/first-win",
     "/api/arcade/casino/",
+    "/api/arcade/roulette/",
     "/api/arcade/clicker/",
     "/api/game/",
     "/api/admin/",

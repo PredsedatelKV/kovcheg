@@ -21,6 +21,7 @@ from app.db import Base
 # The client receives this value through ProfilePayload and never chooses how
 # many fragments the server consumes.
 LOOTBOX_FRAGMENT_COST = 10
+FAILURE_FRAGMENT_COST = 10
 
 
 def now_utc() -> datetime:
@@ -577,6 +578,9 @@ class LootboxOpen(Base):
     pool_rarity_snapshot: Mapped[str] = mapped_column(String(32), default="", nullable=False)
     pool_image_snapshot: Mapped[str] = mapped_column(String(512), default="", nullable=False)
     pool_open_image_snapshot: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    choice_plan: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    choice_selection: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True, nullable=False)
 
     rewards: Mapped[list["LootboxOpenReward"]] = relationship(

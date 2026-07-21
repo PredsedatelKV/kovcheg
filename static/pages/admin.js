@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=253";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=254";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -20,18 +20,18 @@ function slugify(s = "") {
 }
 
 const SECTIONS = [
-  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=253" },
-  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=253" },
-  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=253" },
-  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=253" },
-  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=253" },
-  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=253" },
-  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=253" },
-  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=253" },
-  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=253" },
-  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=253" },
-  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=253" },
-  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=253" },
+  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=254" },
+  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=254" },
+  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=254" },
+  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=254" },
+  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=254" },
+  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=254" },
+  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=254" },
+  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=254" },
+  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=254" },
+  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=254" },
+  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=254" },
+  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=254" },
 ];
 
 let META = { items: [], users: [], categories: [] };
@@ -1465,8 +1465,8 @@ function openQuestionEditor(body, quizId, existing) {
 }
 
 // ---------- KOVBOX EDITOR ----------
-const LOOTBOX_RARITIES = ["Обычный", "Редкий", "Эпический", "Легендарный", "Сезонный", "Мега"];
-const EDITABLE_LOOTBOX_CODES = ["common", "rare", "epic", "legendary", "seasonal", "mega"];
+const LOOTBOX_RARITIES = ["Обычный", "Редкий", "Эпический", "Легендарный", "Сезонный", "Мега", "Секретный"];
+const EDITABLE_LOOTBOX_CODES = ["common", "rare", "epic", "legendary", "seasonal", "mega", "consolation"];
 const LOOTBOX_REWARD_LABELS = {
   item: "Предмет",
   kovbucks: "Ковбаксы",
@@ -1570,7 +1570,12 @@ function validateLootboxPayload(payload) {
     }
     if (!Number.isInteger(payload.bonus_item_chance) || payload.bonus_item_chance < 0 || payload.bonus_item_chance > 100) return "Шанс дополнительного предмета должен быть от 0 до 100%";
   }
-  if (!payload.allow_duplicates && guaranteedCount && payload.guaranteed_slots > guaranteedCount) return "Без дубликатов число гарантированных слотов превышает число гарантированных наград";
+  if (payload.opening_mode === "choice_v2") {
+    if (guaranteedCount) return "В мегаковбоксе все строки должны участвовать в выборе";
+    if (active.length < 2) return "Для мегаковбокса нужны минимум две разные награды";
+    if (!Number.isInteger(payload.guaranteed_slots) || payload.guaranteed_slots < 1 || payload.guaranteed_slots > 10) return "Количество выборов должно быть от 1 до 10";
+    if (!payload.allow_duplicates && active.length < payload.guaranteed_slots * 2) return "Для выборов без повторов нужно по две разные награды на каждый выбор";
+  }
   if (payload.min_user_level != null && payload.max_user_level != null && payload.max_user_level < payload.min_user_level) return "Максимальный уровень меньше минимального";
   if (payload.starts_at && payload.ends_at && new Date(payload.ends_at) <= new Date(payload.starts_at)) return "Дата окончания должна быть позже начала";
   return null;
@@ -1604,7 +1609,7 @@ function openLootboxEditor(body, existing = null) {
         ${field("Шанс дополнительного предмета, %", `<input class="input" id="lb-bonus-chance" type="number" min="0" max="100" value="${box.bonus_item_chance || 0}" ${box.opening_mode === "choice_v2" ? "disabled" : ""}/>`)}
         ${field("Активен для открытия", `<select class="input" id="lb-active"><option value="true" ${box.is_active ? "selected" : ""}>Да</option><option value="false" ${!box.is_active ? "selected" : ""}>Нет</option></select>`)}
         ${field("Доступен для сборки/выпадения", `<select class="input" id="lb-droppable"><option value="true" ${box.is_droppable ? "selected" : ""}>Да</option><option value="false" ${!box.is_droppable ? "selected" : ""}>Нет</option></select>`)}
-        ${field("Вес при сборке", `<input class="input" id="lb-assembly-weight" type="number" min="1" value="${box.assembly_weight || 10}"/>`)}
+        ${field("Вес при сборке", `<input class="input" id="lb-assembly-weight" type="number" min="0" value="${box.assembly_weight ?? 10}"/>`)}
         ${field("Цена продажи", `<input class="input" id="lb-price" type="number" min="1" value="${box.sale_price ?? ""}" placeholder="не продаётся"/>`)}
         ${field("Валюта цены", `<select class="input" id="lb-currency"><option value="kovbucks" selected>Ковбаксы</option></select>`)}
         ${field("Мин. уровень", `<input class="input" id="lb-min-level" type="number" min="0" value="${box.min_user_level ?? ""}"/>`)}
@@ -1650,6 +1655,11 @@ function openLootboxEditor(body, existing = null) {
   });
 
   function bindEntryButtons() {
+    const isChoice = box.opening_mode === "choice_v2";
+    overlay.querySelectorAll(".lb-entry-guaranteed").forEach((select) => {
+      if (isChoice) select.value = "false";
+      select.disabled = isChoice;
+    });
     overlay.querySelectorAll(".lb-entry-remove").forEach((button) => {
       button.onclick = () => { button.closest(".lootbox-entry").remove(); dirty = true; refreshLootboxProbabilities(overlay); };
     });
@@ -1712,7 +1722,7 @@ function openLootboxEditor(body, existing = null) {
 
 async function renderLootboxes(body) {
   const allRows = await get("/api/admin/lootboxes");
-  // The live economy deliberately exposes these six canonical Kovboxes only.
+  // Core shop Kovboxes plus the secret consolation box are editable here.
   const rows = EDITABLE_LOOTBOX_CODES
     .map((code) => allRows.find((row) => row.code === code))
     .filter(Boolean);
@@ -1724,7 +1734,7 @@ async function renderLootboxes(body) {
         <select class="input input-sm" id="lb-active-filter"><option value="">Все статусы</option><option value="active">Активные</option><option value="inactive">Отключённые</option><option value="archived">Архив</option></select>
         <select class="input input-sm" id="lb-rarity-filter"><option value="">Все редкости</option>${rarities.map((rarity) => `<option>${escapeHtml(rarity)}</option>`).join("")}</select>
       </div>
-      <div class="admin-sub" style="margin-top:8px">Доступны шесть ковбоксов Коверны. Выберите нужный, добавьте награды XP, ковбаксов и предметов, затем задайте реальные шансы с суммой 100%.</div>
+      <div class="admin-sub" style="margin-top:8px">Доступны основные ковбоксы и секретный утешительный. Для мегаковбокса каждый этап предлагает две карточки, из которых игрок выбирает одну. Сумма шансов вариантов — 100%.</div>
     </div>
     <div id="lb-list"></div>`;
 

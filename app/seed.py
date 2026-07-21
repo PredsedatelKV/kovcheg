@@ -137,7 +137,9 @@ ITEM_ICON_BY_CODE: dict[str, str] = {
     "lootbox_legendary": "/static/img/items/lootbox_legendary.svg",
     "lootbox_seasonal": "/static/img/items/lootbox_seasonal.png",
     "lootbox_mega": "/static/img/items/lootbox_mega.png",
+    "lootbox_consolation": "/static/img/items/lootbox_consolation.png",
     "box_fragment": "/static/img/items/box_fragment.svg",
+    "failure_fragment": "/static/img/items/failure_fragment.png",
 }
 
 TASK_ICON_BY_NAME: dict[str, str] = {
@@ -345,6 +347,9 @@ def migrate_schema(db: Session) -> None:
             ("pool_rarity_snapshot", "VARCHAR(32) NOT NULL DEFAULT ''"),
             ("pool_image_snapshot", "VARCHAR(512) NOT NULL DEFAULT ''"),
             ("pool_open_image_snapshot", "VARCHAR(512) NOT NULL DEFAULT ''"),
+            ("choice_plan", "TEXT NOT NULL DEFAULT '[]'"),
+            ("choice_selection", "TEXT NOT NULL DEFAULT '[]'"),
+            ("finalized_at", "DATETIME"),
         ]
         for col, ddl in opening_columns:
             if col not in locols:
@@ -362,6 +367,13 @@ def migrate_schema(db: Session) -> None:
                 pool_open_image_snapshot = COALESCE(NULLIF(pool_open_image_snapshot, ''),
                     (SELECT open_image_url FROM lootbox_pools WHERE id = lootbox_opens.pool_id),
                     (SELECT image_url FROM lootbox_pools WHERE id = lootbox_opens.pool_id), '')
+        """))
+        db.execute(text("""
+            UPDATE lootbox_opens
+            SET choice_plan = COALESCE(choice_plan, '[]'),
+                choice_selection = COALESCE(choice_selection, '[]'),
+                finalized_at = COALESCE(finalized_at, created_at)
+            WHERE COALESCE(choice_plan, '[]') = '[]'
         """))
         db.commit()
 
@@ -701,6 +713,29 @@ def seed(db: Session) -> None:
         rarity="Обычный",
     )
     fragment.description = ""
+    failure_fragment = _get_or_create_item(
+        db, "failure_fragment",
+        name="Фрагмент неудачи",
+        icon="/static/img/items/failure_fragment.png",
+        category="Фрагменты",
+        rarity="Редкий",
+        can_gift=True,
+        can_activate=True,
+    )
+    failure_fragment.description = ""
+    failure_fragment.image_url = "/static/img/items/failure_fragment.png"
+    consolation_item = _get_or_create_item(
+        db, "lootbox_consolation",
+        name="Утешительный ковбокс",
+        icon="/static/img/items/lootbox_consolation.png",
+        category="Ковбоксы",
+        rarity="Секретный",
+        can_gift=True,
+        can_activate=False,
+        lootbox_pool_code="consolation",
+    )
+    consolation_item.description = ""
+    consolation_item.image_url = "/static/img/items/lootbox_consolation.png"
     canonical_lootbox_items = {
         "common": (lootbox_common, "Обычный ковбокс", "Обычный", "/static/img/items/lootbox_common.svg"),
         "rare": (lootbox_rare, "Редкий ковбокс", "Редкий", "/static/img/items/lootbox_rare.svg"),
@@ -754,6 +789,7 @@ def seed(db: Session) -> None:
         "legendary": _fill_pool("legendary"),
         "seasonal": _fill_pool("seasonal"),
         "mega": _fill_pool("mega"),
+        "consolation": _fill_pool("consolation"),
     }
     # Canonical pre-launch prices. These managed products are synced to
     # the real shop below, so purchase price never comes from the client.
@@ -764,6 +800,7 @@ def seed(db: Session) -> None:
         "legendary": 59,
         "seasonal": 45,
         "mega": 79,
+        "consolation": None,
     }
     for code in created_pool_codes:
         pools[code].sale_price = default_sale_prices[code]
@@ -778,6 +815,7 @@ def seed(db: Session) -> None:
         "epic": ((2, 3), (20, 40), (6, 12), 30),
         "legendary": ((3, 4), (40, 80), (12, 25), 100),
         "seasonal": ((2, 3), (30, 60), (8, 18), 50),
+        "consolation": ((1, 2), (10, 25), (3, 7), 25),
     }
     prize_codes = [row[0] for row in (*CATALOG_SNACKS, *CATALOG_SWEETS)]
     prize_items = (
@@ -839,13 +877,53 @@ def seed(db: Session) -> None:
         mega_pool.is_droppable = False
         if "mega" not in created_pool_codes:
             mega_pool.version += 1
-    if not mega_pool.entries:
-        # Keeps the old editor schema valid; the opening endpoint rejects
-        # choice_v2 before this placeholder can ever grant value.
-        mega_pool.entries.append(models.LootboxPoolEntry(
-            reward_kind="kovbucks", amount_min=1, amount_max=1,
-            weight=100, is_active=True, sort_order=0,
-        ))
+    mega_placeholder = (
+        len(mega_pool.entries) == 1
+        and mega_pool.entries[0].reward_kind == "kovbucks"
+        and mega_pool.entries[0].amount_min == 1
+        and mega_pool.entries[0].amount_max == 1
+    )
+    if not mega_pool.entries or mega_placeholder:
+        mega_pool.entries.clear()
+        mega_pool.guaranteed_slots = 3
+        mega_pool.allow_duplicates = False
+        defaults = [
+            ("item", fragment.id, 2, 4, 20),
+            ("xp", None, 30, 70, 20),
+            ("kovbucks", None, 10, 25, 20),
+        ]
+        selected_prizes = prize_items[:4]
+        remaining_weight = 40
+        if selected_prizes:
+            base, remainder = divmod(remaining_weight, len(selected_prizes))
+            defaults.extend(
+                ("item", prize.id, 1, 1, base + (1 if index < remainder else 0))
+                for index, prize in enumerate(selected_prizes)
+            )
+        else:
+            defaults[-1] = ("kovbucks", None, 10, 25, 60)
+        for index, (kind, item_id, low, high, weight) in enumerate(defaults):
+            mega_pool.entries.append(models.LootboxPoolEntry(
+                reward_kind=kind, item_id=item_id, amount_min=low, amount_max=high,
+                weight=weight, is_guaranteed=False, is_active=True, sort_order=index,
+            ))
+        if "mega" not in created_pool_codes:
+            mega_pool.version += 1
+
+    consolation_pool = pools["consolation"]
+    consolation_pool.item_id = consolation_item.id
+    consolation_item.lootbox_pool_code = "consolation"
+    consolation_pool.sale_price = None
+    consolation_pool.sale_currency = "kovbucks"
+    consolation_pool.is_droppable = False
+    consolation_pool.assembly_weight = 0
+    consolation_pool.is_archived = False
+    if "consolation" in created_pool_codes:
+        consolation_pool.name = "Утешительный ковбокс"
+        consolation_pool.rarity = "Секретный"
+        consolation_pool.image_url = "/static/img/items/lootbox_consolation.png"
+        consolation_pool.open_image_url = "/static/img/items/lootbox_consolation_open.png"
+        consolation_pool.sort_order = 99
     pool_defaults = {
         code: (name, rarity, image_url)
         for code, (_, name, rarity, image_url) in canonical_lootbox_items.items()

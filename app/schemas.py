@@ -198,6 +198,7 @@ class ProfilePayload(BaseModel):
     user: UserOut
     bp_level: int = 0
     fragment_assembly_cost: int = 10
+    failure_fragment_cost: int = 10
     inventory: list[InventoryItemOut]
     user_tasks: list[UserTaskOut]
     daily_plan: TaskOut | None = None
@@ -279,7 +280,7 @@ class AdminItemBody(BaseModel):
 
     @model_validator(mode="after")
     def validate_activation_effect(self):
-        if self.can_activate and self.code not in {"exp_scroll", "scroll_of_wisdom"}:
+        if self.can_activate and self.code not in {"exp_scroll", "scroll_of_wisdom", "failure_fragment"}:
             raise ValueError("Для этого предмета не настроен серверный эффект активации")
         return self
 
@@ -646,6 +647,23 @@ class OpenLootboxRequest(BaseModel):
     request_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 
+class ChooseLootboxRequest(BaseModel):
+    opening_id: StrictInt = Field(gt=0)
+    request_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    choices: list[StrictInt] = Field(min_length=1, max_length=10)
+
+    @model_validator(mode="after")
+    def validate_choices(self):
+        if any(choice not in (0, 1) for choice in self.choices):
+            raise ValueError("Для каждого выбора укажите первую или вторую карточку")
+        return self
+
+
+class RouletteSpinRequest(BaseModel):
+    amount: StrictInt = Field(ge=10, le=1_000_000)
+    request_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+
+
 class LootboxRewardOut(BaseModel):
     kind: Literal["item", "kovbucks", "kovcoins", "xp"]
     amount: int = Field(gt=0)
@@ -665,11 +683,26 @@ class LootboxPresentationOut(BaseModel):
     open_image_url: str
 
 
+class LootboxChoiceOptionOut(BaseModel):
+    label: str
+    icon: str
+    rarity: str = "Обычный"
+    presentation_kind: Literal["fragment", "xp", "kovbucks", "kovcoins", "item"] = "item"
+
+
+class LootboxChoiceGroupOut(BaseModel):
+    index: int = Field(ge=0)
+    options: list[LootboxChoiceOptionOut]
+
+
 class LootboxOpenResult(BaseModel):
     opening_id: int
     request_id: str
     pool: LootboxPresentationOut
     rewards: list[LootboxRewardOut]
+    opening_mode: Literal["legacy_v1", "chest_v2", "choice_v2"] = "chest_v2"
+    choice_groups: list[LootboxChoiceGroupOut] = []
+    finalized: bool = True
     replayed: bool = False
     balance: int = 0
     xp: int = 0
@@ -712,7 +745,7 @@ class AdminLootboxBody(BaseModel):
     is_active: bool = True
     is_droppable: bool = True
     is_archived: bool = False
-    assembly_weight: StrictInt = Field(default=10, ge=1, le=1_000_000)
+    assembly_weight: StrictInt = Field(default=10, ge=0, le=1_000_000)
     sale_price: StrictInt | None = Field(default=None, ge=1, le=1_000_000_000)
     # The current shop spends Kovbucks; accepting a second currency here would
     # create a misleading setting that no purchase endpoint honours.

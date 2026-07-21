@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=253";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=254";
 
-import { playUISound } from "/static/pages/settings.js?v=253";
+import { playUISound } from "/static/pages/settings.js?v=254";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -33,7 +33,7 @@ function kovbaksWord(n) {
 
 function invCell(row) {
   return `
-    <div class="inv-cell" data-item-id="${row.item.id}" data-qty="${row.quantity}">
+    <div class="inv-cell item-${escapeHtml(row.item.code)}" data-item-id="${row.item.id}" data-qty="${row.quantity}">
       <span class="qty">×${row.quantity}</span>
       ${productImg(row.item, "lg")}
       <div class="name">${escapeHtml(row.item.name)}</div>
@@ -474,9 +474,12 @@ function openItemActionsDialog(row, options = {}) {
   const item = row.item;
   const canGift = item.can_gift;
   const assemblyCost = _profileData?.fragment_assembly_cost || 10;
-  const isFragment = item.code === "box_fragment";
+  const isBoxFragment = item.code === "box_fragment";
+  const isFailureFragment = item.code === "failure_fragment";
+  const isFragment = isBoxFragment || isFailureFragment;
+  const activeFragmentCost = isFailureFragment ? (_profileData?.failure_fragment_cost || 10) : assemblyCost;
   const canActivate = !item.lootbox_pool_code && (item.can_activate || isFragment);
-  const activationLocked = isFragment && row.quantity < assemblyCost;
+  const activationLocked = isFragment && row.quantity < activeFragmentCost;
   const openRequestId = makeLootboxRequestId();
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
@@ -490,9 +493,9 @@ function openItemActionsDialog(row, options = {}) {
         <img src="/static/img/ui/gift.svg" alt="" class="icon icon-md"/>
         <span>Подарить</span>
       </button>
-      ${canActivate ? `<button class="btn btn-outline" id="ia-activate" ${activationLocked ? "disabled" : ""} title="${activationLocked ? `Нужно ${assemblyCost} фрагментов` : ""}">
+      ${canActivate ? `<button class="btn btn-outline" id="ia-activate" ${activationLocked ? "disabled" : ""} title="${activationLocked ? `Нужно ${activeFragmentCost} фрагментов` : ""}">
         <img src="/static/img/ui/spark.svg" alt="" class="icon icon-md"/>
-        <span>${isFragment ? (activationLocked ? `Активировать · нужно ${assemblyCost}` : `Активировать · ×${assemblyCost}`) : "Активировать"}</span>
+        <span>${isFragment ? (activationLocked ? `Активировать · нужно ${activeFragmentCost}` : `Активировать · ×${activeFragmentCost}`) : "Активировать"}</span>
       </button>` : ""}
       <button class="btn btn-outline" id="ia-sell" ${canGift ? "" : "disabled"}>
         <img src="/static/img/ui/kovbaks.png" alt="" class="icon icon-md"/>
@@ -522,7 +525,9 @@ function openItemActionsDialog(row, options = {}) {
     button.disabled = true;
     try {
       if (isFragment) {
-        var assembled = await post("/api/profile/inventory/assemble-fragments");
+        var assembled = await post(isFailureFragment
+          ? "/api/profile/inventory/assemble-failure-fragments"
+          : "/api/profile/inventory/assemble-fragments");
         window.kov.toast("🎁 Вы получили: " + assembled.item_name);
       } else {
         await post("/api/profile/inventory/activate", { item_id: item.id, recipient: "", quantity: 1 });
@@ -550,7 +555,7 @@ function openItemActionsDialog(row, options = {}) {
       window.closeModal();
       _updateSections(["inventory", "balance"]);
       try { sessionStorage.setItem("kovcheg.pendingLootboxReveal", JSON.stringify(result)); } catch (_) {}
-      showLootboxChest(result);
+      showLootboxExperience(result);
     } catch (err) {
       button.disabled = false;
       window.kov.toast(err.message);
@@ -792,10 +797,87 @@ function resumePendingLootboxReveal() {
   if (document.querySelector(".lootbox-chest-overlay")) return;
   try {
     const raw = sessionStorage.getItem("kovcheg.pendingLootboxReveal");
-    if (raw) showLootboxChest(JSON.parse(raw));
+    if (raw) showLootboxExperience(JSON.parse(raw));
   } catch (_) {
     try { sessionStorage.removeItem("kovcheg.pendingLootboxReveal"); } catch (_) {}
   }
+}
+
+function showLootboxExperience(result) {
+  if (result?.opening_mode === "choice_v2" && !result.finalized) showMegaLootboxChoices(result);
+  else showLootboxChest(result);
+}
+
+function showMegaLootboxChoices(result) {
+  if (!Array.isArray(result?.choice_groups) || !result.choice_groups.length) {
+    window.kov.toast("В мегаковбоксе не настроены варианты наград");
+    return;
+  }
+  document.querySelector(".lootbox-chest-overlay")?.remove();
+  const overlay = document.createElement("div");
+  overlay.className = "lootbox-chest-overlay lootbox-theme-mega mega-choice-overlay";
+  overlay.innerHTML = `
+    <header class="lootbox-chest-head mega-choice-head">
+      <div class="lootbox-chest-kicker">Мегаковбокс</div>
+      <h2>Выберите награду</h2>
+      <div class="mega-choice-progress" id="mega-choice-progress"></div>
+    </header>
+    <div class="mega-choice-stage" id="mega-choice-stage"></div>
+    <div class="lootbox-chest-floor"><div class="lootbox-chest-hint">Можно забрать только одну карточку</div></div>`;
+  document.body.appendChild(overlay);
+  const stage = overlay.querySelector("#mega-choice-stage");
+  const progress = overlay.querySelector("#mega-choice-progress");
+  const choices = [];
+  let index = 0;
+  let locked = false;
+
+  const renderGroup = () => {
+    const group = result.choice_groups[index];
+    progress.textContent = `${index + 1} / ${result.choice_groups.length}`;
+    stage.innerHTML = group.options.map((option, optionIndex) => `
+      <button class="mega-choice-card" type="button" data-choice="${optionIndex}">
+        <img src="${escapeHtml(option.icon || "/static/img/ui/box.svg")}" alt=""/>
+        <strong>${escapeHtml(option.label || "Награда")}</strong>
+        <span>${escapeHtml(option.rarity || "Обычный")}</span>
+      </button>`).join("");
+    stage.querySelectorAll(".mega-choice-card").forEach((card) => {
+      card.addEventListener("click", async () => {
+        if (locked) return;
+        locked = true;
+        const choice = Number(card.dataset.choice);
+        choices.push(choice);
+        card.classList.add("is-selected");
+        playUISound("cashout");
+        await new Promise((resolve) => setTimeout(resolve, 360));
+        index += 1;
+        if (index < result.choice_groups.length) {
+          locked = false;
+          renderGroup();
+          return;
+        }
+        try {
+          const finalized = await post("/api/profile/inventory/choose-lootbox", {
+            opening_id: result.opening_id,
+            request_id: result.request_id,
+            choices,
+          });
+          try { sessionStorage.setItem("kovcheg.pendingLootboxReveal", JSON.stringify(finalized)); } catch (_) {}
+          overlay.remove();
+          _updateSections(["inventory", "balance"]);
+          showLootboxChest(finalized);
+        } catch (error) {
+          locked = false;
+          // Stock may have changed while the player was choosing. Restart the
+          // sequence so any earlier unavailable option can be replaced too.
+          index = 0;
+          choices.length = 0;
+          renderGroup();
+          window.kov.toast(error.message);
+        }
+      });
+    });
+  };
+  renderGroup();
 }
 
 function showLootboxChest(result) {
@@ -804,7 +886,7 @@ function showLootboxChest(result) {
     return;
   }
   document.querySelector(".lootbox-chest-overlay")?.remove();
-  const themes = new Set(["common", "rare", "epic", "legendary", "seasonal"]);
+  const themes = new Set(["common", "rare", "epic", "legendary", "seasonal", "mega", "consolation"]);
   const theme = themes.has(result.pool.code) ? result.pool.code : "common";
   const rewards = [...result.rewards].sort((a, b) => (a.reveal_order || 0) - (b.reveal_order || 0));
   const closedImage = result.pool.image_url || "/static/img/ui/box.svg";
@@ -825,7 +907,7 @@ function showLootboxChest(result) {
     <header class="lootbox-chest-head">
       <div class="lootbox-chest-kicker">Открытие</div>
       <h2>${escapeHtml(result.pool.name || "Ковбокс")}</h2>
-      <div class="lootbox-remaining" id="lootbox-remaining"><span id="lootbox-remaining-value">${rewards.length}</span><small>осталось</small></div>
+      <div class="lootbox-remaining" id="lootbox-remaining"><span id="lootbox-remaining-value">${rewards.length}</span></div>
     </header>
     <div class="lootbox-collected" id="lootbox-collected" aria-label="Полученные награды"></div>
     <div class="lootbox-reward-stage" id="lootbox-reward-stage" aria-live="polite"></div>
@@ -834,7 +916,7 @@ function showLootboxChest(result) {
         <img src="${escapeHtml(closedImage)}" alt="${escapeHtml(result.pool.name || "Ковбокс")}" id="lootbox-chest-image" draggable="false"/>
       </button>
       <div class="lootbox-chest-hint" id="lootbox-chest-hint">Нажмите на ковбокс</div>
-      <button class="btn lootbox-chest-done" id="lootbox-chest-done" type="button" hidden>Забрать награды</button>
+      <button class="btn lootbox-chest-done" id="lootbox-chest-done" type="button" hidden>Забрать</button>
     </div>`;
   document.body.appendChild(overlay);
 
@@ -849,6 +931,14 @@ function showLootboxChest(result) {
   let index = 0;
   let locked = false;
   let previousReward = null;
+  let finished = false;
+  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=254");
+  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=254");
+  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=254`));
+  [openSound, specialSound, ...bonusSounds].forEach((audio) => { audio.preload = "auto"; });
+  function playAudio(audio) {
+    try { audio.currentTime = 0; audio.play().catch(() => {}); } catch (_) {}
+  }
 
   function updateCounter() {
     const remaining = rewards.length - index;
@@ -885,17 +975,33 @@ function showLootboxChest(result) {
   }
 
   function finishReveal() {
-    hint.textContent = "Все награды открыты";
+    if (finished) return;
+    finished = true;
+    addCollected(previousReward);
+    previousReward = null;
+    collected.hidden = true;
+    chestButton.hidden = true;
+    stage.classList.add("lootbox-reward-summary");
+    stage.replaceChildren(...rewards.map((reward) => {
+      const card = rewardCard(reward);
+      card.classList.add("is-summary-visible");
+      return card;
+    }));
+    hint.textContent = "Все награды собраны";
     done.hidden = false;
-    chestButton.setAttribute("aria-label", "Все награды открыты");
     playUISound("win");
     try { window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success"); } catch (_) {}
   }
 
   function revealNext() {
-    if (locked || index >= rewards.length) return;
+    if (locked || finished) return;
+    if (index >= rewards.length) {
+      finishReveal();
+      return;
+    }
     locked = true;
     chestButton.disabled = true;
+    playAudio(openSound);
     addCollected(previousReward);
     const reward = rewards[index];
     if (index === 0) chestImage.src = openImage;
@@ -904,18 +1010,25 @@ function showLootboxChest(result) {
     chestButton.classList.add("is-bumping");
     const card = rewardCard(reward);
     stage.replaceChildren(card);
-    requestAnimationFrame(() => card.classList.add("is-visible"));
+    const specialFinal = index === rewards.length - 1 && reward.presentation_kind === "item";
+    if (specialFinal) {
+      card.classList.add("is-special-spinning");
+      playAudio(specialSound);
+      requestAnimationFrame(() => card.classList.add("is-visible"));
+    } else {
+      playAudio(bonusSounds[Math.min(index, bonusSounds.length - 1)]);
+      requestAnimationFrame(() => card.classList.add("is-visible"));
+    }
     previousReward = reward;
     index += 1;
     updateCounter();
-    hint.textContent = index < rewards.length ? "Нажмите ещё раз" : "Последняя награда";
-    playUISound(reward.presentation_kind === "item" ? "win" : "cashout");
+    hint.textContent = index < rewards.length ? "Нажмите ещё раз" : "Нажмите ещё раз, чтобы собрать";
     try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(reward.presentation_kind === "item" ? "heavy" : "medium"); } catch (_) {}
     setTimeout(() => {
+      if (specialFinal) card.classList.add("is-special-revealed");
       locked = false;
       chestButton.disabled = false;
-      if (index >= rewards.length) finishReveal();
-    }, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 80 : 520);
+    }, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 80 : (specialFinal ? 4000 : 520));
   }
 
   function closeReveal() {

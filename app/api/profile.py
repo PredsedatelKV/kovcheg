@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -8,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.access import can_use_clicker, uses_limited_lootbox_stock
 from app.api._helpers import award_xp, ensure_wallet
 from app.auth import current_user, is_admin
 from app.db import begin_game_write, get_db
@@ -44,7 +46,7 @@ def _user_to_out(user: models.User) -> schemas.UserOut:
         balance=user.wallet.balance if user.wallet else 0,
         xp=user.xp,
         is_admin=is_admin(user),
-        can_use_clicker=True,
+        can_use_clicker=can_use_clicker(user),
     )
 
 
@@ -230,6 +232,7 @@ def me(user: models.User = Depends(current_user), db: Session = Depends(get_db))
         user=_user_to_out(user),
         bp_level=_get_bp_level(db, user),
         fragment_assembly_cost=models.LOOTBOX_FRAGMENT_COST,
+        failure_fragment_cost=models.FAILURE_FRAGMENT_COST,
         inventory=_inventory_to_out(inventory),
         user_tasks=[_user_task_to_out(ut) for ut in user_tasks],
         daily_plan=(
@@ -482,7 +485,7 @@ def activate_item(
     )
     if inv is None or inv.quantity < 1:
         raise HTTPException(status_code=400, detail="Нет предмета")
-    if inv.item.lootbox_pool_code or inv.item.code == "box_fragment":
+    if inv.item.lootbox_pool_code or inv.item.code in {"box_fragment", "failure_fragment"}:
         raise HTTPException(status_code=400, detail="Этот предмет активируется отдельным действием")
     if not inv.item.can_activate:
         raise HTTPException(status_code=400, detail="Этот предмет нельзя активировать")
@@ -567,6 +570,15 @@ def _validate_openable_pool(db: Session, pool: models.LootboxPool, user: models.
                 raise HTTPException(409, "Дополнительной наградой сундука может быть только обычный предмет")
         if pool.bonus_item_chance > 0 and not random_entries:
             raise HTTPException(409, "Для сундука не настроены дополнительные предметы")
+    elif pool.opening_mode == "choice_v2":
+        if not 1 <= pool.guaranteed_slots <= 10:
+            raise HTTPException(409, "Количество слотов ковбокса настроено некорректно")
+        if any(entry.is_guaranteed for entry in entries):
+            raise HTTPException(409, "В мегаковбоксе все награды должны участвовать в выборе")
+        if len(random_entries) < 2:
+            raise HTTPException(409, "Для мегаковбокса нужны минимум две разные награды")
+        if not pool.allow_duplicates and len(random_entries) < pool.guaranteed_slots * 2:
+            raise HTTPException(409, "Для выбора без повторов недостаточно разных наград")
     else:
         if not 1 <= pool.guaranteed_slots <= 10:
             raise HTTPException(409, "Количество слотов ковбокса настроено некорректно")
@@ -615,6 +627,150 @@ def _reward_priority(kind: str, item: models.Item | None = None) -> int:
     return {"fragment": 0, "xp": 1, "kovbucks": 2, "kovcoins": 2, "item": 3}[presentation_kind]
 
 
+def _limited_stock_product(
+    db: Session,
+    user: models.User,
+    item: models.Item | None,
+) -> models.ShopProduct | None:
+    if (
+        item is None
+        or not uses_limited_lootbox_stock(user)
+        or item.code in {"box_fragment", "failure_fragment"}
+        or item.lootbox_pool_code
+    ):
+        return None
+    return db.query(models.ShopProduct).filter(
+        models.ShopProduct.item_id == item.id,
+        models.ShopProduct.is_active.is_(True),
+    ).with_for_update().one_or_none()
+
+
+def _entry_available_for_user(db: Session, user: models.User, entry: models.LootboxPoolEntry) -> bool:
+    if entry.reward_kind != "item" or entry.item is None:
+        return True
+    product = _limited_stock_product(db, user, entry.item)
+    if not uses_limited_lootbox_stock(user) or entry.item.code in {"box_fragment", "failure_fragment"}:
+        return True
+    return product is not None and product.stock != 0
+
+
+def _decrement_limited_stock(
+    db: Session,
+    user: models.User,
+    item: models.Item | None,
+    amount: int,
+) -> None:
+    product = _limited_stock_product(db, user, item)
+    if product is None:
+        if uses_limited_lootbox_stock(user) and item is not None and item.code not in {
+            "box_fragment", "failure_fragment"
+        } and not item.lootbox_pool_code:
+            raise HTTPException(409, "Этот предмет закончился в магазине")
+        return
+    if product.stock >= 0:
+        if product.stock < amount:
+            raise HTTPException(409, "Этот предмет закончился в магазине")
+        product.stock -= amount
+
+
+def _choice_option(entry: models.LootboxPoolEntry) -> dict:
+    amount = entry.amount_min + secrets.randbelow(entry.amount_max - entry.amount_min + 1)
+    return {
+        "kind": entry.reward_kind,
+        "item_id": entry.item_id,
+        "amount": amount,
+        "label": _reward_label(entry.reward_kind, amount, entry.item),
+        "icon": _reward_icon(entry.reward_kind, entry.item),
+        "rarity": entry.item.rarity if entry.item else "Обычный",
+        "presentation_kind": _reward_presentation_kind(entry.reward_kind, entry.item),
+    }
+
+
+def _build_choice_plan(
+    db: Session,
+    user: models.User,
+    pool: models.LootboxPool,
+    entries: list[models.LootboxPoolEntry],
+) -> list[list[dict]]:
+    available = [entry for entry in entries if not entry.is_guaranteed and _entry_available_for_user(db, user, entry)]
+    if len(available) < 2:
+        raise HTTPException(409, "Для мегаковбокса сейчас недостаточно доступных наград")
+    if not pool.allow_duplicates and len(available) < pool.guaranteed_slots * 2:
+        raise HTTPException(409, "Для выбора без повторов недостаточно доступных наград")
+    plan: list[list[dict]] = []
+    source = list(available)
+    for _ in range(pool.guaranteed_slots):
+        first = _weighted_pick(source)
+        second_source = [entry for entry in source if entry.id != first.id]
+        if not second_source:
+            second_source = [entry for entry in available if entry.id != first.id]
+        second = _weighted_pick(second_source)
+        plan.append([_choice_option(first), _choice_option(second)])
+        if not pool.allow_duplicates:
+            source = [entry for entry in source if entry.id not in {first.id, second.id}]
+    return plan
+
+
+def _grant_reward_specs(
+    db: Session,
+    user: models.User,
+    pool: models.LootboxPool,
+    opening: models.LootboxOpen,
+    specs: list[tuple[str, int, models.Item | None, int]],
+) -> None:
+    granted_rewards: list[tuple[str, int, models.Item | None, int]] = []
+    total_kovbucks_for_presentation = 0
+    for kind, amount, reward_item, selected_index in specs:
+        if kind == "item":
+            if reward_item is None:
+                raise HTTPException(409, "Предмет награды удалён")
+            _decrement_limited_stock(db, user, reward_item, amount)
+            reward_inventory = db.query(models.InventoryItem).filter(
+                models.InventoryItem.user_id == user.id,
+                models.InventoryItem.item_id == reward_item.id,
+            ).first()
+            if reward_inventory:
+                if reward_inventory.quantity > 2_000_000_000 - amount:
+                    raise HTTPException(409, "Достигнут максимальный размер стака предмета")
+                reward_inventory.quantity += amount
+            else:
+                db.add(models.InventoryItem(user_id=user.id, item_id=reward_item.id, quantity=amount))
+            granted_rewards.append((kind, amount, reward_item, selected_index))
+        elif kind == "kovbucks":
+            wallet = ensure_wallet(db, user)
+            if wallet.balance > 2_000_000_000 - amount:
+                raise HTTPException(409, "Достигнут максимальный баланс ковбаксов")
+            wallet.balance += amount
+            db.add(models.Transaction(recipient_id=user.id, amount=amount, note=f"lootbox:{pool.code}:open:{opening.id}"))
+            total_kovbucks_for_presentation += amount
+        elif kind == "xp":
+            xp_result = award_xp(db, user, amount)
+            if xp_result["xp_added"] > 0:
+                granted_rewards.append(("xp", xp_result["xp_added"], None, selected_index))
+            total_kovbucks_for_presentation += xp_result["coins"]
+        elif kind == "kovcoins":
+            clicker = db.query(models.ClickerState).filter(models.ClickerState.user_id == user.id).first()
+            if clicker:
+                if clicker.kovcoins > 2_000_000_000 - amount:
+                    raise HTTPException(409, "Достигнут максимальный баланс ковкойнов")
+                clicker.kovcoins += amount
+            else:
+                db.add(models.ClickerState(user_id=user.id, kovcoins=amount))
+            granted_rewards.append(("kovcoins", amount, None, selected_index))
+    if total_kovbucks_for_presentation > 0:
+        granted_rewards.append(("kovbucks", total_kovbucks_for_presentation, None, len(specs)))
+    granted_rewards.sort(key=lambda reward: (_reward_priority(reward[0], reward[2]), reward[3]))
+    for reveal_order, (kind, amount, reward_item, _) in enumerate(granted_rewards):
+        db.add(models.LootboxOpenReward(
+            opening_id=opening.id, reward_kind=kind,
+            item_id=reward_item.id if reward_item else None, amount=amount,
+            reveal_order=reveal_order, presentation_kind=_reward_presentation_kind(kind, reward_item),
+            label_snapshot=_reward_label(kind, amount, reward_item),
+            icon_snapshot=_reward_icon(kind, reward_item),
+            rarity_snapshot=reward_item.rarity if reward_item else "Обычный",
+        ))
+
+
 def _opening_result(
     opening: models.LootboxOpen,
     user: models.User,
@@ -651,6 +807,27 @@ def _opening_result(
         (reward for reward in rewards if reward.item and reward.item.code != "box_fragment"),
         next((reward for reward in rewards if reward.item), None),
     )
+    try:
+        stored_plan = json.loads(opening.choice_plan or "[]")
+    except (TypeError, json.JSONDecodeError):
+        stored_plan = []
+    choice_groups = []
+    for index, group in enumerate(stored_plan if isinstance(stored_plan, list) else []):
+        if not isinstance(group, list):
+            continue
+        options = []
+        for option in group[:2]:
+            if not isinstance(option, dict):
+                continue
+            options.append(schemas.LootboxChoiceOptionOut(
+                label=str(option.get("label") or "Награда"),
+                icon=str(option.get("icon") or "/static/img/ui/box.svg"),
+                rarity=str(option.get("rarity") or "Обычный"),
+                presentation_kind=option.get("presentation_kind") or "item",
+            ))
+        if len(options) == 2:
+            choice_groups.append(schemas.LootboxChoiceGroupOut(index=index, options=options))
+    opening_mode = pool.opening_mode if pool else ("choice_v2" if choice_groups else "chest_v2")
     return schemas.LootboxOpenResult(
         opening_id=opening.id,
         request_id=opening.request_id,
@@ -662,6 +839,9 @@ def _opening_result(
             open_image_url=pool_open_image,
         ),
         rewards=rewards,
+        opening_mode=opening_mode,
+        choice_groups=choice_groups,
+        finalized=opening.finalized_at is not None or opening_mode != "choice_v2",
         replayed=replayed,
         balance=user.wallet.balance if user.wallet else 0,
         xp=user.xp,
@@ -700,8 +880,6 @@ def open_lootbox_for_user(
         raise HTTPException(409, "Для ковбокса отсутствует серверная конфигурация")
     if pool.item_id != item.id:
         raise HTTPException(409, "Ковбокс связан с другой серверной конфигурацией")
-    if pool.code == "mega" or pool.opening_mode == "choice_v2":
-        raise HTTPException(409, "Механика выбора предметов для мегаковбокса скоро будет доступна")
     entries = _validate_openable_pool(db, pool, user)
 
     if pool.daily_open_limit:
@@ -730,12 +908,18 @@ def open_lootbox_for_user(
     guaranteed = [entry for entry in entries if entry.is_guaranteed]
     random_entries = [entry for entry in entries if not entry.is_guaranteed]
     selected = []
+    choice_plan: list[list[dict]] = []
     if pool.opening_mode == "chest_v2":
         selected.extend(sorted(guaranteed, key=lambda entry: (entry.sort_order, entry.id)))
         if pool.bonus_item_chance == 100 or (
             pool.bonus_item_chance > 0 and secrets.randbelow(100) < pool.bonus_item_chance
         ):
-            selected.append(_weighted_pick(random_entries))
+            available_random = [entry for entry in random_entries if _entry_available_for_user(db, user, entry)]
+            if not available_random:
+                raise HTTPException(409, "Дополнительные предметы этого ковбокса закончились")
+            selected.append(_weighted_pick(available_random))
+    elif pool.opening_mode == "choice_v2":
+        choice_plan = _build_choice_plan(db, user, pool, entries)
     else:
         available = list(guaranteed)
         for _ in range(pool.guaranteed_slots if guaranteed else 0):
@@ -747,7 +931,7 @@ def open_lootbox_for_user(
                 available.remove(chosen)
         if random_entries:
             selected.append(_weighted_pick(random_entries))
-    if not selected:
+    if not selected and not choice_plan:
         raise HTTPException(409, "У ковбокса нет доступных наград")
 
     inventory.quantity -= 1
@@ -764,69 +948,24 @@ def open_lootbox_for_user(
         pool_rarity_snapshot=pool.rarity,
         pool_image_snapshot=pool.image_url,
         pool_open_image_snapshot=pool.open_image_url or pool.image_url,
+        choice_plan=json.dumps(choice_plan, ensure_ascii=False),
+        choice_selection="[]",
+        finalized_at=None if choice_plan else models.now_utc(),
     )
     db.add(opening)
     db.flush()
 
-    granted_rewards: list[tuple[str, int, models.Item | None, int]] = []
-    total_kovbucks_for_presentation = 0
-    for selected_index, entry in enumerate(selected):
-        amount = entry.amount_min + secrets.randbelow(entry.amount_max - entry.amount_min + 1)
-        if entry.reward_kind == "item":
-            reward_inventory = db.query(models.InventoryItem).filter(
-                models.InventoryItem.user_id == user.id,
-                models.InventoryItem.item_id == entry.item_id,
-            ).first()
-            if reward_inventory:
-                if reward_inventory.quantity > 2_000_000_000 - amount:
-                    raise HTTPException(409, "Достигнут максимальный размер стака предмета")
-                reward_inventory.quantity += amount
-            else:
-                db.add(models.InventoryItem(user_id=user.id, item_id=entry.item_id, quantity=amount))
-            granted_rewards.append(("item", amount, entry.item, selected_index))
-        elif entry.reward_kind == "kovbucks":
-            wallet = ensure_wallet(db, user)
-            if wallet.balance > 2_000_000_000 - amount:
-                raise HTTPException(409, "Достигнут максимальный баланс ковбаксов")
-            wallet.balance += amount
-            db.add(models.Transaction(
-                recipient_id=user.id,
-                amount=amount,
-                note=f"lootbox:{pool.code}:open:{opening.id}",
-            ))
-            total_kovbucks_for_presentation += amount
-        elif entry.reward_kind == "xp":
-            xp_result = award_xp(db, user, amount)
-            if xp_result["xp_added"] > 0:
-                granted_rewards.append(("xp", xp_result["xp_added"], None, selected_index))
-            total_kovbucks_for_presentation += xp_result["coins"]
-        elif entry.reward_kind == "kovcoins":
-            clicker = db.query(models.ClickerState).filter(models.ClickerState.user_id == user.id).first()
-            if clicker:
-                if clicker.kovcoins > 2_000_000_000 - amount:
-                    raise HTTPException(409, "Достигнут максимальный баланс ковкойнов")
-                clicker.kovcoins += amount
-            else:
-                db.add(models.ClickerState(user_id=user.id, kovcoins=amount))
-            granted_rewards.append(("kovcoins", amount, None, selected_index))
-    if total_kovbucks_for_presentation > 0:
-        granted_rewards.append(("kovbucks", total_kovbucks_for_presentation, None, len(selected)))
-
-    granted_rewards.sort(key=lambda reward: (
-        _reward_priority(reward[0], reward[2]), reward[3]
-    ))
-    for reveal_order, (kind, amount, reward_item, _selected_index) in enumerate(granted_rewards):
-        db.add(models.LootboxOpenReward(
-            opening_id=opening.id,
-            reward_kind=kind,
-            item_id=reward_item.id if reward_item is not None else None,
-            amount=amount,
-            reveal_order=reveal_order,
-            presentation_kind=_reward_presentation_kind(kind, reward_item),
-            label_snapshot=_reward_label(kind, amount, reward_item),
-            icon_snapshot=_reward_icon(kind, reward_item),
-            rarity_snapshot=reward_item.rarity if reward_item is not None else "Обычный",
-        ))
+    if selected:
+        specs = [
+            (
+                entry.reward_kind,
+                entry.amount_min + secrets.randbelow(entry.amount_max - entry.amount_min + 1),
+                entry.item,
+                selected_index,
+            )
+            for selected_index, entry in enumerate(selected)
+        ]
+        _grant_reward_specs(db, user, pool, opening, specs)
     db.commit()
     db.refresh(opening)
     db.refresh(user)
@@ -840,6 +979,110 @@ def open_inventory_lootbox(
     db: Session = Depends(get_db),
 ) -> schemas.LootboxOpenResult:
     return open_lootbox_for_user(body=body, user=user, db=db)
+
+
+@router.post("/inventory/choose-lootbox", response_model=schemas.LootboxOpenResult)
+def choose_inventory_lootbox(
+    body: schemas.ChooseLootboxRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> schemas.LootboxOpenResult:
+    """Finalize all Mega Kovbox choices once and grant them atomically."""
+    begin_game_write(db)
+    opening = db.query(models.LootboxOpen).filter(
+        models.LootboxOpen.id == body.opening_id,
+        models.LootboxOpen.user_id == user.id,
+        models.LootboxOpen.request_id == body.request_id,
+    ).with_for_update().one_or_none()
+    if opening is None:
+        raise HTTPException(404, "Открытие мегаковбокса не найдено")
+    pool = opening.pool
+    if pool is None or pool.opening_mode != "choice_v2":
+        raise HTTPException(409, "Это открытие не требует выбора")
+    if opening.finalized_at is not None:
+        try:
+            stored = json.loads(opening.choice_selection or "[]")
+        except json.JSONDecodeError:
+            stored = []
+        if stored != body.choices:
+            raise HTTPException(409, "Выбор этого мегаковбокса уже зафиксирован")
+        result = _opening_result(opening, user, replayed=True)
+        db.rollback()
+        return result
+    try:
+        plan = json.loads(opening.choice_plan or "[]")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(409, "План наград мегаковбокса повреждён") from exc
+    if not isinstance(plan, list) or len(plan) != len(body.choices):
+        raise HTTPException(409, "Количество выбранных наград не совпадает с мегаковбоксом")
+    specs: list[tuple[str, int, models.Item | None, int]] = []
+    for index, choice in enumerate(body.choices):
+        group = plan[index]
+        if not isinstance(group, list) or len(group) != 2 or not isinstance(group[choice], dict):
+            raise HTTPException(409, "План наград мегаковбокса повреждён")
+        option = group[choice]
+        kind = option.get("kind")
+        amount = option.get("amount")
+        if kind not in {"item", "kovbucks", "kovcoins", "xp"} or type(amount) is not int or amount < 1:
+            raise HTTPException(409, "План наград мегаковбокса повреждён")
+        reward_item = None
+        if kind == "item":
+            item_id = option.get("item_id")
+            if type(item_id) is not int:
+                raise HTTPException(409, "Предмет награды мегаковбокса повреждён")
+            reward_item = db.query(models.Item).filter(models.Item.id == item_id).one_or_none()
+            if reward_item is None or reward_item.lootbox_pool_code:
+                raise HTTPException(409, "Предмет награды мегаковбокса недоступен")
+        specs.append((kind, amount, reward_item, index))
+    _grant_reward_specs(db, user, pool, opening, specs)
+    opening.choice_selection = json.dumps(body.choices)
+    opening.finalized_at = models.now_utc()
+    db.commit()
+    db.refresh(opening)
+    db.refresh(user)
+    return _opening_result(opening, user, replayed=False)
+
+
+@router.post("/inventory/assemble-failure-fragments")
+def assemble_failure_fragments(
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    begin_game_write(db)
+    fragment = db.query(models.Item).filter(models.Item.code == "failure_fragment").one_or_none()
+    box = db.query(models.Item).filter(models.Item.code == "lootbox_consolation").one_or_none()
+    pool = db.query(models.LootboxPool).filter(models.LootboxPool.code == "consolation").one_or_none()
+    if fragment is None or box is None or pool is None or not pool.is_active or pool.item_id != box.id:
+        raise HTTPException(503, "Утешительный ковбокс временно недоступен")
+    stack = db.query(models.InventoryItem).filter(
+        models.InventoryItem.user_id == user.id,
+        models.InventoryItem.item_id == fragment.id,
+    ).with_for_update().one_or_none()
+    cost = models.FAILURE_FRAGMENT_COST
+    if stack is None or stack.quantity < cost:
+        raise HTTPException(400, f"Нужно {cost} фрагментов неудачи")
+    target = db.query(models.InventoryItem).filter(
+        models.InventoryItem.user_id == user.id,
+        models.InventoryItem.item_id == box.id,
+    ).one_or_none()
+    if target and target.quantity >= 2_000_000_000:
+        raise HTTPException(409, "Достигнут максимальный размер стака ковбоксов")
+    stack.quantity -= cost
+    remaining = stack.quantity
+    if not stack.quantity:
+        db.delete(stack)
+    if target:
+        target.quantity += 1
+    else:
+        db.add(models.InventoryItem(user_id=user.id, item_id=box.id, quantity=1))
+    db.commit()
+    return {
+        "ok": True,
+        "item_name": box.name,
+        "item_icon": box.icon,
+        "remaining_fragments": remaining,
+        "fragment_assembly_cost": cost,
+    }
 
 
 @router.post("/inventory/assemble-fragments")

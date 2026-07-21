@@ -10,6 +10,7 @@ from pydantic import StrictInt
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.access import can_use_clicker
 from app.api._helpers import ensure_wallet
 from app.auth import current_user
 from app.db import begin_game_write, get_db
@@ -31,6 +32,8 @@ def _require_clicker_access(user: models.User) -> None:
     """
     if not user or not user.id:
         raise HTTPException(status_code=401, detail="Требуется авторизация")
+    if not can_use_clicker(user):
+        raise HTTPException(status_code=403, detail="Кликер скоро станет доступен")
 
 
 @router.post("/win")
@@ -213,8 +216,10 @@ def arcade_bet(
     raise HTTPException(status_code=410, detail="Используйте серверный раунд казино")
 
 
-CASINO_GAMES = {"roulette", "slots", "dice", "rocket"}
+CASINO_GAMES = {"roulette", "riskwheel", "slots", "dice", "rocket"}
 ROULETTE_MULTS = [(0.05, 16), (0.25, 11), (0.5, 15), (0.75, 15), (1.0, 15), (1.5, 12), (2.0, 8), (2.5, 5), (3.0, 3)]
+ROULETTE_PAYOUTS = ((10, 8), (30, 8), (50, 10), (70, 12), (80, 2), (90, 14),
+                    (100, 14), (120, 12), (140, 10), (160, 6), (180, 4))
 ROCKET_GROWTH_PER_SECOND = 0.25
 ROCKET_MAX_MULTIPLIER = 5.0
 
@@ -278,7 +283,7 @@ def casino_start(
         raise HTTPException(status_code=400, detail=f"Максимальная ставка — {max_bet} ковбаксов")
     outcome: dict = {}
     payout = 0
-    if game == "roulette":
+    if game in {"roulette", "riskwheel"}:
         mult = SYSTEM_RANDOM.choices([m for m, _ in ROULETTE_MULTS], weights=[w for _, w in ROULETTE_MULTS], k=1)[0]
         outcome = {"multiplier": mult, "index": [m for m, _ in ROULETTE_MULTS].index(mult)}
         payout = int(amount * mult)
@@ -318,6 +323,97 @@ def casino_start(
             "max_multiplier": ROCKET_MAX_MULTIPLIER,
         }
     return {"token": token, "outcome": public_outcome, "balance": wallet.balance}
+
+
+@router.post("/roulette/spin")
+def roulette_spin(
+    body: schemas.RouletteSpinRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Atomic, server-authoritative roulette with an exact 90% RTP table."""
+    begin_game_write(db)
+    existing = db.query(models.CasinoRound).filter(
+        models.CasinoRound.user_id == user.id,
+        models.CasinoRound.game == "roulette_v2",
+        models.CasinoRound.token == body.request_id,
+    ).first()
+    if existing:
+        if existing.bet != body.amount:
+            raise HTTPException(409, "Этот запрос уже использован для другой ставки")
+        outcome = json.loads(existing.outcome)
+        fragment_item = db.query(models.Item).filter(models.Item.code == "failure_fragment").first()
+        fragment_count = 0
+        if fragment_item:
+            row = db.query(models.InventoryItem).filter(
+                models.InventoryItem.user_id == user.id,
+                models.InventoryItem.item_id == fragment_item.id,
+            ).first()
+            fragment_count = row.quantity if row else 0
+        db.rollback()
+        return {
+            "ok": True, "replayed": True, "payout": existing.payout,
+            "payout_percent": outcome["payout_percent"], "index": outcome["index"],
+            "balance": ensure_wallet(db, user).balance,
+            "failure_fragment_awarded": outcome.get("failure_fragment_awarded", 0),
+            "failure_fragment_count": fragment_count,
+        }
+
+    wallet = ensure_wallet(db, user)
+    max_bet = wallet.balance // 5
+    if max_bet < 10:
+        raise HTTPException(400, "Для ставки нужен баланс не менее 50 ковбаксов")
+    if body.amount > max_bet:
+        raise HTTPException(400, f"Максимальная ставка — {max_bet} ковбаксов")
+    if wallet.balance < body.amount:
+        raise HTTPException(400, "Недостаточно ковбаксов")
+
+    payout_percent = SYSTEM_RANDOM.choices(
+        [percent for percent, _ in ROULETTE_PAYOUTS],
+        weights=[chance for _, chance in ROULETTE_PAYOUTS],
+        k=1,
+    )[0]
+    index = [percent for percent, _ in ROULETTE_PAYOUTS].index(payout_percent)
+    payout = body.amount * payout_percent // 100
+    awarded_fragment = 1 if payout_percent <= 50 else 0
+    fragment_count = 0
+    if awarded_fragment:
+        fragment_item = db.query(models.Item).filter(models.Item.code == "failure_fragment").first()
+        if fragment_item is None:
+            raise HTTPException(503, "Фрагмент неудачи временно недоступен")
+        stack = db.query(models.InventoryItem).filter(
+            models.InventoryItem.user_id == user.id,
+            models.InventoryItem.item_id == fragment_item.id,
+        ).first()
+        if stack:
+            if stack.quantity >= 2_000_000_000:
+                raise HTTPException(409, "Достигнут максимальный размер стака")
+            stack.quantity += 1
+        else:
+            stack = models.InventoryItem(user_id=user.id, item_id=fragment_item.id, quantity=1)
+            db.add(stack)
+        fragment_count = stack.quantity
+
+    wallet.balance = wallet.balance - body.amount + payout
+    outcome = {
+        "payout_percent": payout_percent,
+        "index": index,
+        "failure_fragment_awarded": awarded_fragment,
+    }
+    db.add(models.CasinoRound(
+        token=body.request_id, user_id=user.id, game="roulette_v2", bet=body.amount,
+        outcome=json.dumps(outcome), payout=payout, settled=True,
+    ))
+    db.add(models.Transaction(sender_id=user.id, amount=body.amount, note="casino:bet:roulette"))
+    if payout:
+        db.add(models.Transaction(recipient_id=user.id, amount=payout, note="casino:payout:roulette"))
+    db.commit()
+    return {
+        "ok": True, "replayed": False, "payout": payout,
+        "payout_percent": payout_percent, "index": index, "balance": wallet.balance,
+        "failure_fragment_awarded": awarded_fragment,
+        "failure_fragment_count": fragment_count,
+    }
 
 
 @router.get("/casino/rocket/status")

@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=253";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=254";
 
-import { playUISound } from "/static/pages/settings.js?v=253";
+import { playUISound } from "/static/pages/settings.js?v=254";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -31,7 +31,7 @@ function renderKovboxShowcase(products = []) {
         ${KOVBOX_SHOWCASE.map((box) => {
           const product = productByCode.get(box.code);
           return `
-            <div class="kovbox-shop-item${product?.stock === 0 ? " product-out" : ""}">
+            <div class="kovbox-shop-item kovbox-${box.code}${product?.stock === 0 ? " product-out" : ""}">
               <img src="${box.icon}" alt="${box.name}" draggable="false" decoding="async">
               <div class="kovbox-shop-name">${box.name}</div>
               ${product ? `

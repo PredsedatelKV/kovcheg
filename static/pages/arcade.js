@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=253";
+import { post, get } from "/static/api.js?v=254";
 
-import { playUISound } from "/static/pages/settings.js?v=253";
+import { playUISound } from "/static/pages/settings.js?v=254";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -16,11 +16,18 @@ function kovbaksWord(n) {
 let balance = 0;
 let mountedArcadeRoot = null;
 let arcadeTabLifecycleInstalled = false;
+let canUseClicker = true;
+
+function gameRequestId(prefix) {
+  if (window.crypto?.randomUUID) return `${prefix}_${window.crypto.randomUUID().replaceAll("-", "")}`;
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+}
 
 async function fetchBalance() {
   try {
     const me = await get("/api/profile/me");
     balance = me.user.balance;
+    canUseClicker = me.user.can_use_clicker !== false;
     return balance;
   } catch (_) {
     return 0;
@@ -730,6 +737,93 @@ function gameHarvest() {
 
 
 function gameRoulette() {
+  const payoutPercents = [10, 30, 50, 70, 80, 90, 100, 120, 140, 160, 180];
+  const sectorColor = (percent) => percent <= 50 ? "#cf4d57" : percent < 100 ? "#e99d35" : percent < 140 ? "#41ad75" : "#7557d8";
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Рулетка <span class="arcade-new-inline">Новое</span></h2>
+    <div class="game-balance">Баланс: <strong id="roulette-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
+    <div class="game-wheel-risk roulette-payout-wheel" id="roulette-wheel"></div>
+    <div class="game-bet-custom">
+      <label>Ставка:</label>
+      <input type="number" id="roulette-bet" value="10" min="10" max="${Math.floor(balance * .2)}" class="input input-sm"/>
+      <span class="game-bet-hint"><img src="/static/img/ui/kovbaks.png" alt="" class="game-icon-sm"/> макс ${Math.floor(balance * .2)}</span>
+    </div>
+    <button class="btn" id="roulette-spin-btn">Крутить</button>
+    <div class="game-result" id="roulette-result"></div>
+  `);
+  const wheel = modal.querySelector("#roulette-wheel");
+  const input = modal.querySelector("#roulette-bet");
+  const button = modal.querySelector("#roulette-spin-btn");
+  const result = modal.querySelector("#roulette-result");
+  let timer = null;
+  const renderAmounts = () => {
+    const max = Math.floor(balance * .2);
+    const bet = Math.max(10, Math.min(max, Math.floor(Number(input.value) || 10)));
+    wheel.innerHTML = payoutPercents.map((percent) =>
+      `<div class="risk-sector" style="background:${sectorColor(percent)}">${Math.floor(bet * percent / 100)} К</div>`
+    ).join("");
+  };
+  input.addEventListener("input", renderAmounts);
+  renderAmounts();
+  registerGameCleanup(() => { if (timer) clearInterval(timer); });
+
+  button.addEventListener("click", async () => {
+    if (button.disabled) return;
+    const max = Math.floor(balance * .2);
+    const bet = Math.floor(Number(input.value));
+    if (!Number.isInteger(bet) || bet < 10) {
+      result.innerHTML = `<div class="game-lose">Минимальная ставка — 10 ковбаксов</div>`;
+      return;
+    }
+    if (bet > max || bet > balance) {
+      result.innerHTML = `<div class="game-lose">Максимальная ставка — ${max} ковбаксов</div>`;
+      return;
+    }
+    button.disabled = true;
+    setCasinoRoundLocked(true);
+    playUISound("bet");
+    let spin;
+    try {
+      spin = await post("/api/arcade/roulette/spin", { amount: bet, request_id: gameRequestId("roulette") });
+    } catch (error) {
+      result.innerHTML = `<div class="game-lose">${escapeHtml(error.message || "Не удалось сделать ставку")}</div>`;
+      button.disabled = false;
+      setCasinoRoundLocked(false);
+      return;
+    }
+    balance = spin.balance;
+    updateBalanceDisplay("roulette-balance", balance);
+    const chosenIdx = spin.index;
+    let current = 0;
+    let steps = 33 + chosenIdx;
+    timer = setInterval(() => {
+      [...wheel.children].forEach((node) => node.classList.remove("highlight", "active"));
+      wheel.children[current].classList.add("highlight");
+      current = (current + 1) % payoutPercents.length;
+      steps -= 1;
+      if (steps % 2 === 0) playUISound("spin");
+      if (steps > 0) return;
+      clearInterval(timer);
+      timer = null;
+      [...wheel.children].forEach((node) => node.classList.remove("highlight"));
+      wheel.children[chosenIdx].classList.add("active");
+      const cls = spin.payout > bet ? "game-win" : spin.payout === bet ? "game-neutral" : "game-lose";
+      result.innerHTML = `<div class="${cls}">Получено: ${spin.payout} ковбаксов</div>`;
+      playUISound(spin.payout > bet ? "win" : spin.payout === bet ? "cashout" : "lose");
+      if (spin.failure_fragment_awarded) {
+        window.kov.toast(`Фрагмент неудачи получен · ${spin.failure_fragment_count}/10`);
+      }
+      input.max = String(Math.floor(balance * .2));
+      input.value = String(Math.min(Math.max(10, Number(input.value) || 10), Math.floor(balance * .2)));
+      renderAmounts();
+      button.disabled = false;
+      setCasinoRoundLocked(false);
+    }, 86);
+  });
+}
+
+function gameRiskWheel() {
   // label — то, что видит игрок; mult — числовой множитель, который должен совпадать с подписью label.
   // Целевой RTP ~92.8% (домовое преимущество ~7%): EV = Σ(mult*weight)/Σweight.
   const sectors = [
@@ -746,7 +840,7 @@ function gameRoulette() {
   
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
-    <h2>Рулетка</h2>
+    <h2>Колесо риска</h2>
     <p class="card-sub">Крути и умножай ставку!</p>
     <div class="game-balance">Баланс: <strong id="roulette-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
     <div class="game-wheel-risk" id="risk-wheel">
@@ -780,7 +874,7 @@ function gameRoulette() {
     // Надёжное списание: ждём ответ /bet, при ошибке не крутим.
     let serverRound;
     try {
-      serverRound = await post("/api/arcade/casino/start", { game: "roulette", amount: bet });
+      serverRound = await post("/api/arcade/casino/start", { game: "riskwheel", amount: bet });
     } catch (_) {
       resultEl.innerHTML = `<div class="game-lose">Ошибка ставки, попробуйте ещё</div>`;
       spinBtn.disabled = false;
@@ -2407,7 +2501,7 @@ function gameClicker(hostRoot = null) {
 // ============ RENDER ============
 
 function arcadeIcon(name) {
-  return `<div class="game-tile-icon arcade-icon-frame"><img class="arcade-icon-img" src="/static/img/ui/arcade/${name}.png?v=253" alt="" draggable="false" decoding="async"></div>`;
+  return `<div class="game-tile-icon arcade-icon-frame"><img class="arcade-icon-img" src="/static/img/ui/arcade/${name}.png?v=254" alt="" draggable="false" decoding="async"></div>`;
 }
 
 export async function renderArcade(root) {
@@ -2435,12 +2529,20 @@ export async function renderArcade(root) {
       <div class="hero-art" title="Аркада"><img src="/static/img/tabs/arcade.svg" alt="Аркада" class="hero-img"/></div>
     </section>
 
+    <h2 class="section-title">Новинки</h2>
+    <div class="game-grid">
+      <div class="game-tile roulette-feature-tile" data-game="roulette" style="grid-column: 1 / -1">
+        ${arcadeIcon("roulette")}
+        <div class="game-tile-title">Рулетка</div>
+        <span class="arcade-new-badge">Новое</span>
+      </div>
+    </div>
+
     <h2 class="section-title">Кликер</h2>
     <div class="game-grid">
-      <div class="game-tile clicker-feature-tile" data-game="clicker" style="grid-column: 1 / -1">
+      <div class="game-tile clicker-feature-tile ${canUseClicker ? "" : "is-coming-soon"}" data-game="clicker" ${canUseClicker ? "" : 'data-locked="true"'} style="grid-column: 1 / -1">
         ${arcadeIcon("clicker")}
-        <div class="game-tile-title">Кликер</div>
-        <div class="clicker-feature-meta">До 15 минут в день · лимит растёт 10 000 → 40 000</div>
+        ${canUseClicker ? "" : '<span class="coming-soon-badge">Скоро</span>'}
       </div>
     </div>
 
@@ -2487,9 +2589,9 @@ export async function renderArcade(root) {
         ${arcadeIcon("dice")}
         <div class="game-tile-title">Кубик</div>
       </div>
-      <div class="game-tile casino" data-game="roulette">
+      <div class="game-tile casino" data-game="riskwheel">
         ${arcadeIcon("roulette")}
-        <div class="game-tile-title">Рулетка</div>
+        <div class="game-tile-title">Колесо риска</div>
       </div>
     </div>
   `;
@@ -2505,6 +2607,7 @@ export async function renderArcade(root) {
     rocket: gameRocket,
     dice: gameDice,
     roulette: gameRoulette,
+    riskwheel: gameRiskWheel,
     clicker: () => gameClicker(root),
   };
   

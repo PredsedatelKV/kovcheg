@@ -727,26 +727,55 @@ def test_disabled_box_does_not_consume_inventory(lootbox_api):
     assert _quantity(sessions, "lootbox_disabled") == 1
 
 
-def test_mega_box_waits_for_selection_mechanic_without_consuming_inventory(lootbox_api):
+def test_mega_box_offers_two_choices_and_grants_only_selected_reward(lootbox_api):
     client, sessions = lootbox_api
     with sessions() as db:
         prize_id = db.query(models.Item).filter_by(code="prize").one().id
+        second = models.Item(code="prize_two", name="Второй приз", icon="prize2.svg")
+        db.add(second)
+        db.commit()
+        second_id = second.id
     payload = _box_payload(prize_id, code="mega")
     payload["opening_mode"] = "choice_v2"
+    payload["entries"] = [
+        {**payload["entries"][0], "weight": 50},
+        {**payload["entries"][0], "item_id": second_id, "weight": 50, "sort_order": 1},
+    ]
     created = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2))
     assert created.status_code == 200, created.text
     box = created.json()
     _grant_box(sessions, box["item_id"])
-    response = client.post(
+    opened = client.post(
         "/api/profile/inventory/open-lootbox",
         json={"item_id": box["item_id"], "request_id": "mega_pending_0001"},
         headers=_headers(),
     )
-    assert response.status_code == 409
-    assert "выбора предметов" in response.json()["detail"]
-    assert _quantity(sessions, "lootbox_mega") == 1
+    assert opened.status_code == 200, opened.text
+    plan = opened.json()
+    assert plan["opening_mode"] == "choice_v2"
+    assert plan["finalized"] is False
+    assert len(plan["choice_groups"]) == 1
+    assert len(plan["choice_groups"][0]["options"]) == 2
+    assert _quantity(sessions, "lootbox_mega") == 0
+
+    choice_payload = {
+        "opening_id": plan["opening_id"],
+        "request_id": plan["request_id"],
+        "choices": [0],
+    }
+    finalized = client.post("/api/profile/inventory/choose-lootbox", json=choice_payload, headers=_headers())
+    assert finalized.status_code == 200, finalized.text
+    assert finalized.json()["finalized"] is True
+    assert len(finalized.json()["rewards"]) == 1
+    replay = client.post("/api/profile/inventory/choose-lootbox", json=choice_payload, headers=_headers())
+    assert replay.status_code == 200
+    assert replay.json()["replayed"] is True
     with sessions() as db:
-        assert db.query(models.LootboxOpen).count() == 0
+        assert db.query(models.LootboxOpen).count() == 1
+        assert db.query(models.InventoryItem).filter(
+            models.InventoryItem.user_id == 1,
+            models.InventoryItem.item_id.in_([prize_id, second_id]),
+        ).count() == 1
 
 
 def test_fragment_assembly_cost_insufficient_and_parallel(lootbox_api):

@@ -48,9 +48,14 @@ def game_api(tmp_path):
     with sessions() as db:
         normal = models.User(id=1, telegram_id=111, first_name="Игрок", xp=0)
         omar = models.User(id=2, telegram_id=arcade.OMAR_TELEGRAM_ID, first_name="Омар", xp=0)
-        db.add_all([normal, omar])
+        magomet = models.User(id=3, telegram_id=837611803, first_name="Магомет", xp=0)
+        ibrahim = models.User(id=4, telegram_id=7735808918, first_name="Ибрагим", xp=0)
+        db.add_all([normal, omar, magomet, ibrahim])
         db.flush()
-        db.add_all([models.Wallet(user_id=1, balance=100), models.Wallet(user_id=2, balance=100)])
+        db.add_all([
+            models.Wallet(user_id=1, balance=100), models.Wallet(user_id=2, balance=100),
+            models.Wallet(user_id=3, balance=100), models.Wallet(user_id=4, balance=100),
+        ])
         season = models.BattlePassSeason(name="Тест", xp_per_level=100, total_levels=10, is_active=True)
         db.add(season)
         db.flush()
@@ -58,12 +63,13 @@ def game_api(tmp_path):
             season_id=season.id, level=1, track="free", kind="coins", value=7, label="7 К",
         ))
         fragment = models.Item(code="box_fragment", name="Фрагмент ковбокса", icon="fragment.svg")
+        failure = models.Item(code="failure_fragment", name="Фрагмент неудачи", icon="failure.png", can_activate=True)
         prize = models.Item(code="prize", name="Приз", icon="prize.svg")
         lootbox = models.Item(
             code="lootbox_common", name="Обычный ковбокс", icon="box.svg",
             category="Ковбоксы", lootbox_pool_code="common",
         )
-        db.add_all([fragment, prize, lootbox])
+        db.add_all([fragment, failure, prize, lootbox])
         db.flush()
         pool = models.LootboxPool(code="common", name="Обычный", item_id=lootbox.id)
         db.add(pool)
@@ -222,10 +228,12 @@ def test_fragment_assembly_and_parallel_safety(game_api):
     assert client.post("/api/profile/inventory/assemble-fragments", headers=_headers()).status_code == 400
 
 
-def test_clicker_is_released_to_players_but_cannot_claim_first_win(game_api):
+def test_clicker_blocks_only_magomet_and_ibrahim(game_api):
     client, _ = game_api
     assert client.get("/api/arcade/clicker/state", headers=_headers(1)).status_code == 200
     assert client.get("/api/arcade/clicker/state", headers=_headers(2)).status_code == 200
+    assert client.get("/api/arcade/clicker/state", headers=_headers(3)).status_code == 403
+    assert client.get("/api/arcade/clicker/state", headers=_headers(4)).status_code == 403
     assert client.post("/api/arcade/round/start", json={"game": "clicker"}, headers=_headers(2)).status_code == 400
 
 
@@ -305,3 +313,40 @@ def test_legacy_casino_payout_is_rejected(game_api):
     before = _balance(sessions)
     assert client.post("/api/arcade/win", json={"amount": 500, "game": "dice"}, headers=_headers()).status_code == 410
     assert _balance(sessions) == before
+
+
+def test_roulette_table_has_exact_90_percent_rtp():
+    assert sum(percent * chance for percent, chance in arcade.ROULETTE_PAYOUTS) == 90 * 100
+    assert sum(chance for _, chance in arcade.ROULETTE_PAYOUTS) == 100
+
+
+def test_roulette_is_atomic_idempotent_and_awards_failure_fragment(game_api, monkeypatch):
+    client, sessions = game_api
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "choices", lambda *args, **kwargs: [50])
+    payload = {"amount": 10, "request_id": "roulette_low_0001"}
+    first = client.post("/api/arcade/roulette/spin", json=payload, headers=_headers())
+    assert first.status_code == 200, first.text
+    assert first.json()["payout"] == 5
+    assert first.json()["balance"] == 95
+    assert first.json()["failure_fragment_awarded"] == 1
+    replay = client.post("/api/arcade/roulette/spin", json=payload, headers=_headers())
+    assert replay.status_code == 200
+    assert replay.json()["replayed"] is True
+    assert _balance(sessions) == 95
+    with sessions() as db:
+        fragment = db.query(models.Item).filter_by(code="failure_fragment").one()
+        assert db.query(models.InventoryItem).filter_by(user_id=1, item_id=fragment.id).one().quantity == 1
+
+
+def test_roulette_enforces_minimum_and_twenty_percent_maximum(game_api):
+    client, _ = game_api
+    assert client.post(
+        "/api/arcade/roulette/spin",
+        json={"amount": 9, "request_id": "roulette_min_001"},
+        headers=_headers(),
+    ).status_code == 422
+    assert client.post(
+        "/api/arcade/roulette/spin",
+        json={"amount": 21, "request_id": "roulette_max_001"},
+        headers=_headers(),
+    ).status_code == 400

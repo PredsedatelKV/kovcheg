@@ -1492,6 +1492,8 @@ html.dark .toggle button.active {
   user-select: none;
   -webkit-user-drag: none;
 }
+.kovbox-shop-item.kovbox-lootbox_legendary > img { transform:scale(1.16); }
+.inv-cell.item-lootbox_legendary .img-frame img { transform:scale(1.16); }
 .kovbox-shop-name {
   min-height: 34px;
   display: grid;
@@ -3471,6 +3473,21 @@ html.dark .lootbox-title { color:#e8f0ff; }
 .lootbox-theme-epic { --lb-accent:#cc63ff; --lb-deep:#35116d; --lb-light:#f7d8ff; }
 .lootbox-theme-legendary { --lb-accent:#ffd54a; --lb-deep:#7f360c; --lb-light:#fff5b6; }
 .lootbox-theme-seasonal { --lb-accent:#45e6f1; --lb-deep:#075a7d; --lb-light:#fff099; }
+.lootbox-theme-consolation { --lb-accent:#8993a9; --lb-deep:#111522; --lb-light:#e2e7f2; }
+.lootbox-chest-overlay.lootbox-theme-legendary {
+  background:
+    radial-gradient(circle at 50% 35%, rgba(255,255,255,.42), transparent 34%),
+    linear-gradient(140deg,#e2456f,#f8a72e,#58bd72,#37a8e8,#9657d8,#e2459c);
+  background-size:100% 100%, 260% 260%;
+  animation:lootbox-legendary-bg 8s linear infinite;
+}
+.lootbox-chest-overlay.lootbox-theme-mega {
+  --lb-accent:#ffd650; --lb-deep:#6c3b03; --lb-light:#fff2a8;
+  background:
+    radial-gradient(circle at 50% 32%, rgba(255,250,188,.82), transparent 34%),
+    linear-gradient(160deg,#2f1800,#a55d06 54%,#3b1d00);
+}
+@keyframes lootbox-legendary-bg { to { background-position:0 0, 260% 0; } }
 .lootbox-chest-rays {
   position:absolute;
   z-index:-1;
@@ -3487,30 +3504,28 @@ html.dark .lootbox-title { color:#e8f0ff; }
 .lootbox-chest-head {
   position:relative;
   width:min(100%, 520px);
-  min-height:72px;
-  padding:4px 92px 4px 8px;
+  min-height:88px;
+  padding:4px 8px;
   text-align:center;
 }
 .lootbox-chest-kicker { font-size:11px; font-weight:900; letter-spacing:.16em; text-transform:uppercase; opacity:.72; }
 .lootbox-chest-head h2 { margin:4px 0 0; font-size:clamp(21px, 6vw, 30px); line-height:1.08; color:#fff; text-shadow:0 3px 14px rgba(0,0,0,.35); }
 .lootbox-remaining {
-  position:absolute;
-  top:0;
-  right:0;
-  width:76px;
-  min-height:62px;
+  position:relative;
+  width:42px;
+  min-height:34px;
+  margin:8px auto 0;
   display:flex;
   flex-direction:column;
   align-items:center;
   justify-content:center;
   border:2px solid rgba(255,255,255,.65);
-  border-radius:16px;
+  border-radius:12px;
   background:rgba(7,11,21,.46);
   box-shadow:0 8px 22px rgba(0,0,0,.25), inset 0 1px rgba(255,255,255,.26);
   backdrop-filter:blur(8px);
 }
-.lootbox-remaining span { font-size:25px; line-height:1; font-weight:950; }
-.lootbox-remaining small { margin-top:3px; font-size:9px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; opacity:.75; }
+.lootbox-remaining span { font-size:18px; line-height:1; font-weight:950; }
 .lootbox-remaining.is-rainbow {
   border-color:transparent;
   background:linear-gradient(#15182a, #15182a) padding-box,
@@ -3581,6 +3596,58 @@ html.dark .lootbox-title { color:#e8f0ff; }
 .lootbox-reward-card strong { max-width:100%; font-size:17px; line-height:1.2; text-align:center; color:#fff; }
 .lootbox-reward-card span { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:var(--lb-light); }
 .lootbox-reward-card.reward-item { box-shadow:0 0 42px color-mix(in srgb, var(--lb-accent) 70%, transparent), 0 20px 50px rgba(0,0,0,.3); }
+.lootbox-reward-card.is-special-spinning.is-visible {
+  border-color:#fff;
+  background:#fff;
+  box-shadow:0 0 22px #fff, 0 0 70px rgba(255,255,255,.9);
+  animation:lootbox-special-spin 4s cubic-bezier(.18,.72,.2,1) forwards;
+}
+.lootbox-reward-card.is-special-spinning:not(.is-special-revealed) > * { opacity:0; }
+.lootbox-reward-card.is-special-revealed {
+  opacity:1;
+  transform:none;
+  border-color:transparent;
+  background:linear-gradient(rgba(22,24,42,.9),rgba(22,24,42,.9)) padding-box,
+    linear-gradient(100deg,#ff3b30,#ffcc00,#34c759,#32ade6,#af52de,#ff2d8d) border-box;
+  box-shadow:0 0 42px rgba(255,255,255,.62), 0 20px 50px rgba(0,0,0,.3);
+}
+.lootbox-reward-card.is-special-revealed > * { opacity:1; transition:opacity .25s ease; }
+@keyframes lootbox-special-spin {
+  0% { opacity:0; transform:translateY(130px) scale(.48) rotateY(0); }
+  20% { opacity:1; transform:translateY(0) scale(.92) rotateY(540deg); }
+  85% { opacity:1; transform:translateY(0) scale(1.05) rotateY(1800deg); }
+  100% { opacity:1; transform:translateY(0) scale(1) rotateY(2160deg); }
+}
+.lootbox-reward-stage.lootbox-reward-summary {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:9px;
+  width:min(100%,440px);
+  align-content:center;
+  animation:lootbox-summary-in .55s cubic-bezier(.18,.89,.32,1.25) both;
+}
+.lootbox-reward-summary .lootbox-reward-card {
+  width:100%; min-height:112px; padding:9px 7px; gap:3px; opacity:1; transform:none; border-radius:16px;
+}
+.lootbox-reward-summary .lootbox-reward-card img { width:58px; height:58px; }
+.lootbox-reward-summary .lootbox-reward-card strong { font-size:12px; }
+.lootbox-reward-summary .lootbox-reward-card span { font-size:8px; }
+@keyframes lootbox-summary-in { from { opacity:0; transform:scale(.58); } to { opacity:1; transform:scale(1); } }
+.mega-choice-overlay { grid-template-rows:auto 1fr auto; }
+.mega-choice-head { display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.mega-choice-progress { margin-top:8px; padding:4px 11px; border-radius:999px; background:rgba(30,16,0,.42); font-weight:900; }
+.mega-choice-stage { width:min(100%,620px); display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:center; }
+.mega-choice-card {
+  min-width:0; min-height:220px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;
+  padding:16px 10px; border:2px solid rgba(255,242,168,.72); border-radius:22px; color:#fff;
+  background:linear-gradient(155deg,rgba(255,224,110,.34),rgba(69,34,0,.72));
+  box-shadow:0 18px 48px rgba(34,17,0,.38); cursor:pointer; transition:transform .18s,filter .18s;
+}
+.mega-choice-card:active { transform:scale(.96); }
+.mega-choice-card.is-selected { transform:scale(1.08); filter:brightness(1.35); }
+.mega-choice-card img { width:min(30vw,125px); height:min(30vw,125px); object-fit:contain; filter:drop-shadow(0 10px 14px rgba(0,0,0,.28)); }
+.mega-choice-card strong { font-size:14px; line-height:1.2; }
+.mega-choice-card span { font-size:10px; font-weight:850; text-transform:uppercase; opacity:.8; }
 .lootbox-chest-floor { align-self:end; width:min(100%, 420px); display:flex; flex-direction:column; align-items:center; }
 .lootbox-chest-button {
   width:min(62vw, 260px);
@@ -3646,19 +3713,26 @@ html.dark .lootbox-title { color:#e8f0ff; }
 /* ============ CLICKER ============ */
 .clicker-feature-tile {
   min-height: 126px;
-  grid-template-columns: 92px minmax(0, 1fr);
-  grid-template-rows: auto auto;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  justify-items:center;
   align-items: center;
-  column-gap: 16px;
   padding: 16px;
   background: var(--surface);
   background:
     radial-gradient(circle at 92% 10%, rgba(255, 213, 74, .24), transparent 38%),
     linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--primary) 10%, var(--surface)));
 }
-.clicker-feature-tile .game-tile-icon { grid-row: 1 / 3; }
-.clicker-feature-tile .game-tile-title { align-self: end; font-size: 20px; text-align: left; }
-.clicker-feature-meta { align-self: start; color: var(--text-soft); font-size: 12px; line-height: 1.35; }
+.clicker-feature-tile .game-tile-icon { grid-row:1; width:92px; height:92px; margin:auto; }
+.roulette-feature-tile { position:relative; min-height:112px; grid-template-columns:92px 1fr; gap:14px; }
+.roulette-feature-tile .game-tile-title { font-size:20px; text-align:left; }
+.arcade-new-badge, .arcade-new-inline {
+  display:inline-flex; align-items:center; justify-content:center; border-radius:999px;
+  background:#25a85a; color:#fff; font-size:10px; font-weight:850; letter-spacing:.03em;
+  padding:4px 9px; box-shadow:0 5px 14px rgba(37,168,90,.25);
+}
+.arcade-new-badge { position:absolute; top:9px; right:10px; }
+.arcade-new-inline { vertical-align:middle; margin-left:6px; }
 
 .clicker-screen {
   min-height: calc(100dvh - 154px);
@@ -4046,7 +4120,7 @@ html.dark .clicker-balance strong { color: #4ff08f; }
   .clicker-screen-head h2 { font-size: 21px; }
   .clicker-screen-head .card-sub { font-size: 11px; }
   .clicker-day { grid-column: 2; justify-self: start; margin-top: -4px; }
-  .clicker-feature-tile { grid-template-columns: 74px minmax(0, 1fr); min-height: 108px; }
+  .clicker-feature-tile { grid-template-columns:1fr; min-height:108px; }
   .clicker-screen .clicker-coin { width: 150px; height: 150px; }
   .clicker-upgrade { padding-inline: 9px; }
 }
