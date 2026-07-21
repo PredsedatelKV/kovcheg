@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import random
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,7 +14,7 @@ router = APIRouter(prefix="/api/battlepass", tags=["battlepass"])
 
 
 def _get_active_season(db: Session) -> models.BattlePassSeason | None:
-    return db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active == True).first()
+    return db.query(models.BattlePassSeason).filter(models.BattlePassSeason.is_active.is_(True)).first()
 
 
 def _get_ubp(db: Session, user_id: int, season: models.BattlePassSeason) -> models.UserBattlePass:
@@ -164,54 +163,12 @@ def open_lootbox(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    item = db.query(models.Item).filter(models.Item.id == body.item_id).first()
-    if not item or not item.lootbox_pool_code:
-        raise HTTPException(404, "Лутбокс не найден")
+    # This module is not mounted by the current app, but keeping a second
+    # value-moving implementation here would become an exploit if it were ever
+    # imported again.  All URLs therefore share the same atomic/idempotent path.
+    from app.api.profile import open_lootbox_for_user
 
-    inv = db.query(models.InventoryItem).filter(
-        models.InventoryItem.user_id == user.id,
-        models.InventoryItem.item_id == item.id,
-    ).first()
-    if not inv or inv.quantity < 1:
-        raise HTTPException(409, "У вас нет этого ковбокса")
-
-    pool = db.query(models.LootboxPool).filter(models.LootboxPool.code == item.lootbox_pool_code).first()
-    if not pool or not pool.entries:
-        raise HTTPException(500, "Пул ковбокса пуст")
-
-    entries = pool.entries
-    total_weight = sum(e.weight for e in entries)
-    roll = random.randint(1, total_weight)
-    cumulative = 0
-    chosen = entries[0]
-    for e in entries:
-        cumulative += e.weight
-        if roll <= cumulative:
-            chosen = e
-            break
-
-    inv.quantity -= 1
-    if inv.quantity <= 0:
-        db.delete(inv)
-
-    target_inv = db.query(models.InventoryItem).filter(
-        models.InventoryItem.user_id == user.id,
-        models.InventoryItem.item_id == chosen.item_id,
-    ).first()
-    if target_inv:
-        target_inv.quantity += 1
-    else:
-        db.add(models.InventoryItem(user_id=user.id, item_id=chosen.item_id, quantity=1))
-
-    db.commit()
-
-    return schemas.LootboxOpenResult(item=schemas.ItemOut(
-        id=chosen.item.id, code=chosen.item.code, name=chosen.item.name,
-        description=chosen.item.description, icon=chosen.item.icon,
-        image_url=chosen.item.image_url, rarity=chosen.item.rarity,
-        category=chosen.item.category, can_gift=chosen.item.can_gift,
-        can_activate=chosen.item.can_activate,
-    ), quantity=1)
+    return open_lootbox_for_user(body=body, user=user, db=db)
 
 
 @router.post("/arcade-xp")

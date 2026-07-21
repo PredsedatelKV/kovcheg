@@ -651,10 +651,24 @@ class LootboxRewardOut(BaseModel):
     amount: int = Field(gt=0)
     label: str
     item: ItemOut | None = None
+    reveal_order: int = Field(default=0, ge=0)
+    presentation_kind: Literal["fragment", "xp", "kovbucks", "kovcoins", "item"] = "item"
+    icon: str = ""
+    rarity: str = "Обычный"
+
+
+class LootboxPresentationOut(BaseModel):
+    code: str
+    name: str
+    rarity: str
+    image_url: str
+    open_image_url: str
 
 
 class LootboxOpenResult(BaseModel):
+    opening_id: int
     request_id: str
+    pool: LootboxPresentationOut
     rewards: list[LootboxRewardOut]
     replayed: bool = False
     balance: int = 0
@@ -690,6 +704,11 @@ class AdminLootboxBody(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     rarity: str = Field(default="Обычный", min_length=1, max_length=32)
     image_url: str = Field(default="/static/img/items/lootbox_common.svg", min_length=1, max_length=512)
+    # Optional on writes so an older admin client cannot accidentally switch a
+    # chest_v2 pool back to the legacy roulette while saving unrelated fields.
+    opening_mode: Literal["legacy_v1", "chest_v2", "choice_v2"] | None = None
+    open_image_url: str | None = Field(default=None, max_length=512)
+    bonus_item_chance: StrictInt | None = Field(default=None, ge=0, le=100)
     is_active: bool = True
     is_droppable: bool = True
     is_archived: bool = False
@@ -719,7 +738,12 @@ class AdminLootboxBody(BaseModel):
         if self.is_active and not active_entries:
             raise ValueError("Активный ковбокс не может иметь пустой список наград")
         random_total = sum(entry.weight for entry in active_entries if not entry.is_guaranteed)
-        if self.is_active and random_total != 100:
+        chest_without_bonus = (
+            self.opening_mode == "chest_v2"
+            and (self.bonus_item_chance or 0) == 0
+            and random_total == 0
+        )
+        if self.is_active and random_total != 100 and not chest_without_bonus:
             raise ValueError(f"Сумма шансов обычных наград должна быть ровно 100% (сейчас {random_total}%)")
         if sum(1 for entry in active_entries if entry.is_guaranteed) > 10:
             raise ValueError("Гарантированных наград не может быть больше 10")
@@ -759,6 +783,9 @@ class AdminLootboxOut(BaseModel):
     description: str
     rarity: str
     image_url: str
+    opening_mode: str
+    open_image_url: str
+    bonus_item_chance: int
     is_active: bool
     is_droppable: bool
     is_archived: bool

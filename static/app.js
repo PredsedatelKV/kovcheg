@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=252";
-import { renderProfile } from "/static/pages/profile.js?v=252";
-import { renderKoverna } from "/static/pages/koverna.js?v=252";
-import { renderArcade } from "/static/pages/arcade.js?v=252";
-import { renderAdmin } from "/static/pages/admin.js?v=252";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=252";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=252";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=252";
-import { get, post, prefetch, peekCached } from "/static/api.js?v=252";
+import { renderHome } from "/static/pages/home.js?v=253";
+import { renderProfile } from "/static/pages/profile.js?v=253";
+import { renderKoverna } from "/static/pages/koverna.js?v=253";
+import { renderArcade } from "/static/pages/arcade.js?v=253";
+import { renderAdmin } from "/static/pages/admin.js?v=253";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=253";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=253";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=253";
+import { get, post, prefetch, peekCached } from "/static/api.js?v=253";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -138,7 +138,7 @@ async function ensureTabRendered(name) {
       div.removeAttribute("aria-busy");
       if (currentTab !== name) {
         div.style.display = "none";
-        if (name !== "arcade") notifyTabHidden(name);
+        notifyTabHidden(name);
       }
       return div;
     } catch (error) {
@@ -281,10 +281,7 @@ async function setTab(name, force) {
 
   if (prevTab) {
     rememberScroll(prevTab);
-    // Arcade's only tab-hide callback stops its lightweight reward countdown
-    // and the module has no matching resume hook. Keep that timer alive while
-    // its mounted DOM is hidden; games themselves clean up with their modal.
-    if (prevTab !== "arcade") notifyTabHidden(prevTab);
+    notifyTabHidden(prevTab);
   }
 
   currentTab = name;

@@ -1379,6 +1379,16 @@ def _lootbox_item_code(code: str) -> str:
     return code if code.startswith("lootbox_") else f"lootbox_{code}"
 
 
+CANONICAL_CHEST_CODES = {"common", "rare", "epic", "legendary", "seasonal"}
+
+
+def _validate_managed_lootbox_mode(code: str, opening_mode: str) -> None:
+    if code in CANONICAL_CHEST_CODES and opening_mode != "chest_v2":
+        raise HTTPException(400, "Основные ковбоксы должны использовать механику сундука")
+    if code == "mega" and opening_mode != "choice_v2":
+        raise HTTPException(400, "Мегаковбокс зарезервирован для механики выбора предметов")
+
+
 def _ensure_lootbox_item_link(db: Session, pool: models.LootboxPool) -> models.Item:
     """Repair pre-editor pools that were created without their inventory item."""
     if pool.item is not None:
@@ -1442,6 +1452,9 @@ def _lootbox_out(db: Session, pool: models.LootboxPool) -> schemas.AdminLootboxO
         description=pool.description,
         rarity=pool.rarity,
         image_url=pool.image_url,
+        opening_mode=pool.opening_mode,
+        open_image_url=pool.open_image_url or pool.image_url,
+        bonus_item_chance=pool.bonus_item_chance,
         is_active=pool.is_active,
         is_droppable=pool.is_droppable,
         is_archived=pool.is_archived,
@@ -1462,7 +1475,14 @@ def _lootbox_out(db: Session, pool: models.LootboxPool) -> schemas.AdminLootboxO
     )
 
 
-def _validate_lootbox_entries(db: Session, entries: list[schemas.AdminLootboxEntryBody]) -> None:
+def _validate_lootbox_entries(
+    db: Session,
+    entries: list[schemas.AdminLootboxEntryBody],
+    *,
+    opening_mode: str | None = None,
+    bonus_item_chance: int = 0,
+    is_active: bool = False,
+) -> None:
     item_ids = {entry.item_id for entry in entries if entry.reward_kind == "item" and entry.item_id}
     items = db.query(models.Item).filter(models.Item.id.in_(item_ids)).all() if item_ids else []
     item_map = {item.id: item for item in items}
@@ -1472,6 +1492,32 @@ def _validate_lootbox_entries(db: Session, entries: list[schemas.AdminLootboxEnt
     for item in items:
         if item.lootbox_pool_code:
             raise HTTPException(400, "Ковбокс не может выпадать из ковбокса: это создаёт циклическую награду")
+    if opening_mode != "chest_v2" or not is_active:
+        return
+
+    active = [entry for entry in entries if entry.is_active]
+    guaranteed = [entry for entry in active if entry.is_guaranteed]
+    optional = [entry for entry in active if not entry.is_guaranteed]
+    fragment_entries = [
+        entry for entry in guaranteed
+        if entry.reward_kind == "item" and item_map.get(entry.item_id) is not None
+        and item_map[entry.item_id].code == "box_fragment"
+    ]
+    xp_entries = [entry for entry in guaranteed if entry.reward_kind == "xp"]
+    kovbucks_entries = [entry for entry in guaranteed if entry.reward_kind == "kovbucks"]
+    if len(guaranteed) != 3 or len(fragment_entries) != 1 or len(xp_entries) != 1 or len(kovbucks_entries) != 1:
+        raise HTTPException(
+            400,
+            "Сундук должен иметь ровно три гарантированные награды: фрагменты, XP и ковбаксы",
+        )
+    for entry in optional:
+        item = item_map.get(entry.item_id) if entry.reward_kind == "item" else None
+        if item is None or item.code == "box_fragment" or item.lootbox_pool_code:
+            raise HTTPException(400, "Дополнительной наградой сундука может быть только обычный предмет")
+    if not 0 <= bonus_item_chance <= 100:
+        raise HTTPException(400, "Шанс дополнительного предмета должен быть от 0 до 100%")
+    if bonus_item_chance > 0 and not optional:
+        raise HTTPException(400, "Для заданного шанса добавьте хотя бы один обычный предмет")
 
 
 def _replace_lootbox_entries(
@@ -1492,6 +1538,14 @@ def _apply_lootbox_body(pool: models.LootboxPool, body: schemas.AdminLootboxBody
         "max_user_level", "sort_order", "daily_open_limit", "guaranteed_slots", "allow_duplicates",
     ):
         setattr(pool, field, getattr(body, field))
+    if body.opening_mode is not None:
+        pool.opening_mode = body.opening_mode
+    if body.open_image_url is not None:
+        pool.open_image_url = body.open_image_url or body.image_url
+    elif not pool.open_image_url:
+        pool.open_image_url = body.image_url
+    if body.bonus_item_chance is not None:
+        pool.bonus_item_chance = body.bonus_item_chance
     pool.description = ""
     pool.starts_at = _naive_utc(body.starts_at)
     pool.ends_at = _naive_utc(body.ends_at)
@@ -1532,7 +1586,15 @@ def admin_create_lootbox(
     begin_game_write(db)
     if db.query(models.LootboxPool).filter(models.LootboxPool.code == body.code).first():
         raise HTTPException(409, "Ковбокс с таким внутренним ID уже существует")
-    _validate_lootbox_entries(db, body.entries)
+    effective_mode = body.opening_mode or "legacy_v1"
+    effective_bonus_chance = body.bonus_item_chance or 0
+    _validate_managed_lootbox_mode(body.code, effective_mode)
+    _validate_lootbox_entries(
+        db, body.entries,
+        opening_mode=effective_mode,
+        bonus_item_chance=effective_bonus_chance,
+        is_active=body.is_active,
+    )
     item_code = _lootbox_item_code(body.code)
     item = db.query(models.Item).filter(models.Item.code == item_code).first()
     if item and item.lootbox_pool_code not in (None, body.code):
@@ -1573,7 +1635,19 @@ def admin_update_lootbox(
         raise HTTPException(404, "Ковбокс не найден")
     if body.code != pool.code:
         raise HTTPException(400, "Внутренний ID нельзя менять; используйте дублирование")
-    _validate_lootbox_entries(db, body.entries)
+    effective_mode = body.opening_mode or pool.opening_mode
+    effective_bonus_chance = (
+        body.bonus_item_chance
+        if body.bonus_item_chance is not None
+        else pool.bonus_item_chance
+    )
+    _validate_managed_lootbox_mode(pool.code, effective_mode)
+    _validate_lootbox_entries(
+        db, body.entries,
+        opening_mode=effective_mode,
+        bonus_item_chance=effective_bonus_chance,
+        is_active=body.is_active,
+    )
     _apply_lootbox_body(pool, body)
     if pool.item is None:
         raise HTTPException(409, "У конфигурации отсутствует предмет ковбокса")
@@ -1603,6 +1677,9 @@ def admin_duplicate_lootbox(
         name=body.name,
         rarity=source.rarity,
         image_url=source.image_url,
+        opening_mode=source.opening_mode,
+        open_image_url=source.open_image_url,
+        bonus_item_chance=source.bonus_item_chance,
         is_active=False,
         is_droppable=False,
         assembly_weight=source.assembly_weight,

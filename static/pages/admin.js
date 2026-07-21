@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=252";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=253";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -20,18 +20,18 @@ function slugify(s = "") {
 }
 
 const SECTIONS = [
-  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=252" },
-  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=252" },
-  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=252" },
-  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=252" },
-  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=252" },
-  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=252" },
-  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=252" },
-  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=252" },
-  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=252" },
-  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=252" },
-  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=252" },
-  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=252" },
+  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=253" },
+  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=253" },
+  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=253" },
+  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=253" },
+  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=253" },
+  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=253" },
+  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=253" },
+  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=253" },
+  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=253" },
+  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=253" },
+  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=253" },
+  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=253" },
 ];
 
 let META = { items: [], users: [], categories: [] };
@@ -1541,7 +1541,7 @@ function refreshLootboxProbabilities(overlay) {
     ? "Сумма шансов: 100% — готово."
     : `Сумма шансов: ${total}% из 100%. Осталось: ${100 - total}%.`;
   const countEl = overlay.querySelector("#lb-entry-count");
-  if (countEl) countEl.textContent = `Вариантов наград в рулетке: ${rows.filter((row) => collectLootboxEntry(row).is_active).length}`;
+  if (countEl) countEl.textContent = `Настроенных наград сундука: ${rows.filter((row) => collectLootboxEntry(row).is_active).length}`;
 }
 
 function validateLootboxPayload(payload) {
@@ -1560,7 +1560,16 @@ function validateLootboxPayload(payload) {
   }
   const guaranteedCount = active.filter((entry) => entry.is_guaranteed).length;
   const randomChanceTotal = active.filter((entry) => !entry.is_guaranteed).reduce((sum, entry) => sum + entry.weight, 0);
-  if (payload.is_active && randomChanceTotal !== 100) return `Сумма шансов обычных наград должна быть ровно 100% (сейчас ${randomChanceTotal}%)`;
+  const mayHaveNoBonusPool = payload.opening_mode === "chest_v2" && payload.bonus_item_chance === 0 && randomChanceTotal === 0;
+  if (payload.is_active && randomChanceTotal !== 100 && !mayHaveNoBonusPool) return `Сумма шансов обычных наград должна быть ровно 100% (сейчас ${randomChanceTotal}%)`;
+  if (payload.opening_mode === "chest_v2") {
+    const guaranteed = active.filter((entry) => entry.is_guaranteed);
+    const itemEntries = guaranteed.filter((entry) => entry.reward_kind === "item");
+    if (guaranteed.length !== 3 || itemEntries.length !== 1 || !guaranteed.some((entry) => entry.reward_kind === "xp") || !guaranteed.some((entry) => entry.reward_kind === "kovbucks")) {
+      return "Для сундука нужны ровно три гарантированные строки: фрагменты, XP и ковбаксы";
+    }
+    if (!Number.isInteger(payload.bonus_item_chance) || payload.bonus_item_chance < 0 || payload.bonus_item_chance > 100) return "Шанс дополнительного предмета должен быть от 0 до 100%";
+  }
   if (!payload.allow_duplicates && guaranteedCount && payload.guaranteed_slots > guaranteedCount) return "Без дубликатов число гарантированных слотов превышает число гарантированных наград";
   if (payload.min_user_level != null && payload.max_user_level != null && payload.max_user_level < payload.min_user_level) return "Максимальный уровень меньше минимального";
   if (payload.starts_at && payload.ends_at && new Date(payload.ends_at) <= new Date(payload.starts_at)) return "Дата окончания должна быть позже начала";
@@ -1575,6 +1584,8 @@ function openLootboxEditor(body, existing = null) {
     sale_price: null, sale_currency: "kovbucks", min_user_level: null,
     max_user_level: null, sort_order: 0, starts_at: null, ends_at: null,
     daily_open_limit: 0, guaranteed_slots: 1, allow_duplicates: true,
+    opening_mode: "chest_v2", open_image_url: "/static/img/items/lootbox_common_open.svg",
+    bonus_item_chance: 0,
     entries: [],
   };
   const overlay = document.createElement("div");
@@ -1588,6 +1599,9 @@ function openLootboxEditor(body, existing = null) {
         ${field("Название", `<input class="input" id="lb-name" value="${escapeHtml(box.name)}"/>`)}
         ${field("Редкость", `<select class="input" id="lb-rarity">${LOOTBOX_RARITIES.map((rarity) => `<option ${box.rarity === rarity ? "selected" : ""}>${rarity}</option>`).join("")}</select>`)}
         ${field("Ассет", `<input class="input" id="lb-image" value="${escapeHtml(box.image_url)}"/>`)}
+        ${field("Ассет открытого ковбокса", `<input class="input" id="lb-open-image" value="${escapeHtml(box.open_image_url || box.image_url)}"/>`)}
+        ${field("Механика", `<select class="input" id="lb-opening-mode" disabled><option value="chest_v2" ${box.opening_mode === "chest_v2" ? "selected" : ""}>Сундук: награды по очереди</option><option value="choice_v2" ${box.opening_mode === "choice_v2" ? "selected" : ""}>Выбор предметов (Мега)</option></select>`)}
+        ${field("Шанс дополнительного предмета, %", `<input class="input" id="lb-bonus-chance" type="number" min="0" max="100" value="${box.bonus_item_chance || 0}" ${box.opening_mode === "choice_v2" ? "disabled" : ""}/>`)}
         ${field("Активен для открытия", `<select class="input" id="lb-active"><option value="true" ${box.is_active ? "selected" : ""}>Да</option><option value="false" ${!box.is_active ? "selected" : ""}>Нет</option></select>`)}
         ${field("Доступен для сборки/выпадения", `<select class="input" id="lb-droppable"><option value="true" ${box.is_droppable ? "selected" : ""}>Да</option><option value="false" ${!box.is_droppable ? "selected" : ""}>Нет</option></select>`)}
         ${field("Вес при сборке", `<input class="input" id="lb-assembly-weight" type="number" min="1" value="${box.assembly_weight || 10}"/>`)}
@@ -1599,12 +1613,13 @@ function openLootboxEditor(body, existing = null) {
         ${field("Начало", `<input class="input" id="lb-start" type="datetime-local" value="${lootboxDateValue(box.starts_at)}"/>`)}
         ${field("Окончание", `<input class="input" id="lb-end" type="datetime-local" value="${lootboxDateValue(box.ends_at)}"/>`)}
         ${field("Лимит открытий в сутки (0 — нет)", `<input class="input" id="lb-daily-limit" type="number" min="0" max="1000" value="${box.daily_open_limit || 0}"/>`)}
-        ${field("Гарантированных слотов", `<input class="input" id="lb-slots" type="number" min="1" max="10" value="${box.guaranteed_slots || 1}"/>`)}
-        ${field("Разрешить дубликаты", `<select class="input" id="lb-duplicates"><option value="true" ${box.allow_duplicates ? "selected" : ""}>Да</option><option value="false" ${!box.allow_duplicates ? "selected" : ""}>Нет</option></select>`)}
+        ${field("Гарантированных слотов", `<input class="input" id="lb-slots" type="number" min="1" max="10" value="${box.opening_mode === "chest_v2" ? 3 : (box.guaranteed_slots || 1)}" ${box.opening_mode === "chest_v2" ? "disabled" : ""}/>`)}
+        ${field("Разрешить дубликаты", `<select class="input" id="lb-duplicates" ${box.opening_mode === "chest_v2" ? "disabled" : ""}><option value="true" ${box.allow_duplicates ? "selected" : ""}>Да</option><option value="false" ${!box.allow_duplicates ? "selected" : ""}>Нет</option></select>`)}
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin:10px 0">
-        <img id="lb-image-preview" src="${escapeHtml(box.image_url)}" alt="" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--border);border-radius:12px" onerror="this.src='/static/img/ui/box.svg'"/>
-        <div class="admin-sub">Предпросмотр ассета · уже выданные ковбоксы используют актуальную конфигурацию; архивирование не удаляет экземпляры</div>
+        <img id="lb-image-preview" src="${escapeHtml(box.image_url)}" alt="Закрытый" title="Закрытый" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--border);border-radius:12px" onerror="this.src='/static/img/ui/box.svg'"/>
+        <img id="lb-open-image-preview" src="${escapeHtml(box.open_image_url || box.image_url)}" alt="Открытый" title="Открытый" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--border);border-radius:12px" onerror="this.src='/static/img/ui/box.svg'"/>
+        <div class="admin-sub">Закрытый и открытый вид · выдача всегда серверная: фрагменты → XP → ковбаксы → возможный предмет</div>
       </div>
       <div class="row gap wrap"><h4 style="margin:0;flex:1">Содержимое</h4><button class="btn btn-sm btn-secondary" id="lb-add-entry" type="button">+ Награда</button></div>
       <div id="lb-entry-count" class="admin-sub"></div>
@@ -1629,6 +1644,9 @@ function openLootboxEditor(body, existing = null) {
   overlay.addEventListener("change", () => { dirty = true; refreshLootboxProbabilities(overlay); });
   overlay.querySelector("#lb-image").addEventListener("input", (event) => {
     overlay.querySelector("#lb-image-preview").src = event.target.value || "/static/img/ui/box.svg";
+  });
+  overlay.querySelector("#lb-open-image").addEventListener("input", (event) => {
+    overlay.querySelector("#lb-open-image-preview").src = event.target.value || "/static/img/ui/box.svg";
   });
 
   function bindEntryButtons() {
@@ -1655,6 +1673,9 @@ function openLootboxEditor(body, existing = null) {
       name: overlay.querySelector("#lb-name").value.trim(),
       rarity: overlay.querySelector("#lb-rarity").value,
       image_url: overlay.querySelector("#lb-image").value.trim(),
+      open_image_url: overlay.querySelector("#lb-open-image").value.trim(),
+      opening_mode: overlay.querySelector("#lb-opening-mode").value,
+      bonus_item_chance: Number(overlay.querySelector("#lb-bonus-chance").value) || 0,
       is_active: overlay.querySelector("#lb-active").value === "true",
       is_droppable: overlay.querySelector("#lb-droppable").value === "true",
       is_archived: Boolean(box.is_archived),
@@ -1667,8 +1688,8 @@ function openLootboxEditor(body, existing = null) {
       starts_at: overlay.querySelector("#lb-start").value ? new Date(overlay.querySelector("#lb-start").value).toISOString() : null,
       ends_at: overlay.querySelector("#lb-end").value ? new Date(overlay.querySelector("#lb-end").value).toISOString() : null,
       daily_open_limit: Number(overlay.querySelector("#lb-daily-limit").value) || 0,
-      guaranteed_slots: Number(overlay.querySelector("#lb-slots").value),
-      allow_duplicates: overlay.querySelector("#lb-duplicates").value === "true",
+      guaranteed_slots: box.opening_mode === "chest_v2" ? 3 : Number(overlay.querySelector("#lb-slots").value),
+      allow_duplicates: box.opening_mode === "chest_v2" ? false : overlay.querySelector("#lb-duplicates").value === "true",
       entries: Array.from(overlay.querySelectorAll(".lootbox-entry")).map(collectLootboxEntry),
     };
     const error = validateLootboxPayload(payload);
@@ -1727,7 +1748,7 @@ async function renderLootboxes(body) {
           <div style="min-width:0;flex:1">
             <h3 class="admin-card-title">${escapeHtml(row.name)} ${row.is_archived ? '<span class="admin-badge">архив</span>' : row.is_active ? '<span class="admin-badge">активен</span>' : ""}</h3>
             <div class="admin-sub">${escapeHtml(row.code)} · ${escapeHtml(row.rarity)} · версия ${row.version} · сумма шансов ${row.weight_total}%</div>
-            <div class="admin-sub">${row.entries.length} наград · гарант. слотов ${row.guaranteed_slots} · сборка вес ${row.assembly_weight}</div>
+            <div class="admin-sub">${row.entries.length} наград · ${row.opening_mode === "chest_v2" ? `сундук · доп. предмет ${row.bonus_item_chance}%` : "механика выбора"} · сборка вес ${row.assembly_weight}</div>
           </div>
         </div>
         <div class="row gap wrap" style="margin-top:10px">

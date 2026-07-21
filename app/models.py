@@ -512,6 +512,9 @@ class LootboxPool(Base):
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     rarity: Mapped[str] = mapped_column(String(32), default="Обычный", nullable=False)
     image_url: Mapped[str] = mapped_column(String(512), default="/static/img/items/lootbox_common.svg", nullable=False)
+    open_image_url: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    opening_mode: Mapped[str] = mapped_column(String(16), default="legacy_v1", nullable=False)
+    bonus_item_chance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), unique=True, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_droppable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -569,23 +572,41 @@ class LootboxOpen(Base):
     lootbox_item_id: Mapped[int] = mapped_column(ForeignKey("items.id"), nullable=False)
     pool_id: Mapped[int] = mapped_column(ForeignKey("lootbox_pools.id"), nullable=False)
     pool_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    pool_code_snapshot: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    pool_name_snapshot: Mapped[str] = mapped_column(String(128), default="", nullable=False)
+    pool_rarity_snapshot: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    pool_image_snapshot: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    pool_open_image_snapshot: Mapped[str] = mapped_column(String(512), default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True, nullable=False)
 
     rewards: Mapped[list["LootboxOpenReward"]] = relationship(
-        "LootboxOpenReward", back_populates="opening", cascade="all, delete-orphan"
+        "LootboxOpenReward",
+        back_populates="opening",
+        cascade="all, delete-orphan",
+        order_by="LootboxOpenReward.reveal_order",
     )
+    pool: Mapped["LootboxPool"] = relationship("LootboxPool")
+    lootbox_item: Mapped["Item"] = relationship("Item", foreign_keys=[lootbox_item_id])
 
 
 class LootboxOpenReward(Base):
     """The exact rewards granted by a recorded Kovbox opening."""
 
     __tablename__ = "lootbox_open_rewards"
+    __table_args__ = (
+        UniqueConstraint("opening_id", "reveal_order", name="uq_lootbox_open_reward_order"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     opening_id: Mapped[int] = mapped_column(ForeignKey("lootbox_opens.id"), index=True, nullable=False)
     reward_kind: Mapped[str] = mapped_column(String(16), nullable=False)
     item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    reveal_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    presentation_kind: Mapped[str] = mapped_column(String(16), default="", nullable=False)
+    label_snapshot: Mapped[str] = mapped_column(String(256), default="", nullable=False)
+    icon_snapshot: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    rarity_snapshot: Mapped[str] = mapped_column(String(32), default="", nullable=False)
 
     opening: Mapped["LootboxOpen"] = relationship("LootboxOpen", back_populates="rewards")
     item: Mapped["Item | None"] = relationship("Item")
@@ -615,6 +636,11 @@ class ClickerState(Base):
 
     # Прогресс игрока
     total_earned: Mapped[int] = mapped_column(Integer, default=0)   # суммарно заработано в кликере (уровни/ранги)
+    progression_day: Mapped[int] = mapped_column(Integer, default=0)
+    progression_date: Mapped[str] = mapped_column(String(10), default="")
+    passive_fraction: Mapped[float] = mapped_column(default=0.0)
+    tap_fraction: Mapped[float] = mapped_column(default=0.0)
+    passive_earned_today: Mapped[int] = mapped_column(Integer, default=0)
 
     # Анти-фрод (защита от автокликера): token-bucket + счётчик подозрительности
     tap_tokens: Mapped[float] = mapped_column(default=45.0)          # «токены» тапов, копятся со скоростью человека

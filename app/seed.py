@@ -263,6 +263,9 @@ def migrate_schema(db: Session) -> None:
             ("description", "TEXT NOT NULL DEFAULT ''"),
             ("rarity", "VARCHAR(32) NOT NULL DEFAULT 'Обычный'"),
             ("image_url", "VARCHAR(512) NOT NULL DEFAULT '/static/img/items/lootbox_common.svg'"),
+            ("open_image_url", "VARCHAR(512) NOT NULL DEFAULT ''"),
+            ("opening_mode", "VARCHAR(16) NOT NULL DEFAULT 'legacy_v1'"),
+            ("bonus_item_chance", "INTEGER NOT NULL DEFAULT 0"),
             ("item_id", "INTEGER REFERENCES items(id)"),
             ("is_active", "BOOLEAN NOT NULL DEFAULT 1"),
             ("is_droppable", "BOOLEAN NOT NULL DEFAULT 1"),
@@ -289,6 +292,10 @@ def migrate_schema(db: Session) -> None:
         if added:
             db.execute(text("UPDATE lootbox_pools SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
             db.commit()
+        db.execute(text(
+            "UPDATE lootbox_pools SET open_image_url = image_url "
+            "WHERE open_image_url IS NULL OR open_image_url = ''"
+        ))
         db.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_lootbox_pools_item_id "
             "ON lootbox_pools(item_id) WHERE item_id IS NOT NULL"
@@ -328,6 +335,82 @@ def migrate_schema(db: Session) -> None:
         ))
         db.commit()
 
+    # Preserve the exact reveal order and visuals selected by the server.  Old
+    # openings are backfilled deterministically without changing their value.
+    locols = {row[1] for row in db.execute(text("PRAGMA table_info(lootbox_opens)")).fetchall()}
+    if locols:
+        opening_columns = [
+            ("pool_code_snapshot", "VARCHAR(64) NOT NULL DEFAULT ''"),
+            ("pool_name_snapshot", "VARCHAR(128) NOT NULL DEFAULT ''"),
+            ("pool_rarity_snapshot", "VARCHAR(32) NOT NULL DEFAULT ''"),
+            ("pool_image_snapshot", "VARCHAR(512) NOT NULL DEFAULT ''"),
+            ("pool_open_image_snapshot", "VARCHAR(512) NOT NULL DEFAULT ''"),
+        ]
+        for col, ddl in opening_columns:
+            if col not in locols:
+                db.execute(text(f"ALTER TABLE lootbox_opens ADD COLUMN {col} {ddl}"))
+        db.execute(text("""
+            UPDATE lootbox_opens
+            SET pool_code_snapshot = COALESCE(NULLIF(pool_code_snapshot, ''),
+                    (SELECT code FROM lootbox_pools WHERE id = lootbox_opens.pool_id), ''),
+                pool_name_snapshot = COALESCE(NULLIF(pool_name_snapshot, ''),
+                    (SELECT name FROM lootbox_pools WHERE id = lootbox_opens.pool_id), ''),
+                pool_rarity_snapshot = COALESCE(NULLIF(pool_rarity_snapshot, ''),
+                    (SELECT rarity FROM lootbox_pools WHERE id = lootbox_opens.pool_id), 'Обычный'),
+                pool_image_snapshot = COALESCE(NULLIF(pool_image_snapshot, ''),
+                    (SELECT image_url FROM lootbox_pools WHERE id = lootbox_opens.pool_id), ''),
+                pool_open_image_snapshot = COALESCE(NULLIF(pool_open_image_snapshot, ''),
+                    (SELECT open_image_url FROM lootbox_pools WHERE id = lootbox_opens.pool_id),
+                    (SELECT image_url FROM lootbox_pools WHERE id = lootbox_opens.pool_id), '')
+        """))
+        db.commit()
+
+    lorcols = {row[1] for row in db.execute(text("PRAGMA table_info(lootbox_open_rewards)")).fetchall()}
+    if lorcols:
+        reward_columns = [
+            ("reveal_order", "INTEGER NOT NULL DEFAULT 0"),
+            ("presentation_kind", "VARCHAR(16) NOT NULL DEFAULT ''"),
+            ("label_snapshot", "VARCHAR(256) NOT NULL DEFAULT ''"),
+            ("icon_snapshot", "VARCHAR(512) NOT NULL DEFAULT ''"),
+            ("rarity_snapshot", "VARCHAR(32) NOT NULL DEFAULT ''"),
+        ]
+        reveal_order_added = "reveal_order" not in lorcols
+        for col, ddl in reward_columns:
+            if col not in lorcols:
+                db.execute(text(f"ALTER TABLE lootbox_open_rewards ADD COLUMN {col} {ddl}"))
+        invalid_order = db.execute(text("""
+            SELECT 1
+            FROM lootbox_open_rewards
+            GROUP BY opening_id
+            HAVING MIN(reveal_order) != 0
+                OR MAX(reveal_order) != COUNT(*) - 1
+                OR COUNT(DISTINCT reveal_order) != COUNT(*)
+            LIMIT 1
+        """)).first()
+        if reveal_order_added or invalid_order:
+            db.execute(text("""
+                UPDATE lootbox_open_rewards AS reward
+                SET reveal_order = (
+                    SELECT COUNT(*) - 1
+                    FROM lootbox_open_rewards AS earlier
+                    WHERE earlier.opening_id = reward.opening_id AND earlier.id <= reward.id
+                )
+            """))
+        db.execute(text("""
+            UPDATE lootbox_open_rewards
+            SET presentation_kind = CASE
+                    WHEN reward_kind = 'item' AND item_id = (SELECT id FROM items WHERE code = 'box_fragment') THEN 'fragment'
+                    WHEN reward_kind = 'item' THEN 'item'
+                    ELSE reward_kind
+                END
+            WHERE presentation_kind IS NULL OR presentation_kind = ''
+        """))
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_lootbox_open_reward_order "
+            "ON lootbox_open_rewards(opening_id, reveal_order)"
+        ))
+        db.commit()
+
     # game_sessions.state — JSON-состояние для шашек/пинг-понга
     gcols = {row[1] for row in db.execute(text("PRAGMA table_info(game_sessions)")).fetchall()}
     if gcols and "state" not in gcols:
@@ -341,6 +424,11 @@ def migrate_schema(db: Session) -> None:
             ("kovcoins", "INTEGER NOT NULL DEFAULT 1"),
             ("earned_today", "INTEGER NOT NULL DEFAULT 0"),
             ("total_earned", "INTEGER NOT NULL DEFAULT 0"),
+            ("progression_day", "INTEGER NOT NULL DEFAULT 0"),
+            ("progression_date", "VARCHAR(10) NOT NULL DEFAULT ''"),
+            ("passive_fraction", "REAL NOT NULL DEFAULT 0"),
+            ("tap_fraction", "REAL NOT NULL DEFAULT 0"),
+            ("passive_earned_today", "INTEGER NOT NULL DEFAULT 0"),
             ("tap_tokens", "REAL NOT NULL DEFAULT 45.0"),
             ("suspicion", "INTEGER NOT NULL DEFAULT 0"),
             ("locked_until", "DATETIME"),
@@ -547,7 +635,16 @@ def seed(db: Session) -> None:
             )
         )
 
-    # Seed lootbox items
+    # Seed lootbox items.  Existing rows belong to the editor: defaults are
+    # applied only on first creation, never again on application restart.
+    canonical_item_codes = (
+        "lootbox_common", "lootbox_rare", "lootbox_epic",
+        "lootbox_legendary", "lootbox_seasonal", "lootbox_mega",
+    )
+    existing_canonical_item_codes = {
+        row[0]
+        for row in db.query(models.Item.code).filter(models.Item.code.in_(canonical_item_codes)).all()
+    }
     lootbox_common = _get_or_create_item(
         db, "lootbox_common",
         name="Обычный ковбокс",
@@ -613,15 +710,16 @@ def seed(db: Session) -> None:
         "mega": (lootbox_mega, "Мегаковбокс с выбором предметов", "Мега", "/static/img/items/lootbox_mega.png"),
     }
     for code, (item, name, rarity, image_url) in canonical_lootbox_items.items():
-        item.name = name
+        if item.code not in existing_canonical_item_codes:
+            item.name = name
+            item.icon = image_url
+            item.image_url = image_url
+            item.rarity = rarity
+            item.can_gift = True
+            item.can_activate = False
         item.description = ""
-        item.icon = image_url
-        item.image_url = image_url
-        item.rarity = rarity
         item.category = "Ковбоксы"
         item.lootbox_pool_code = code
-        item.can_gift = True
-        item.can_activate = False
     seeded_lootbox_items = {
         "common": lootbox_common,
         "rare": lootbox_rare,
@@ -637,6 +735,8 @@ def seed(db: Session) -> None:
     _seed_catalog_snacks(db, fragment)
 
     # Seed lootbox pools
+    created_pool_codes: set[str] = set()
+
     def _fill_pool(code: str) -> models.LootboxPool:
         pool = db.query(models.LootboxPool).filter(models.LootboxPool.code == code).first()
         if pool:
@@ -644,6 +744,7 @@ def seed(db: Session) -> None:
         pool = models.LootboxPool(code=code, name=code.capitalize())
         db.add(pool)
         db.flush()
+        created_pool_codes.add(code)
         return pool
 
     pools = {
@@ -664,33 +765,87 @@ def seed(db: Session) -> None:
         "seasonal": 45,
         "mega": 79,
     }
-    for code, pool in pools.items():
-        pool.sale_price = default_sale_prices[code]
-        pool.sale_currency = "kovbucks"
-    default_pool_rewards = {
-        "common": (("kovbucks", 1, 3, 70), ("xp", 5, 10, 30)),
-        "rare": (("kovbucks", 3, 6, 65), ("xp", 10, 20, 35)),
-        "epic": (("kovbucks", 6, 12, 60), ("xp", 20, 40, 40)),
-        "legendary": (("kovbucks", 12, 25, 55), ("xp", 40, 80, 45)),
-        "seasonal": (("kovbucks", 12, 25, 55), ("xp", 40, 80, 45)),
-        # The future selection mechanic has not been specified yet. A valid
-        # configuration keeps the editor and catalogue consistent, while the
-        # opening endpoint explicitly blocks this pool until that mechanic is
-        # implemented.
-        "mega": (("kovbucks", 1, 1, 100),),
+    for code in created_pool_codes:
+        pools[code].sale_price = default_sale_prices[code]
+        pools[code].sale_currency = "kovbucks"
+
+    # chest_v2 is a one-time, explicit migration.  Once a canonical pool has
+    # this mode, later starts preserve every administrator change instead of
+    # silently restoring seed values.
+    chest_defaults = {
+        "common": ((1, 1), (5, 10), (1, 3), 5),
+        "rare": ((1, 2), (10, 20), (3, 6), 15),
+        "epic": ((2, 3), (20, 40), (6, 12), 30),
+        "legendary": ((3, 4), (40, 80), (12, 25), 100),
+        "seasonal": ((2, 3), (30, 60), (8, 18), 50),
     }
-    for code, pool in pools.items():
-        if not pool.entries:
-            for order, (kind, amount_min, amount_max, weight) in enumerate(default_pool_rewards[code]):
+    prize_codes = [row[0] for row in (*CATALOG_SNACKS, *CATALOG_SWEETS)]
+    prize_items = (
+        db.query(models.Item)
+        .filter(models.Item.code.in_(prize_codes))
+        .order_by(models.Item.id)
+        .all()
+    )
+
+    def _migrate_chest_pool(code: str, pool: models.LootboxPool) -> None:
+        if pool.opening_mode == "chest_v2":
+            return
+        fragment_range, xp_range, kovbucks_range, bonus_chance = chest_defaults[code]
+        pool.entries.clear()
+        pool.entries.extend([
+            models.LootboxPoolEntry(
+                reward_kind="item", item_id=fragment.id,
+                amount_min=fragment_range[0], amount_max=fragment_range[1],
+                weight=100, is_guaranteed=True, is_active=True, sort_order=0,
+            ),
+            models.LootboxPoolEntry(
+                reward_kind="xp", item_id=None,
+                amount_min=xp_range[0], amount_max=xp_range[1],
+                weight=100, is_guaranteed=True, is_active=True, sort_order=1,
+            ),
+            models.LootboxPoolEntry(
+                reward_kind="kovbucks", item_id=None,
+                amount_min=kovbucks_range[0], amount_max=kovbucks_range[1],
+                weight=100, is_guaranteed=True, is_active=True, sort_order=2,
+            ),
+        ])
+        if prize_items:
+            base_weight, remainder = divmod(100, len(prize_items))
+            for index, prize_item in enumerate(prize_items):
                 pool.entries.append(models.LootboxPoolEntry(
-                    reward_kind=kind,
-                    item_id=None,
-                    amount_min=amount_min,
-                    amount_max=amount_max,
-                    weight=weight,
-                    is_active=True,
-                    sort_order=order,
+                    reward_kind="item", item_id=prize_item.id,
+                    amount_min=1, amount_max=1,
+                    weight=base_weight + (1 if index < remainder else 0),
+                    is_guaranteed=False, is_active=True, sort_order=100 + index,
                 ))
+        else:
+            bonus_chance = 0
+        pool.opening_mode = "chest_v2"
+        pool.bonus_item_chance = bonus_chance
+        pool.guaranteed_slots = 3  # retained only for legacy-client display
+        pool.allow_duplicates = False
+        pool.open_image_url = pool.open_image_url or pool.image_url
+        if code not in created_pool_codes:
+            pool.version += 1
+
+    for code in chest_defaults:
+        _migrate_chest_pool(code, pools[code])
+
+    mega_pool = pools["mega"]
+    if mega_pool.opening_mode != "choice_v2":
+        mega_pool.opening_mode = "choice_v2"
+        mega_pool.bonus_item_chance = 0
+        mega_pool.open_image_url = mega_pool.open_image_url or mega_pool.image_url
+        mega_pool.is_droppable = False
+        if "mega" not in created_pool_codes:
+            mega_pool.version += 1
+    if not mega_pool.entries:
+        # Keeps the old editor schema valid; the opening endpoint rejects
+        # choice_v2 before this placeholder can ever grant value.
+        mega_pool.entries.append(models.LootboxPoolEntry(
+            reward_kind="kovbucks", amount_min=1, amount_max=1,
+            weight=100, is_active=True, sort_order=0,
+        ))
     pool_defaults = {
         code: (name, rarity, image_url)
         for code, (_, name, rarity, image_url) in canonical_lootbox_items.items()
@@ -699,15 +854,24 @@ def seed(db: Session) -> None:
         item = seeded_lootbox_items.get(code)
         if item:
             pool.item_id = item.id
-            pool.name = pool_defaults[code][0]
-            pool.description = ""
-            pool.rarity = pool_defaults[code][1]
-            pool.image_url = pool_defaults[code][2]
-            pool.is_active = True
-            pool.is_archived = False
-            pool.sort_order = tuple(pools).index(code)
-            if code == "mega":
-                pool.is_droppable = False
+            if code in created_pool_codes:
+                pool.name = pool_defaults[code][0]
+                pool.description = ""
+                pool.rarity = pool_defaults[code][1]
+                pool.image_url = pool_defaults[code][2]
+                pool.open_image_url = pool.image_url
+                pool.is_active = True
+                pool.is_archived = False
+                pool.sort_order = tuple(pools).index(code)
+                if code == "mega":
+                    pool.is_droppable = False
+
+    # One-time visual migration for the chest opening screen.  A custom image
+    # selected in the editor is authoritative and must survive every restart.
+    for code in chest_defaults:
+        pool = pools[code]
+        if not pool.open_image_url or pool.open_image_url == pool.image_url:
+            pool.open_image_url = f"/static/img/items/lootbox_{code}_open.svg"
 
     # Remove obsolete editor-created duplicates. The live data is checked
     # before this migration: these pools/items have no inventory, listings,

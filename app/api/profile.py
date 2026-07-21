@@ -44,7 +44,7 @@ def _user_to_out(user: models.User) -> schemas.UserOut:
         balance=user.wallet.balance if user.wallet else 0,
         xp=user.xp,
         is_admin=is_admin(user),
-        can_use_clicker=user.telegram_id == 849162365,
+        can_use_clicker=True,
     )
 
 
@@ -543,11 +543,37 @@ def _validate_openable_pool(db: Session, pool: models.LootboxPool, user: models.
             raise HTTPException(409, "Количество награды ковбокса настроено некорректно")
         if entry.reward_kind == "item" and (entry.item is None or entry.item.lootbox_pool_code):
             raise HTTPException(409, "Предмет награды ковбокса удалён или создаёт циклическую награду")
-    if not 1 <= pool.guaranteed_slots <= 10:
-        raise HTTPException(409, "Количество слотов ковбокса настроено некорректно")
-    random_total = sum(entry.weight for entry in entries if not entry.is_guaranteed)
-    if random_total != 100:
+    random_entries = [entry for entry in entries if not entry.is_guaranteed]
+    random_total = sum(entry.weight for entry in random_entries)
+    if pool.opening_mode == "chest_v2":
+        if not 0 <= pool.bonus_item_chance <= 100:
+            raise HTTPException(409, "Шанс дополнительного предмета настроен некорректно")
+        guaranteed = [entry for entry in entries if entry.is_guaranteed]
+        fragment_entries = [
+            entry for entry in guaranteed
+            if entry.reward_kind == "item" and entry.item is not None and entry.item.code == "box_fragment"
+        ]
+        xp_entries = [entry for entry in guaranteed if entry.reward_kind == "xp"]
+        kovbucks_entries = [entry for entry in guaranteed if entry.reward_kind == "kovbucks"]
+        if len(guaranteed) != 3 or len(fragment_entries) != 1 or len(xp_entries) != 1 or len(kovbucks_entries) != 1:
+            raise HTTPException(409, "Содержимое сундука настроено некорректно")
+        for entry in random_entries:
+            if (
+                entry.reward_kind != "item"
+                or entry.item is None
+                or entry.item.code == "box_fragment"
+                or entry.item.lootbox_pool_code
+            ):
+                raise HTTPException(409, "Дополнительной наградой сундука может быть только обычный предмет")
+        if pool.bonus_item_chance > 0 and not random_entries:
+            raise HTTPException(409, "Для сундука не настроены дополнительные предметы")
+    else:
+        if not 1 <= pool.guaranteed_slots <= 10:
+            raise HTTPException(409, "Количество слотов ковбокса настроено некорректно")
+    if random_entries and random_total != 100:
         raise HTTPException(409, f"Сумма шансов ковбокса должна быть ровно 100% (сейчас {random_total}%)")
+    if pool.opening_mode != "chest_v2" and not random_entries:
+        raise HTTPException(409, "У ковбокса отсутствует таблица случайных наград")
     return entries
 
 
@@ -568,24 +594,73 @@ def _reward_label(kind: str, amount: int, item: models.Item | None = None) -> st
     return f"{amount} {units[kind]}"
 
 
+def _reward_presentation_kind(kind: str, item: models.Item | None = None) -> str:
+    if kind == "item":
+        return "fragment" if item is not None and item.code == "box_fragment" else "item"
+    return kind
+
+
+def _reward_icon(kind: str, item: models.Item | None = None) -> str:
+    if item is not None:
+        return item.image_url or item.icon or "/static/img/ui/box.svg"
+    return {
+        "xp": "/static/img/ui/xp.png",
+        "kovbucks": "/static/img/ui/kovbaks.png",
+        "kovcoins": "/static/img/ui/kovcoin.svg",
+    }.get(kind, "/static/img/ui/box.svg")
+
+
+def _reward_priority(kind: str, item: models.Item | None = None) -> int:
+    presentation_kind = _reward_presentation_kind(kind, item)
+    return {"fragment": 0, "xp": 1, "kovbucks": 2, "kovcoins": 2, "item": 3}[presentation_kind]
+
+
 def _opening_result(
     opening: models.LootboxOpen,
     user: models.User,
     *,
     replayed: bool,
 ) -> schemas.LootboxOpenResult:
-    rewards = [
-        schemas.LootboxRewardOut(
+    ordered_rewards = sorted(opening.rewards, key=lambda reward: (reward.reveal_order, reward.id))
+    rewards = []
+    for reward in ordered_rewards:
+        presentation_kind = reward.presentation_kind or _reward_presentation_kind(
+            reward.reward_kind, reward.item
+        )
+        rewards.append(schemas.LootboxRewardOut(
             kind=reward.reward_kind,
             amount=reward.amount,
-            label=_reward_label(reward.reward_kind, reward.amount, reward.item),
+            label=reward.label_snapshot or _reward_label(reward.reward_kind, reward.amount, reward.item),
             item=_item_to_out(reward.item) if reward.item else None,
-        )
-        for reward in opening.rewards
-    ]
-    first_item = next((reward for reward in rewards if reward.item), None)
+            reveal_order=reward.reveal_order,
+            presentation_kind=presentation_kind,
+            icon=reward.icon_snapshot or _reward_icon(reward.reward_kind, reward.item),
+            rarity=reward.rarity_snapshot or (reward.item.rarity if reward.item else "Обычный"),
+        ))
+    pool = opening.pool
+    pool_code = opening.pool_code_snapshot or (pool.code if pool else "")
+    pool_name = opening.pool_name_snapshot or (pool.name if pool else "Ковбокс")
+    pool_rarity = opening.pool_rarity_snapshot or (pool.rarity if pool else "Обычный")
+    pool_image = opening.pool_image_snapshot or (pool.image_url if pool else "/static/img/ui/box.svg")
+    pool_open_image = (
+        opening.pool_open_image_snapshot
+        or (pool.open_image_url if pool else "")
+        or pool_image
+    )
+    first_item = next(
+        (reward for reward in rewards if reward.item and reward.item.code != "box_fragment"),
+        next((reward for reward in rewards if reward.item), None),
+    )
     return schemas.LootboxOpenResult(
+        opening_id=opening.id,
         request_id=opening.request_id,
+        pool=schemas.LootboxPresentationOut(
+            code=pool_code,
+            name=pool_name,
+            rarity=pool_rarity,
+            image_url=pool_image,
+            open_image_url=pool_open_image,
+        ),
         rewards=rewards,
         replayed=replayed,
         balance=user.wallet.balance if user.wallet else 0,
@@ -602,6 +677,10 @@ def open_lootbox_for_user(
 ) -> schemas.LootboxOpenResult:
     """Consume and reward one box in a serialized, idempotent transaction."""
     begin_game_write(db)
+    if db.get_bind().dialect.name != "sqlite":
+        # One user row serializes inventory, wallet, XP and daily-limit writes
+        # even when two different Kovboxes are opened concurrently.
+        db.query(models.User).filter(models.User.id == user.id).with_for_update().one()
     existing = db.query(models.LootboxOpen).filter(
         models.LootboxOpen.user_id == user.id,
         models.LootboxOpen.request_id == body.request_id,
@@ -609,7 +688,9 @@ def open_lootbox_for_user(
     if existing:
         if existing.lootbox_item_id != body.item_id:
             raise HTTPException(409, "Этот идентификатор запроса уже использован для другого ковбокса")
-        return _opening_result(existing, user, replayed=True)
+        result = _opening_result(existing, user, replayed=True)
+        db.rollback()
+        return result
 
     item = db.query(models.Item).filter(models.Item.id == body.item_id).first()
     if item is None or not item.lootbox_pool_code:
@@ -617,7 +698,9 @@ def open_lootbox_for_user(
     pool = _lootbox_pool_for_item(db, item)
     if pool is None:
         raise HTTPException(409, "Для ковбокса отсутствует серверная конфигурация")
-    if pool.code == "mega":
+    if pool.item_id != item.id:
+        raise HTTPException(409, "Ковбокс связан с другой серверной конфигурацией")
+    if pool.code == "mega" or pool.opening_mode == "choice_v2":
         raise HTTPException(409, "Механика выбора предметов для мегаковбокса скоро будет доступна")
     entries = _validate_openable_pool(db, pool, user)
 
@@ -632,26 +715,38 @@ def open_lootbox_for_user(
         if opened_today >= pool.daily_open_limit:
             raise HTTPException(429, "Суточный лимит открытия этого ковбокса исчерпан")
 
-    inventory = db.query(models.InventoryItem).filter(
-        models.InventoryItem.user_id == user.id,
-        models.InventoryItem.item_id == item.id,
-    ).first()
+    inventory = (
+        db.query(models.InventoryItem)
+        .filter(
+            models.InventoryItem.user_id == user.id,
+            models.InventoryItem.item_id == item.id,
+        )
+        .with_for_update()
+        .one_or_none()
+    )
     if inventory is None or inventory.quantity < 1:
         raise HTTPException(409, "У вас нет этого ковбокса")
 
     guaranteed = [entry for entry in entries if entry.is_guaranteed]
     random_entries = [entry for entry in entries if not entry.is_guaranteed]
     selected = []
-    available = list(guaranteed)
-    for _ in range(pool.guaranteed_slots if guaranteed else 0):
-        if not available:
-            break
-        chosen = _weighted_pick(available)
-        selected.append(chosen)
-        if not pool.allow_duplicates:
-            available.remove(chosen)
-    if random_entries:
-        selected.append(_weighted_pick(random_entries))
+    if pool.opening_mode == "chest_v2":
+        selected.extend(sorted(guaranteed, key=lambda entry: (entry.sort_order, entry.id)))
+        if pool.bonus_item_chance == 100 or (
+            pool.bonus_item_chance > 0 and secrets.randbelow(100) < pool.bonus_item_chance
+        ):
+            selected.append(_weighted_pick(random_entries))
+    else:
+        available = list(guaranteed)
+        for _ in range(pool.guaranteed_slots if guaranteed else 0):
+            if not available:
+                break
+            chosen = _weighted_pick(available)
+            selected.append(chosen)
+            if not pool.allow_duplicates:
+                available.remove(chosen)
+        if random_entries:
+            selected.append(_weighted_pick(random_entries))
     if not selected:
         raise HTTPException(409, "У ковбокса нет доступных наград")
 
@@ -664,11 +759,18 @@ def open_lootbox_for_user(
         lootbox_item_id=item.id,
         pool_id=pool.id,
         pool_version=pool.version,
+        pool_code_snapshot=pool.code,
+        pool_name_snapshot=pool.name,
+        pool_rarity_snapshot=pool.rarity,
+        pool_image_snapshot=pool.image_url,
+        pool_open_image_snapshot=pool.open_image_url or pool.image_url,
     )
     db.add(opening)
     db.flush()
 
-    for entry in selected:
+    granted_rewards: list[tuple[str, int, models.Item | None, int]] = []
+    total_kovbucks_for_presentation = 0
+    for selected_index, entry in enumerate(selected):
         amount = entry.amount_min + secrets.randbelow(entry.amount_max - entry.amount_min + 1)
         if entry.reward_kind == "item":
             reward_inventory = db.query(models.InventoryItem).filter(
@@ -681,6 +783,7 @@ def open_lootbox_for_user(
                 reward_inventory.quantity += amount
             else:
                 db.add(models.InventoryItem(user_id=user.id, item_id=entry.item_id, quantity=amount))
+            granted_rewards.append(("item", amount, entry.item, selected_index))
         elif entry.reward_kind == "kovbucks":
             wallet = ensure_wallet(db, user)
             if wallet.balance > 2_000_000_000 - amount:
@@ -691,8 +794,12 @@ def open_lootbox_for_user(
                 amount=amount,
                 note=f"lootbox:{pool.code}:open:{opening.id}",
             ))
+            total_kovbucks_for_presentation += amount
         elif entry.reward_kind == "xp":
-            award_xp(db, user, amount)
+            xp_result = award_xp(db, user, amount)
+            if xp_result["xp_added"] > 0:
+                granted_rewards.append(("xp", xp_result["xp_added"], None, selected_index))
+            total_kovbucks_for_presentation += xp_result["coins"]
         elif entry.reward_kind == "kovcoins":
             clicker = db.query(models.ClickerState).filter(models.ClickerState.user_id == user.id).first()
             if clicker:
@@ -701,11 +808,24 @@ def open_lootbox_for_user(
                 clicker.kovcoins += amount
             else:
                 db.add(models.ClickerState(user_id=user.id, kovcoins=amount))
+            granted_rewards.append(("kovcoins", amount, None, selected_index))
+    if total_kovbucks_for_presentation > 0:
+        granted_rewards.append(("kovbucks", total_kovbucks_for_presentation, None, len(selected)))
+
+    granted_rewards.sort(key=lambda reward: (
+        _reward_priority(reward[0], reward[2]), reward[3]
+    ))
+    for reveal_order, (kind, amount, reward_item, _selected_index) in enumerate(granted_rewards):
         db.add(models.LootboxOpenReward(
             opening_id=opening.id,
-            reward_kind=entry.reward_kind,
-            item_id=entry.item_id if entry.reward_kind == "item" else None,
+            reward_kind=kind,
+            item_id=reward_item.id if reward_item is not None else None,
             amount=amount,
+            reveal_order=reveal_order,
+            presentation_kind=_reward_presentation_kind(kind, reward_item),
+            label_snapshot=_reward_label(kind, amount, reward_item),
+            icon_snapshot=_reward_icon(kind, reward_item),
+            rarity_snapshot=reward_item.rarity if reward_item is not None else "Обычный",
         ))
     db.commit()
     db.refresh(opening)
@@ -750,6 +870,7 @@ def assemble_fragments(
             or not pool.is_active
             or not pool.is_droppable
             or pool.is_archived
+            or pool.opening_mode == "choice_v2"
             or pool.assembly_weight <= 0
             or (pool.starts_at and now < pool.starts_at)
             or (pool.ends_at and now >= pool.ends_at)

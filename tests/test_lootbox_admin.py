@@ -5,13 +5,14 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import models
 from app.api import admin, profile, shop
 from app.auth import current_user, require_admin
 from app.db import Base, get_db
+from app.seed import migrate_schema, seed
 
 
 @pytest.fixture()
@@ -110,6 +111,40 @@ def _box_payload(
             "sort_order": 0,
         }],
     }
+
+
+def _chest_payload(fragment_id: int, prize_id: int, *, code="chest", bonus_item_chance=100):
+    payload = _box_payload(prize_id, code=code)
+    payload.update({
+        "opening_mode": "chest_v2",
+        "open_image_url": f"/static/img/items/{code}_open.svg",
+        "bonus_item_chance": bonus_item_chance,
+        "guaranteed_slots": 3,
+        "allow_duplicates": False,
+        "entries": [
+            {
+                "reward_kind": "item", "item_id": fragment_id,
+                "amount_min": 1, "amount_max": 1, "weight": 100,
+                "is_guaranteed": True, "is_active": True, "sort_order": 0,
+            },
+            {
+                "reward_kind": "xp", "item_id": None,
+                "amount_min": 5, "amount_max": 5, "weight": 100,
+                "is_guaranteed": True, "is_active": True, "sort_order": 1,
+            },
+            {
+                "reward_kind": "kovbucks", "item_id": None,
+                "amount_min": 4, "amount_max": 4, "weight": 100,
+                "is_guaranteed": True, "is_active": True, "sort_order": 2,
+            },
+            {
+                "reward_kind": "item", "item_id": prize_id,
+                "amount_min": 1, "amount_max": 1, "weight": 100,
+                "is_guaranteed": False, "is_active": True, "sort_order": 3,
+            },
+        ],
+    })
+    return payload
 
 
 def _create_box(client, sessions, **kwargs):
@@ -246,6 +281,261 @@ def test_invalid_weights_and_deleted_item_are_rejected(lootbox_api):
     missing = _box_payload(999_999, code="missing")
     response = client.post("/api/admin/lootboxes", json=missing, headers=_headers(2))
     assert response.status_code == 400
+
+
+def test_chest_v2_contract_is_validated_by_server(lootbox_api):
+    client, sessions = lootbox_api
+    with sessions() as db:
+        fragment = db.query(models.Item).filter_by(code="box_fragment").one()
+        prize = db.query(models.Item).filter_by(code="prize").one()
+        payload = _chest_payload(fragment.id, prize.id, code="invalid_chest")
+    payload["entries"] = [entry for entry in payload["entries"] if entry["item_id"] != fragment.id]
+    payload["allow_duplicates"] = True
+    response = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2))
+    assert response.status_code == 400
+    assert "фрагменты, XP и ковбаксы" in response.json()["detail"]
+
+
+def test_chest_v2_can_have_only_guaranteed_rewards_when_bonus_is_disabled(lootbox_api):
+    client, sessions = lootbox_api
+    with sessions() as db:
+        fragment = db.query(models.Item).filter_by(code="box_fragment").one()
+        prize = db.query(models.Item).filter_by(code="prize").one()
+        payload = _chest_payload(fragment.id, prize.id, code="guaranteed_only", bonus_item_chance=0)
+    payload["entries"] = [entry for entry in payload["entries"] if entry["is_guaranteed"]]
+
+    response = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2))
+
+    assert response.status_code == 200, response.text
+    assert response.json()["weight_total"] == 0
+
+
+def test_chest_v2_returns_ordered_presentation_and_stable_replay(lootbox_api):
+    client, sessions = lootbox_api
+    with sessions() as db:
+        fragment = db.query(models.Item).filter_by(code="box_fragment").one()
+        prize = db.query(models.Item).filter_by(code="prize").one()
+        payload = _chest_payload(fragment.id, prize.id, code="ordered_chest")
+    created = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2))
+    assert created.status_code == 200, created.text
+    box = created.json()
+    _grant_box(sessions, box["item_id"])
+    request = {"item_id": box["item_id"], "request_id": "ordered_chest_0001"}
+
+    first = client.post("/api/profile/inventory/open-lootbox", json=request, headers=_headers())
+    assert first.status_code == 200, first.text
+    result = first.json()
+    assert result["pool"] == {
+        "code": "ordered_chest",
+        "name": "Ковбокс ordered_chest",
+        "rarity": "Обычный",
+        "image_url": "/static/img/items/lootbox_common.svg",
+        "open_image_url": "/static/img/items/ordered_chest_open.svg",
+    }
+    assert [reward["presentation_kind"] for reward in result["rewards"]] == [
+        "fragment", "xp", "kovbucks", "item",
+    ]
+    assert [reward["reveal_order"] for reward in result["rewards"]] == [0, 1, 2, 3]
+    assert [reward["amount"] for reward in result["rewards"]] == [1, 5, 4, 1]
+    assert _quantity(sessions, "box_fragment") == 1
+    assert _quantity(sessions, "prize") == 1
+
+    with sessions() as db:
+        pool = db.query(models.LootboxPool).filter_by(code="ordered_chest").one()
+        pool.name = "Новое имя после открытия"
+        pool.open_image_url = "new-open.svg"
+        prize = db.query(models.Item).filter_by(code="prize").one()
+        prize.name = "Новое имя приза"
+        prize.icon = "new-prize.svg"
+        db.commit()
+
+    replay = client.post("/api/profile/inventory/open-lootbox", json=request, headers=_headers())
+    assert replay.status_code == 200, replay.text
+    replayed = replay.json()
+    assert replayed["replayed"] is True
+    assert replayed["pool"] == result["pool"]
+    assert [reward["label"] for reward in replayed["rewards"]] == [
+        reward["label"] for reward in result["rewards"]
+    ]
+    assert [reward["icon"] for reward in replayed["rewards"]] == [
+        reward["icon"] for reward in result["rewards"]
+    ]
+
+
+def test_chest_v2_reports_actual_xp_and_overflow_kovbucks(lootbox_api):
+    client, sessions = lootbox_api
+    with sessions() as db:
+        fragment = db.query(models.Item).filter_by(code="box_fragment").one()
+        prize = db.query(models.Item).filter_by(code="prize").one()
+        payload = _chest_payload(
+            fragment.id, prize.id, code="xp_overflow_chest", bonus_item_chance=0,
+        )
+        payload["entries"][1]["amount_min"] = 25
+        payload["entries"][1]["amount_max"] = 25
+        db.get(models.User, 1).xp = 2999
+        db.commit()
+    created = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2))
+    assert created.status_code == 200, created.text
+    box = created.json()
+    _grant_box(sessions, box["item_id"])
+
+    response = client.post(
+        "/api/profile/inventory/open-lootbox",
+        json={"item_id": box["item_id"], "request_id": "xp_overflow_0001"},
+        headers=_headers(),
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert [reward["presentation_kind"] for reward in result["rewards"]] == [
+        "fragment", "xp", "kovbucks",
+    ]
+    assert [reward["amount"] for reward in result["rewards"]] == [1, 1, 6]
+    assert result["xp"] == 3000
+    assert result["balance"] == 106
+    assert _quantity(sessions, "prize") == 0
+
+
+def test_seed_migrates_canonical_chests_once_and_preserves_admin_edits(lootbox_api):
+    client, sessions = lootbox_api
+    with sessions() as db:
+        seed(db)
+        canonical = {
+            pool.code: pool
+            for pool in db.query(models.LootboxPool).filter(
+                models.LootboxPool.code.in_((
+                    "common", "rare", "epic", "legendary", "seasonal", "mega",
+                ))
+            )
+        }
+        assert set(canonical) == {"common", "rare", "epic", "legendary", "seasonal", "mega"}
+        for code in ("common", "rare", "epic", "legendary", "seasonal"):
+            pool = canonical[code]
+            assert pool.opening_mode == "chest_v2"
+            assert pool.open_image_url == f"/static/img/items/lootbox_{code}_open.svg"
+            guaranteed = [entry for entry in pool.entries if entry.is_guaranteed]
+            assert len(guaranteed) == 3
+            assert {entry.reward_kind for entry in guaranteed} == {"item", "xp", "kovbucks"}
+            assert next(entry for entry in guaranteed if entry.reward_kind == "item").item.code == "box_fragment"
+        assert canonical["mega"].opening_mode == "choice_v2"
+        assert canonical["mega"].is_droppable is False
+
+        common = canonical["common"]
+        common.name = "Настроенный администратором"
+        common.sale_price = 777
+        common.is_active = False
+        common.bonus_item_chance = 88
+        common.open_image_url = "/static/img/items/admin-custom-open.svg"
+        common.item.name = "Кастомный предмет ковбокса"
+        common.item.icon = "/static/img/items/admin-custom-closed.svg"
+        xp_entry = next(entry for entry in common.entries if entry.reward_kind == "xp")
+        xp_entry.amount_min = xp_entry.amount_max = 333
+        db.commit()
+
+    with sessions() as db:
+        seed(db)
+        common = db.query(models.LootboxPool).filter_by(code="common").one()
+        assert common.name == "Настроенный администратором"
+        assert common.sale_price == 777
+        assert common.is_active is False
+        assert common.bonus_item_chance == 88
+        assert common.open_image_url == "/static/img/items/admin-custom-open.svg"
+        assert common.item.name == "Кастомный предмет ковбокса"
+        assert common.item.icon == "/static/img/items/admin-custom-closed.svg"
+        xp_entry = next(entry for entry in common.entries if entry.reward_kind == "xp")
+        assert (xp_entry.amount_min, xp_entry.amount_max) == (333, 333)
+
+    common_body = next(
+        row for row in client.get("/api/admin/lootboxes", headers=_headers(2)).json()
+        if row["code"] == "common"
+    )
+    common_body["opening_mode"] = "legacy_v1"
+    downgrade = client.patch(
+        f"/api/admin/lootboxes/{common_body['id']}",
+        json=common_body,
+        headers=_headers(2),
+    )
+    assert downgrade.status_code == 400
+
+
+def test_chest_and_clicker_columns_migrate_existing_sqlite_database(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'lootbox-migration.db'}")
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine)
+    with sessions() as db:
+        db.add(models.User(id=1, telegram_id=1, first_name="Игрок", xp=0))
+        db.add(models.Item(id=1, code="box_fragment", name="Фрагмент", icon="fragment.svg"))
+        db.commit()
+    with engine.begin() as connection:
+        for table in (
+            "lootbox_open_rewards", "lootbox_opens", "lootbox_pool_entries",
+            "lootbox_pools", "clicker_states",
+        ):
+            connection.execute(text(f"DROP TABLE {table}"))
+        connection.execute(text("""
+            CREATE TABLE lootbox_pools (
+                id INTEGER PRIMARY KEY, code VARCHAR(64) NOT NULL, name VARCHAR(128) NOT NULL
+            )
+        """))
+        connection.execute(text("""
+            CREATE TABLE lootbox_pool_entries (
+                id INTEGER PRIMARY KEY, pool_id INTEGER NOT NULL, item_id INTEGER NOT NULL,
+                weight INTEGER NOT NULL DEFAULT 10
+            )
+        """))
+        connection.execute(text("""
+            CREATE TABLE lootbox_opens (
+                id INTEGER PRIMARY KEY, request_id VARCHAR(64) NOT NULL, user_id INTEGER NOT NULL,
+                lootbox_item_id INTEGER NOT NULL, pool_id INTEGER NOT NULL,
+                pool_version INTEGER NOT NULL, created_at DATETIME NOT NULL
+            )
+        """))
+        connection.execute(text("""
+            CREATE TABLE lootbox_open_rewards (
+                id INTEGER PRIMARY KEY, opening_id INTEGER NOT NULL, reward_kind VARCHAR(16) NOT NULL,
+                item_id INTEGER, amount INTEGER NOT NULL
+            )
+        """))
+        connection.execute(text("""
+            CREATE TABLE clicker_states (
+                id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL UNIQUE
+            )
+        """))
+        connection.execute(text("INSERT INTO lootbox_pools (id, code, name) VALUES (1, 'old', 'Старый')"))
+        connection.execute(text(
+            "INSERT INTO lootbox_pool_entries (id, pool_id, item_id, weight) VALUES (1, 1, 1, 100)"
+        ))
+        connection.execute(text(
+            "INSERT INTO lootbox_opens "
+            "(id, request_id, user_id, lootbox_item_id, pool_id, pool_version, created_at) "
+            "VALUES (1, 'old_open_1', 1, 1, 1, 1, CURRENT_TIMESTAMP)"
+        ))
+        connection.execute(text(
+            "INSERT INTO lootbox_open_rewards (id, opening_id, reward_kind, item_id, amount) "
+            "VALUES (1, 1, 'item', 1, 2), (2, 1, 'xp', NULL, 5)"
+        ))
+        connection.execute(text("INSERT INTO clicker_states (id, user_id) VALUES (1, 1)"))
+
+    with sessions() as db:
+        migrate_schema(db)
+        pool_columns = {row[1] for row in db.execute(text("PRAGMA table_info(lootbox_pools)"))}
+        assert {"opening_mode", "open_image_url", "bonus_item_chance"} <= pool_columns
+        entry_columns = {row[1] for row in db.execute(text("PRAGMA table_info(lootbox_pool_entries)"))}
+        assert {"reward_kind", "amount_min", "amount_max", "is_guaranteed"} <= entry_columns
+        opening = db.execute(text(
+            "SELECT pool_code_snapshot, pool_name_snapshot, pool_rarity_snapshot "
+            "FROM lootbox_opens WHERE id = 1"
+        )).one()
+        assert tuple(opening) == ("old", "Старый", "Обычный")
+        rewards = db.execute(text(
+            "SELECT reveal_order, presentation_kind FROM lootbox_open_rewards ORDER BY id"
+        )).all()
+        assert [tuple(row) for row in rewards] == [(0, "fragment"), (1, "xp")]
+        clicker_columns = {row[1] for row in db.execute(text("PRAGMA table_info(clicker_states)"))}
+        assert {
+            "progression_day", "progression_date", "passive_fraction",
+            "tap_fraction", "passive_earned_today",
+        } <= clicker_columns
+    engine.dispose()
 
 
 def test_sale_settings_create_real_shop_product_and_disable_it(lootbox_api):
@@ -439,7 +729,13 @@ def test_disabled_box_does_not_consume_inventory(lootbox_api):
 
 def test_mega_box_waits_for_selection_mechanic_without_consuming_inventory(lootbox_api):
     client, sessions = lootbox_api
-    box, _ = _create_box(client, sessions, code="mega")
+    with sessions() as db:
+        prize_id = db.query(models.Item).filter_by(code="prize").one().id
+    payload = _box_payload(prize_id, code="mega")
+    payload["opening_mode"] = "choice_v2"
+    created = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2))
+    assert created.status_code == 200, created.text
+    box = created.json()
     _grant_box(sessions, box["item_id"])
     response = client.post(
         "/api/profile/inventory/open-lootbox",

@@ -284,6 +284,11 @@ def list_lootbox_pools(
         result.append({
             "code": p.code,
             "name": p.name,
+            "rarity": p.rarity,
+            "image_url": p.image_url,
+            "open_image_url": p.open_image_url or p.image_url,
+            "opening_mode": p.opening_mode,
+            "bonus_item_chance": p.bonus_item_chance,
             "entries": [
                 {
                     "item_id": e.item_id,

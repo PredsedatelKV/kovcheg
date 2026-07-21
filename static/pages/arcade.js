@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=252";
+import { post, get } from "/static/api.js?v=253";
 
-import { playUISound } from "/static/pages/settings.js?v=252";
+import { playUISound } from "/static/pages/settings.js?v=253";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -14,6 +14,8 @@ function kovbaksWord(n) {
 }
 
 let balance = 0;
+let mountedArcadeRoot = null;
+let arcadeTabLifecycleInstalled = false;
 
 async function fetchBalance() {
   try {
@@ -839,7 +841,7 @@ function gameRoulette() {
   });
 }
 
-function gameCheckers() {
+function gameCheckers(roundPromise = null) {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <h2>Шашки</h2>
@@ -865,6 +867,8 @@ function gameCheckers() {
   let turn = PLAYER;
   let destroyed = false;
   let finished = false;
+  let roundReady = false;
+  let prizeRound = roundPromise || startFirstWinRound("checkers");
   registerGameCleanup(() => { destroyed = true; });
 
   function initBoard() {
@@ -994,7 +998,7 @@ function gameCheckers() {
   }
 
   function render() {
-    const legal = turn === PLAYER && !finished ? legalMoves(state, PLAYER) : {};
+    const legal = roundReady && turn === PLAYER && !finished ? legalMoves(state, PLAYER) : {};
     if (selected !== null && !legal[selected]) selected = null;
     const targets = selected !== null ? legal[selected] || [] : [];
     let html = "";
@@ -1012,10 +1016,35 @@ function gameCheckers() {
       }
     }
     board.innerHTML = html;
-    if (turn === PLAYER && !finished) board.querySelectorAll("[data-i]").forEach((cell) => {
+    if (roundReady && turn === PLAYER && !finished) board.querySelectorAll("[data-i]").forEach((cell) => {
       cell.addEventListener("click", () => handleClick(Number(cell.dataset.i), cell.dataset.mine === "true"));
     });
-    status.textContent = finished ? "Партия завершена" : turn === PLAYER ? "Твой ход" : "Ход Мошонки…";
+    status.textContent = !roundReady
+      ? "Подготавливаем защищённый раунд…"
+      : finished ? "Партия завершена" : turn === PLAYER ? "Твой ход" : "Ход Мошонки…";
+  }
+
+  async function claimCheckersReward(pieces) {
+    status.textContent = "Проверяем победу и награду…";
+    try {
+      const response = await awardFirstWin(
+        "checkers",
+        { player_score: pieces, opponent_score: 0 },
+        prizeRound,
+      );
+      if (response && response.already_claimed) status.textContent = "Награда за Шашки сегодня уже получена";
+      else status.textContent = "Победа подтверждена · награда начислена";
+    } catch (_) {
+      try {
+        const stateNow = await get("/api/arcade/first-win-status", { force: true });
+        if ((stateNow.won_games || []).includes("checkers")) {
+          status.textContent = "Победа подтверждена · награда уже начислена";
+          return;
+        }
+      } catch (_) {}
+      status.innerHTML = '<span>Не удалось проверить награду.</span> <button class="btn btn-sm" id="checkers-retry-reward">Повторить</button>';
+      status.querySelector("#checkers-retry-reward")?.addEventListener("click", () => claimCheckersReward(pieces), { once: true });
+    }
   }
 
   function finishGame(gameStatus) {
@@ -1026,7 +1055,7 @@ function gameCheckers() {
     if (playerWon) {
       playUISound("win");
       const pieces = state.filter((piece) => owner(piece) === PLAYER).length;
-      awardFirstWin("checkers", { player_score: pieces, opponent_score: 0 });
+      claimCheckersReward(pieces);
     } else playUISound("lose");
     render();
     return true;
@@ -1111,6 +1140,24 @@ function gameCheckers() {
 
   initBoard();
   render();
+  const prepareRound = async () => {
+    try {
+      await prizeRound;
+      if (destroyed) return;
+      roundReady = true;
+      resultEl.innerHTML = "";
+      render();
+    } catch (_) {
+      if (destroyed) return;
+      resultEl.innerHTML = '<div class="game-lose">Не удалось подготовить раунд награды</div><button class="btn btn-sm" id="checkers-retry-round">Повторить</button>';
+      resultEl.querySelector("#checkers-retry-round")?.addEventListener("click", () => {
+        resultEl.innerHTML = "";
+        prizeRound = startFirstWinRound("checkers");
+        prepareRound();
+      }, { once: true });
+    }
+  };
+  prepareRound();
 }
 
 function gamePingPong() {
@@ -1834,13 +1881,16 @@ function gameDice() {
   });
 }
 
-function gameClicker() {
+function gameClicker(hostRoot = null) {
+  runGameCleanup();
   let st = null;
   let pendingTaps = 0;
   let tapTimer = null;
   let energyTimer = null;
   let pollTimer = null;
   let destroyed = false;
+  let flushInFlight = null;
+  let stateInFlight = null;
   let lastSyncEnergy = 0;
   let lastSyncTime = 0;
   let turboUntil = 0;        // ms-таймстамп конца турбо (клиентский)
@@ -1848,10 +1898,12 @@ function gameClicker() {
   let lockedUntil = 0;       // ms-таймстамп конца блокировки анти-фрода
 
   const COIN = "/static/img/ui/kovcoin.svg";
-  const modal = window.kov.showModal(`
-    <button class="close" onclick="closeModal()">×</button>
-    <h2>Кликер</h2>
-    <p class="card-sub">Тапай и зарабатывай ковкойны, выводи в ковбаксы!</p>
+  const content = `
+    <div class="clicker-screen-head">
+      ${hostRoot ? '<button class="clicker-back" id="clicker-back" type="button" aria-label="Вернуться в Аркаду">←</button>' : '<button class="close" onclick="closeModal()">×</button>'}
+      <div><h2>Кликер</h2><p class="card-sub">15 минут в день: развивай активный и пассивный доход без бесконечного фарма</p></div>
+      <span class="clicker-day" id="clicker-day">День 1</span>
+    </div>
     <div class="clicker-level">
       <div class="clicker-level-head">
         <span class="clicker-rank" id="clicker-rank">Юнга</span>
@@ -1869,7 +1921,7 @@ function gameClicker() {
     </div>
     <div class="clicker-daily" id="clicker-daily">
       <div class="clicker-daily-head">
-        <span>Дневной лимит</span>
+        <span>Прогресс дня</span>
         <span id="clicker-daily-text">0 / 0</span>
       </div>
       <div class="clicker-daily-bar"><div class="clicker-daily-fill" id="clicker-daily-fill"></div></div>
@@ -1888,7 +1940,7 @@ function gameClicker() {
     </div>
     <div class="clicker-cashout" id="clicker-cashout">
       <div class="clicker-cashout-info">
-        <span class="clicker-cashout-rate">100 ковкойнов = 1 ковбакс</span>
+        <span class="clicker-cashout-rate" id="clicker-cashout-rate">Курс загружается…</span>
         <span class="clicker-cashout-wallet"><img src="/static/img/ui/kovbaks.png" class="game-icon-sm"/> <strong id="clicker-wallet">0</strong> ковбаксов</span>
       </div>
       <button class="btn clicker-cashout-btn" id="clicker-cashout-btn">Вывести в ковбаксы</button>
@@ -1896,7 +1948,14 @@ function gameClicker() {
     <div class="clicker-boosts" id="clicker-boosts"></div>
     <h3 class="clicker-shop-title">Улучшения (за ковкойны)</h3>
     <div class="clicker-upgrades" id="clicker-upgrades"></div>
-  `);
+  `;
+  let modal;
+  if (hostRoot) {
+    hostRoot.innerHTML = `<section class="clicker-screen">${content}</section>`;
+    modal = hostRoot.querySelector(".clicker-screen");
+  } else {
+    modal = window.kov.showModal(content);
+  }
 
   const elBalance = modal.querySelector("#clicker-balance");
   const elEnergyFill = modal.querySelector("#clicker-energy-fill");
@@ -1917,12 +1976,23 @@ function gameClicker() {
   const elDailyFill = modal.querySelector("#clicker-daily-fill");
   const elWallet = modal.querySelector("#clicker-wallet");
   const elCashoutBtn = modal.querySelector("#clicker-cashout-btn");
+  const elCashoutRate = modal.querySelector("#clicker-cashout-rate");
+  const elDay = modal.querySelector("#clicker-day");
 
   function fmt(n) { return Math.floor(n).toLocaleString("ru-RU"); }
   function now() { return Date.now(); }
   function turboActive() { return now() < turboUntil; }
   function passiveActive() { return now() < passiveUntil; }
   function lockedActive() { return now() < lockedUntil; }
+
+  const backButton = modal.querySelector("#clicker-back");
+  if (backButton) {
+    backButton.addEventListener("click", async () => {
+      await flushTaps();
+      runGameCleanup();
+      renderArcade(hostRoot);
+    });
+  }
 
   function showFloat(text, x, y, isCrit) {
     const f = document.createElement("div");
@@ -1950,7 +2020,7 @@ function gameClicker() {
     const pct = (e / st.max_energy) * 100;
     elEnergyFill.style.width = pct + "%";
     if (turboActive()) {
-      elEnergyText.textContent = "ТУРБО ⚡ x" + (st.boosts && st.boosts.turbo ? st.boosts.turbo.mult : 5);
+      elEnergyText.textContent = "ТУРБО ⚡ x" + (st.boosts && st.boosts.turbo ? st.boosts.turbo.mult : 2);
     } else {
       elEnergyText.textContent = Math.floor(e) + " / " + st.max_energy;
     }
@@ -1993,9 +2063,9 @@ function gameClicker() {
 
   // ---------- Бусты ----------
   const BOOST_INFO = {
-    turbo:   { name: "Турбо", icon: "🚀", desc: "x5 за тап, без энергии" },
+    turbo:   { name: "Турбо", icon: "🚀", desc: "x2 за тап, 30 секунд" },
     refill:  { name: "Заправка", icon: "🔋", desc: "полная энергия" },
-    passive: { name: "Пассив x2", icon: "💰", desc: "×2 доход, 4 ч" },
+    passive: { name: "Пассив x2", icon: "💰", desc: "×2 доход, 1 час" },
   };
 
   function renderBoosts() {
@@ -2064,11 +2134,11 @@ function gameClicker() {
   }
 
   const UPGRADE_INFO = {
-    click:   { name: "Сила клика", icon: "⚔️", desc: "+0.2 ковкойна за тап" },
-    passive: { name: "Пассивный доход", icon: "💰", desc: "+0.3 ковкойна/мин" },
-    energy:  { name: "Макс. энергия", icon: "🔋", desc: "+75 к максимуму" },
-    crit:    { name: "Крит шанс", icon: "🎯", desc: "+1% крит (x4)" },
-    regen:   { name: "Реген энергии", icon: "⚡", desc: "+0.2/сек реген" },
+    click:   { name: "Сила клика", icon: "⚔️", desc: "+0.22 ковкойна за тап" },
+    passive: { name: "Пассивный доход", icon: "💰", desc: "+0.2 ковкойна/мин" },
+    energy:  { name: "Макс. энергия", icon: "🔋", desc: "+60 к максимуму" },
+    crit:    { name: "Крит шанс", icon: "🎯", desc: "+0.5% крит (x2)" },
+    regen:   { name: "Реген энергии", icon: "⚡", desc: "+0.15/сек реген" },
   };
 
   function renderUpgrades() {
@@ -2101,6 +2171,7 @@ function gameClicker() {
       card.addEventListener("click", async () => {
         if (card.classList.contains("disabled")) return;
         const key = card.dataset.upgrade;
+        card.classList.add("disabled");
         try {
           const resp = await post("/api/arcade/clicker/upgrade", { upgrade: key });
           st.kovcoins = resp.kovcoins;
@@ -2127,6 +2198,7 @@ function gameClicker() {
             card.style.animation = "shake 0.3s";
             setTimeout(() => card.style.animation = "", 300);
           }
+          renderUpgrades();
         }
       });
     });
@@ -2136,11 +2208,13 @@ function gameClicker() {
     if (!st) return;
     elWallet.textContent = fmt(st.wallet || 0);
     const kc = st.kovcoins != null ? st.kovcoins : (st.balance || 0);
-    const min = st.cashout_min || 100;
+    const min = st.cashout_min || 2000;
+    const rate = st.cashout_rate || 2000;
+    elCashoutRate.textContent = fmt(rate) + " ковкойнов = 1 ковбакс";
     elCashoutBtn.disabled = kc < min;
     elCashoutBtn.textContent = kc < min
       ? `Нужно ≥ ${min} ковкойнов`
-      : `Вывести ${fmt(Math.floor(kc / (st.cashout_rate || 100)))} ковбаксов`;
+      : `Вывести ${fmt(Math.floor(kc / rate))} ковбаксов`;
   }
 
   // Применить снимок состояния (state/boost/tap-ответы могут содержать разные поля)
@@ -2156,6 +2230,7 @@ function gameClicker() {
     if (s.energy != null) { lastSyncEnergy = s.energy; lastSyncTime = Date.now(); }
     const kc = st.kovcoins != null ? st.kovcoins : (st.balance || 0);
     elBalance.textContent = fmt(kc);
+    elDay.textContent = "День " + (st.progression_day || 1) + " из 7";
     elPower.textContent = "+" + powText(st.click_power || 1);
     elPassiveInfo.textContent = "💤 " + (st.passive_per_min || 0) + "/мин" + (passiveActive() ? " ×2" : "");
     updateEnergyBar();
@@ -2171,7 +2246,8 @@ function gameClicker() {
   async function cashout() {
     if (!st) return;
     const kc = st.kovcoins != null ? st.kovcoins : 0;
-    if (kc < (st.cashout_min || 100)) return;
+    if (kc < (st.cashout_min || 2000)) return;
+    elCashoutBtn.disabled = true;
     try {
       const resp = await post("/api/arcade/clicker/cashout", {});
       applyState(resp);
@@ -2189,54 +2265,65 @@ function gameClicker() {
     } catch (e) {
       const msg = String((e && e.message) || e || "");
       if (window.kov && window.kov.toast) window.kov.toast(msg || "Не удалось вывести");
+      updateWallet();
     }
   }
   elCashoutBtn.addEventListener("click", cashout);
 
   async function loadState() {
-    try {
-      const s = await get("/api/arcade/clicker/state");
-      applyState(s);
-      if (s.passive_earned > 0) {
-        const cx = (elCoinWrap.offsetWidth || 200) / 2;
-        showFloat("+" + s.passive_earned + " пассив", cx, 20, false);
+    if (stateInFlight || destroyed) return stateInFlight;
+    stateInFlight = (async () => {
+      try {
+        const s = await get("/api/arcade/clicker/state");
+        if (destroyed) return null;
+        applyState(s);
+        if (s.passive_earned > 0) {
+          const cx = (elCoinWrap.offsetWidth || 200) / 2;
+          showFloat("+" + s.passive_earned + " пассив", cx, 20, false);
+        }
+        return s;
+      } catch (e) {
+        modal.querySelector(".card-sub").textContent = "Ошибка загрузки: " + (e.message || "");
+        return null;
+      } finally {
+        stateInFlight = null;
       }
-    } catch (e) {
-      modal.querySelector(".card-sub").textContent = "Ошибка загрузки: " + (e.message || "");
-    }
+    })();
+    return stateInFlight;
   }
 
   async function flushTaps() {
     if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
-    if (pendingTaps <= 0 || !st || destroyed) return;
-    const batch = Math.min(pendingTaps, 200);
+    if (flushInFlight) return flushInFlight;
+    if (pendingTaps <= 0 || !st || destroyed) return null;
+    const batch = Math.min(pendingTaps, 50);
     pendingTaps -= batch;
-    try {
-      const resp = await post("/api/arcade/clicker/tap", { taps: batch });
-      st.kovcoins = resp.kovcoins != null ? resp.kovcoins : resp.balance;
-      st.balance = st.kovcoins;
-      st.energy = resp.energy;
-      st.max_energy = resp.max_energy;
-      st.total_earned = resp.total_earned != null ? resp.total_earned : st.total_earned;
-      st.daily_cap = resp.daily_cap != null ? resp.daily_cap : st.daily_cap;
-      st.earned_today = resp.earned_today != null ? resp.earned_today : st.earned_today;
-      st.cap_reached = !!resp.cap_reached;
-      lastSyncEnergy = resp.energy;
-      lastSyncTime = Date.now();
-      if (resp.locked) {
-        lockedUntil = now() + (resp.locked_left || 0) * 1000;
-        updateLockUI();
-      }
-      if (resp.cap_reached) {
+    flushInFlight = (async () => {
+      try {
+        const resp = await post("/api/arcade/clicker/tap", { taps: batch });
+        applyState(resp);
         const cx = (elCoinWrap.offsetWidth || 200) / 2;
-        showFloat("Дневной лимит!", cx, 30, false);
+        if (resp.coins_earned > 0) showFloat("+" + fmt(resp.coins_earned), cx, 30, resp.crits > 0 || resp.turbo);
+        if (resp.locked) {
+          pendingTaps = 0;
+          showFloat("Слишком быстро", cx, 30, true);
+          window.kov.toast("Клики временно заблокированы: превышена допустимая скорость");
+        } else if (resp.rejected_taps > 0) {
+          showFloat("Темп ограничен", cx, 30, false);
+        }
+        if (resp.cap_reached) showFloat("Дневной лимит!", cx, 30, false);
+        return resp;
+      } catch (error) {
+        window.kov.toast(String((error && error.message) || "Не удалось засчитать клики"));
+        return null;
+      } finally {
+        flushInFlight = null;
+        if (pendingTaps > 0 && !destroyed && !lockedActive()) {
+          tapTimer = setTimeout(flushTaps, 350);
+        }
       }
-      elBalance.textContent = fmt(st.kovcoins);
-      updateEnergyBar();
-      updateDaily();
-      updateWallet();
-      updateLevel();
-    } catch (_) {}
+    })();
+    return flushInFlight;
   }
 
   elCoin.addEventListener("click", (e) => {
@@ -2262,10 +2349,8 @@ function gameClicker() {
     const wrapperRect = elFloats.getBoundingClientRect();
     const x = e.clientX - wrapperRect.left;
     const y = e.clientY - wrapperRect.top - 20;
-    const mult = turbo ? (st.boosts && st.boosts.turbo ? st.boosts.turbo.mult : 5) : 1;
-    const isCrit = Math.random() < (st.crit_chance / 100);
-    const earned = (isCrit ? st.click_power * 4 : st.click_power) * mult;
-    showFloat((isCrit ? "КРИТ! +" : "+") + powText(earned), x, y, isCrit || turbo);
+    const mult = turbo ? (st.boosts && st.boosts.turbo ? st.boosts.turbo.mult : 2) : 1;
+    showFloat("+" + powText(st.click_power * mult), x, y, turbo);
 
     elCoin.style.transform = "scale(0.93)";
     setTimeout(() => { if (!destroyed) elCoin.style.transform = ""; }, 100);
@@ -2274,13 +2359,13 @@ function gameClicker() {
     // Haptic feedback (Telegram WebApp)
     try {
       if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
-        window.Telegram.WebApp.HapticFeedback.impactOccurred(isCrit || turbo ? "medium" : "light");
+        window.Telegram.WebApp.HapticFeedback.impactOccurred(turbo ? "medium" : "light");
       }
     } catch (_) {}
 
     // Batch taps — периодический сброс маленькими пачками (не копим в одну большую)
     pendingTaps++;
-    if (pendingTaps >= 20) {
+    if (pendingTaps >= 6) {
       flushTaps();
     } else if (!tapTimer) {
       tapTimer = setTimeout(flushTaps, 300);
@@ -2298,7 +2383,7 @@ function gameClicker() {
 
   // Периодическая подсинхронизация с сервером (пассив, таймеры)
   pollTimer = setInterval(() => {
-    if (destroyed || pendingTaps > 0) return;
+    if (destroyed || pendingTaps > 0 || flushInFlight) return;
     loadState();
   }, 15000);
 
@@ -2322,16 +2407,24 @@ function gameClicker() {
 // ============ RENDER ============
 
 function arcadeIcon(name) {
-  return `<div class="game-tile-icon arcade-icon-frame"><img class="arcade-icon-img" src="/static/img/ui/arcade/${name}.png?v=252" alt="" draggable="false" decoding="async"></div>`;
+  return `<div class="game-tile-icon arcade-icon-frame"><img class="arcade-icon-img" src="/static/img/ui/arcade/${name}.png?v=253" alt="" draggable="false" decoding="async"></div>`;
 }
 
 export async function renderArcade(root) {
+  mountedArcadeRoot = root;
+  if (!arcadeTabLifecycleInstalled && window.kov) {
+    arcadeTabLifecycleInstalled = true;
+    window.kov.onTabChange("arcade", () => runGameCleanup());
+    window.kov.onTabShow("arcade", () => {
+      if (!mountedArcadeRoot || !document.body.contains(mountedArcadeRoot)) return;
+      if (mountedArcadeRoot.querySelector(".clicker-screen")) renderArcade(mountedArcadeRoot);
+      else loadFirstWinBadges(mountedArcadeRoot, true);
+    });
+  }
   root.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
   try {
     await fetchBalance();
   } catch (_) {}
-
-  // До релиза карточка одинаково заблокирована для всех, включая администратора.
 
   root.innerHTML = `
     <section class="page-header">
@@ -2344,10 +2437,10 @@ export async function renderArcade(root) {
 
     <h2 class="section-title">Кликер</h2>
     <div class="game-grid">
-      <div class="game-tile is-coming-soon" data-game="clicker" data-locked="1" aria-disabled="true" style="grid-column: 1 / -1">
+      <div class="game-tile clicker-feature-tile" data-game="clicker" style="grid-column: 1 / -1">
         ${arcadeIcon("clicker")}
         <div class="game-tile-title">Кликер</div>
-        <div class="coming-soon-badge">Скоро</div>
+        <div class="clicker-feature-meta">До 15 минут в день · лимит растёт 10 000 → 40 000</div>
       </div>
     </div>
 
@@ -2412,7 +2505,7 @@ export async function renderArcade(root) {
     rocket: gameRocket,
     dice: gameDice,
     roulette: gameRoulette,
-    clicker: gameClicker,
+    clicker: () => gameClicker(root),
   };
   
   root.querySelectorAll(".game-tile").forEach((tile) => {
@@ -2422,8 +2515,11 @@ export async function renderArcade(root) {
         window.kov.toast("Скоро — игра пока недоступна");
         return;
       }
-      if (MINI_GAMES.includes(game)) startFirstWinRound(game);
-      if (games[game]) games[game]();
+      const round = MINI_GAMES.includes(game) ? startFirstWinRound(game) : null;
+      if (games[game]) {
+        if (game === "checkers") games[game](round);
+        else games[game]();
+      }
     });
   });
 
@@ -2439,11 +2535,13 @@ const MINI_GAMES = ["moshonka", "tictactoe", "minesweeper", "harvest", "checkers
 const _firstWinRounds = new Map();
 
 function startFirstWinRound(game) {
-  if (!MINI_GAMES.includes(game)) return;
-  _firstWinRounds.set(game, post("/api/arcade/round/start", { game }).then(r => ({
+  if (!MINI_GAMES.includes(game)) return null;
+  const pending = post("/api/arcade/round/start", { game }).then(r => ({
     token: r.token,
     startedAt: performance.now(),
-  })));
+  }));
+  _firstWinRounds.set(game, pending);
+  return pending;
 }
 
 function _kovbaksWord(n) {
@@ -2457,10 +2555,10 @@ function _kovbaksWord(n) {
 
 // Начислить награду за первую победу дня в конкретной мини-игре.
 // Сервер сам решает, положена ли награда (идемпотентно, не чаще 1 раза в сутки на игру).
-async function awardFirstWin(game, result = {}) {
+async function awardFirstWin(game, result = {}, roundOverride = null) {
   try {
-    const pending = _firstWinRounds.get(game);
-    if (!pending) return;
+    const pending = roundOverride || _firstWinRounds.get(game);
+    if (!pending) throw new Error("Раунд награды не был подготовлен");
     const round = await pending;
     const telemetry = {
       ...result,
@@ -2479,11 +2577,15 @@ async function awardFirstWin(game, result = {}) {
       const arcRoot = document.querySelector('.tab-content .game-grid');
       if (arcRoot) loadFirstWinBadges(arcRoot.closest('.tab-content') || document);
     }
+    return res;
   } catch (error) {
     console.warn("Не удалось подтвердить награду за первую победу", error);
-    if (game === "pingpong") {
-      window.kov.toast("Не удалось проверить награду за победу. Попробуй ещё раз позже.");
+    if (roundOverride) {
+      window.kov.toast("Не удалось проверить награду за победу. Нажмите «Повторить».");
+      throw error;
     }
+    if (game === "pingpong") window.kov.toast("Не удалось проверить награду за победу. Попробуй ещё раз позже.");
+    return null;
   }
 }
 

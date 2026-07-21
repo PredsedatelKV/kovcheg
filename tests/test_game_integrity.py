@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -222,11 +222,82 @@ def test_fragment_assembly_and_parallel_safety(game_api):
     assert client.post("/api/profile/inventory/assemble-fragments", headers=_headers()).status_code == 400
 
 
-def test_clicker_is_stable_id_only_and_cannot_claim_first_win(game_api):
+def test_clicker_is_released_to_players_but_cannot_claim_first_win(game_api):
     client, _ = game_api
-    assert client.get("/api/arcade/clicker/state", headers=_headers(1)).status_code == 403
+    assert client.get("/api/arcade/clicker/state", headers=_headers(1)).status_code == 200
     assert client.get("/api/arcade/clicker/state", headers=_headers(2)).status_code == 200
     assert client.post("/api/arcade/round/start", json={"game": "clicker"}, headers=_headers(2)).status_code == 400
+
+
+def test_clicker_progression_caps_are_10k_to_40k(game_api, monkeypatch):
+    client, sessions = game_api
+    clock = [datetime(2026, 7, 1, 9, 0, 0)]
+    monkeypatch.setattr(arcade.models, "now_utc", lambda: clock[0])
+
+    first = client.get("/api/arcade/clicker/state", headers=_headers()).json()
+    assert first["progression_day"] == 1
+    assert first["daily_cap"] == 10_000
+
+    expected = [15_000, 20_000, 25_000, 30_000, 35_000, 40_000, 40_000]
+    for offset, cap in enumerate(expected, start=1):
+        with sessions() as db:
+            state = db.query(models.ClickerState).filter_by(user_id=1).one()
+            state.earned_today = int(arcade._clicker_daily_cap(state) * 0.8)
+            db.commit()
+        clock[0] = datetime(2026, 7, 1 + offset, 9, 0, 0)
+        snapshot = client.get("/api/arcade/clicker/state", headers=_headers()).json()
+        assert snapshot["daily_cap"] == cap
+        assert snapshot["progression_day"] == min(7, offset + 1)
+
+
+def test_clicker_flood_is_locked_without_energy_or_income(game_api, monkeypatch):
+    client, sessions = game_api
+    clock = [datetime(2026, 7, 1, 9, 0, 0)]
+    monkeypatch.setattr(arcade.models, "now_utc", lambda: clock[0])
+    initial = client.get("/api/arcade/clicker/state", headers=_headers()).json()
+    flooded = client.post("/api/arcade/clicker/tap", json={"taps": 50}, headers=_headers())
+    assert flooded.status_code == 200
+    result = flooded.json()
+    assert result["locked"] is True
+    assert result["taps_processed"] == 0
+    assert result["coins_earned"] == 0
+    assert result["energy"] == initial["energy"]
+    with sessions() as db:
+        state = db.query(models.ClickerState).filter_by(user_id=1).one()
+        assert state.kovcoins == initial["kovcoins"]
+
+
+def test_clicker_passive_income_has_hard_daily_subcap(game_api, monkeypatch):
+    client, sessions = game_api
+    now = datetime(2026, 7, 1, 12, 0, 0)
+    monkeypatch.setattr(arcade.models, "now_utc", lambda: now)
+    client.get("/api/arcade/clicker/state", headers=_headers())
+    with sessions() as db:
+        state = db.query(models.ClickerState).filter_by(user_id=1).one()
+        state.lvl_passive = arcade.CLICKER_MAX_LEVEL
+        state.last_sync = now - timedelta(hours=24)
+        state.kovcoins = 0
+        db.commit()
+    snapshot = client.get("/api/arcade/clicker/state", headers=_headers()).json()
+    assert snapshot["passive_earned_today"] == 1_000
+    assert snapshot["passive_daily_cap"] == 1_000
+    assert client.get("/api/arcade/clicker/state", headers=_headers()).json()["kovcoins"] == 1_000
+
+
+def test_clicker_cashout_uses_safe_rate(game_api, monkeypatch):
+    client, sessions = game_api
+    now = datetime(2026, 7, 1, 12, 0, 0)
+    monkeypatch.setattr(arcade.models, "now_utc", lambda: now)
+    client.get("/api/arcade/clicker/state", headers=_headers())
+    with sessions() as db:
+        state = db.query(models.ClickerState).filter_by(user_id=1).one()
+        state.kovcoins = 4_000
+        db.commit()
+    before = _balance(sessions)
+    response = client.post("/api/arcade/clicker/cashout", json={}, headers=_headers())
+    assert response.status_code == 200
+    assert response.json()["cashed_out"] == 2
+    assert _balance(sessions) == before + 2
 
 
 def test_legacy_casino_payout_is_rejected(game_api):

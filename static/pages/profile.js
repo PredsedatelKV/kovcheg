@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=252";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=253";
 
-import { playUISound } from "/static/pages/settings.js?v=252";
+import { playUISound } from "/static/pages/settings.js?v=253";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -204,6 +204,7 @@ export async function renderProfile(root) {
     });
   }
   bindChatInput(root);
+  setTimeout(resumePendingLootboxReveal, 0);
   // Приглашения и сетевые игры обрабатываются глобально (static/pages/multiplayer.js),
   // поэтому здесь поллинг приглашений больше не нужен.
 }
@@ -542,20 +543,14 @@ function openItemActionsDialog(row, options = {}) {
     // active; Telegram/iOS may block contexts created only after network awaits.
     playUISound("click");
     try {
-      var pools = await get("/api/battlepass/lootbox-pools");
-      var pool = pools.find(function(p) { return p.code === item.lootbox_pool_code; });
-      var poolItems = pool ? pool.entries : [];
       var result = await post("/api/profile/inventory/open-lootbox", {
         item_id: item.id,
         request_id: openRequestId,
       });
       window.closeModal();
       _updateSections(["inventory", "balance"]);
-      if (poolItems.length > 0 && result.rewards.length > 0) {
-        showLootboxRoulette(poolItems, result.rewards);
-      } else {
-        window.kov.toast("🎁 " + result.rewards.map(function(reward) { return reward.label; }).join(", "));
-      }
+      try { sessionStorage.setItem("kovcheg.pendingLootboxReveal", JSON.stringify(result)); } catch (_) {}
+      showLootboxChest(result);
     } catch (err) {
       button.disabled = false;
       window.kov.toast(err.message);
@@ -793,132 +788,143 @@ function openUserTaskDialog(ut, root) {
   });
 }
 
-function _lootboxPoolVisual(entry) {
-  var kind = entry.reward_kind;
-  var range = entry.amount_min === entry.amount_max
-    ? String(entry.amount_min)
-    : entry.amount_min + "–" + entry.amount_max;
-  var names = { xp: "XP", kovbucks: "Ковбаксы", kovcoins: "Ковкойны" };
-  return {
-    name: kind === "item" ? entry.item_name : range + " " + (names[kind] || kind),
-    icon: entry.item_icon || (kind === "xp" ? "/static/img/ui/xp.png" : "/static/img/ui/kovbaks.png"),
-    rarity: entry.item_rarity || "Обычный",
-    weight: Math.max(1, Number(entry.weight) || 1),
-  };
+function resumePendingLootboxReveal() {
+  if (document.querySelector(".lootbox-chest-overlay")) return;
+  try {
+    const raw = sessionStorage.getItem("kovcheg.pendingLootboxReveal");
+    if (raw) showLootboxChest(JSON.parse(raw));
+  } catch (_) {
+    try { sessionStorage.removeItem("kovcheg.pendingLootboxReveal"); } catch (_) {}
+  }
 }
 
-function _lootboxRewardVisual(reward) {
-  return {
-    name: reward.label,
-    icon: reward.item?.icon || (reward.kind === "xp" ? "/static/img/ui/xp.png" : "/static/img/ui/kovbaks.png"),
-    rarity: reward.item?.rarity || "Обычный",
-  };
-}
-
-function showLootboxRoulette(poolItems, rewards) {
-  var wonRewards = rewards.map(_lootboxRewardVisual);
-  var winItem = wonRewards[0];
-  var visuals = poolItems.map(_lootboxPoolVisual);
-  var totalWeight = visuals.reduce(function(sum, item) { return sum + item.weight; }, 0);
-  var weighted = [];
-  visuals.forEach(function(item) {
-    var copies = Math.max(1, Math.min(24, Math.round(item.weight / totalWeight * 32)));
-    for (var copy = 0; copy < copies; copy++) weighted.push(item);
+function showLootboxChest(result) {
+  if (!result?.pool || !Array.isArray(result.rewards) || !result.rewards.length) {
+    window.kov.toast("Ковбокс открыт, но список наград не удалось показать");
+    return;
+  }
+  document.querySelector(".lootbox-chest-overlay")?.remove();
+  const themes = new Set(["common", "rare", "epic", "legendary", "seasonal"]);
+  const theme = themes.has(result.pool.code) ? result.pool.code : "common";
+  const rewards = [...result.rewards].sort((a, b) => (a.reveal_order || 0) - (b.reveal_order || 0));
+  const closedImage = result.pool.image_url || "/static/img/ui/box.svg";
+  const openImage = result.pool.open_image_url || closedImage;
+  [closedImage, openImage, ...rewards.map((reward) => reward.icon)].forEach((src) => {
+    if (!src) return;
+    const preload = new Image();
+    preload.src = src;
   });
-  var items = [];
-  while (items.length < 72) items = items.concat(weighted);
-  items = items.slice(0, 72);
-  var WIN_IDX = 56;
-  items[WIN_IDX] = { ...winItem, isWinner: true };
 
-  var overlay = document.createElement("div");
-  overlay.className = "lootbox-overlay";
-  overlay.innerHTML =
-    '<div class="lootbox-title">Открытие ковбокса</div>' +
-    '<div class="lootbox-track-wrap"><div class="lootbox-pointer"></div><div class="lootbox-track" id="lb-track"></div></div>' +
-    '<div class="lootbox-result" id="lb-result">' +
-      '<div class="lootbox-result-name">Вы получили</div>' +
-      '<div class="lootbox-result-list" id="lb-win-list"></div>' +
-      '<button class="btn lootbox-result-btn" id="lb-close">Отлично!</button>' +
-    '</div>';
+  const overlay = document.createElement("div");
+  overlay.className = `lootbox-chest-overlay lootbox-theme-${theme}`;
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", `Открытие: ${result.pool.name}`);
+  overlay.innerHTML = `
+    <div class="lootbox-chest-rays" aria-hidden="true"></div>
+    <header class="lootbox-chest-head">
+      <div class="lootbox-chest-kicker">Открытие</div>
+      <h2>${escapeHtml(result.pool.name || "Ковбокс")}</h2>
+      <div class="lootbox-remaining" id="lootbox-remaining"><span id="lootbox-remaining-value">${rewards.length}</span><small>осталось</small></div>
+    </header>
+    <div class="lootbox-collected" id="lootbox-collected" aria-label="Полученные награды"></div>
+    <div class="lootbox-reward-stage" id="lootbox-reward-stage" aria-live="polite"></div>
+    <div class="lootbox-chest-floor">
+      <button class="lootbox-chest-button" id="lootbox-chest-button" type="button" aria-label="Открыть следующую награду">
+        <img src="${escapeHtml(closedImage)}" alt="${escapeHtml(result.pool.name || "Ковбокс")}" id="lootbox-chest-image" draggable="false"/>
+      </button>
+      <div class="lootbox-chest-hint" id="lootbox-chest-hint">Нажмите на ковбокс</div>
+      <button class="btn lootbox-chest-done" id="lootbox-chest-done" type="button" hidden>Забрать награды</button>
+    </div>`;
   document.body.appendChild(overlay);
 
-  var track = overlay.querySelector("#lb-track");
-  items.forEach(function(it) {
-    var div = document.createElement("div");
-    div.className = "lootbox-track-item" + (it.isWinner ? " win-target" : "");
-    var image = document.createElement("img");
-    image.src = it.icon;
+  const chestButton = overlay.querySelector("#lootbox-chest-button");
+  const chestImage = overlay.querySelector("#lootbox-chest-image");
+  const stage = overlay.querySelector("#lootbox-reward-stage");
+  const collected = overlay.querySelector("#lootbox-collected");
+  const counter = overlay.querySelector("#lootbox-remaining");
+  const counterValue = overlay.querySelector("#lootbox-remaining-value");
+  const hint = overlay.querySelector("#lootbox-chest-hint");
+  const done = overlay.querySelector("#lootbox-chest-done");
+  let index = 0;
+  let locked = false;
+  let previousReward = null;
+
+  function updateCounter() {
+    const remaining = rewards.length - index;
+    counterValue.textContent = String(remaining);
+    const next = rewards[index];
+    counter.classList.toggle("is-rainbow", remaining === 1 && next?.presentation_kind === "item");
+  }
+
+  function addCollected(reward) {
+    if (!reward) return;
+    const chip = document.createElement("div");
+    chip.className = "lootbox-collected-chip";
+    const image = document.createElement("img");
+    image.src = reward.icon || "/static/img/ui/box.svg";
     image.alt = "";
-    div.appendChild(image);
-    track.appendChild(div);
-  });
-
-  var tickInterval = null;
-  var tickSpeed = 70;
-
-  function startTick() {
-    tickInterval = setInterval(function() { playUISound("spin"); }, tickSpeed);
-  }
-  function stopTick() {
-    if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
+    const amount = document.createElement("span");
+    amount.textContent = "×" + reward.amount;
+    chip.append(image, amount);
+    collected.appendChild(chip);
   }
 
-  requestAnimationFrame(function() {
-    var wrapW = track.parentElement.offsetWidth;
-    if (!wrapW || wrapW < 50) wrapW = 340;
-    var ITEM_W = 64;
-    var targetX = -(WIN_IDX * ITEM_W - wrapW / 2 + ITEM_W / 2);
-    var startX = targetX + wrapW * 8;
+  function rewardCard(reward) {
+    const card = document.createElement("article");
+    card.className = `lootbox-reward-card reward-${reward.presentation_kind || "item"}`;
+    const image = document.createElement("img");
+    image.src = reward.icon || "/static/img/ui/box.svg";
+    image.alt = "";
+    const title = document.createElement("strong");
+    title.textContent = reward.label;
+    const type = document.createElement("span");
+    type.textContent = reward.presentation_kind === "item" ? (reward.rarity || "Предмет") : "Награда";
+    card.append(image, title, type);
+    return card;
+  }
 
-    track.style.transition = "none";
-    track.style.transform = "translateX(" + startX + "px)";
-    track.offsetHeight;
+  function finishReveal() {
+    hint.textContent = "Все награды открыты";
+    done.hidden = false;
+    chestButton.setAttribute("aria-label", "Все награды открыты");
+    playUISound("win");
+    try { window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success"); } catch (_) {}
+  }
 
-    startTick();
+  function revealNext() {
+    if (locked || index >= rewards.length) return;
+    locked = true;
+    chestButton.disabled = true;
+    addCollected(previousReward);
+    const reward = rewards[index];
+    if (index === 0) chestImage.src = openImage;
+    chestButton.classList.remove("is-bumping");
+    void chestButton.offsetWidth;
+    chestButton.classList.add("is-bumping");
+    const card = rewardCard(reward);
+    stage.replaceChildren(card);
+    requestAnimationFrame(() => card.classList.add("is-visible"));
+    previousReward = reward;
+    index += 1;
+    updateCounter();
+    hint.textContent = index < rewards.length ? "Нажмите ещё раз" : "Последняя награда";
+    playUISound(reward.presentation_kind === "item" ? "win" : "cashout");
+    try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(reward.presentation_kind === "item" ? "heavy" : "medium"); } catch (_) {}
+    setTimeout(() => {
+      locked = false;
+      chestButton.disabled = false;
+      if (index >= rewards.length) finishReveal();
+    }, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 80 : 520);
+  }
 
-    track.style.transition = "transform 4.5s cubic-bezier(0.15, 0.85, 0.25, 1)";
-    track.style.transform = "translateX(" + targetX + "px)";
+  function closeReveal() {
+    try { sessionStorage.removeItem("kovcheg.pendingLootboxReveal"); } catch (_) {}
+    overlay.classList.add("is-closing");
+    setTimeout(() => overlay.remove(), 180);
+  }
 
-    var slowTimers = [];
-    [1500, 2500, 3500].forEach(function(t) {
-      slowTimers.push(setTimeout(function() {
-        stopTick();
-        tickSpeed = Math.min(tickSpeed + 80, 300);
-        startTick();
-      }, t));
-    });
-
-    track.addEventListener("transitionend", function handler() {
-      track.removeEventListener("transitionend", handler);
-      stopTick();
-      playUISound("win");
-
-      var targetEl = track.querySelector(".win-target");
-      if (targetEl) {
-        targetEl.classList.remove("win-target");
-        targetEl.classList.add("win");
-        targetEl.classList.add("win-rarity-" + (winItem.rarity || "Обычный"));
-      }
-      var result = overlay.querySelector("#lb-result");
-      var resultList = result.querySelector("#lb-win-list");
-      wonRewards.forEach(function(reward) {
-        var row = document.createElement("div");
-        row.className = "lootbox-result-row";
-        var rewardImage = document.createElement("img");
-        rewardImage.src = reward.icon;
-        rewardImage.alt = "";
-        var label = document.createElement("span");
-        label.textContent = reward.name;
-        row.append(rewardImage, label);
-        resultList.appendChild(row);
-      });
-      result.classList.add("show");
-    });
-  });
-
-  overlay.querySelector("#lb-close").addEventListener("click", function() {
-    stopTick();
-    overlay.remove();
-  });
+  chestButton.addEventListener("click", revealNext);
+  done.addEventListener("click", closeReveal);
+  updateCounter();
 }
