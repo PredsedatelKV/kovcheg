@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=251";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=252";
 
-import { playUISound } from "/static/pages/settings.js?v=251";
+import { playUISound } from "/static/pages/settings.js?v=252";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -18,6 +18,8 @@ const KOVBOX_SHOWCASE = [
   { code: "lootbox_rare", name: "Редкий ковбокс", icon: "/static/img/items/lootbox_rare.svg" },
   { code: "lootbox_epic", name: "Эпический ковбокс", icon: "/static/img/items/lootbox_epic.svg" },
   { code: "lootbox_legendary", name: "Легендарный ковбокс", icon: "/static/img/items/lootbox_legendary.svg" },
+  { code: "lootbox_seasonal", name: "Сезонный ковбокс", icon: "/static/img/items/lootbox_seasonal.png", oldPrice: 59 },
+  { code: "lootbox_mega", name: "Мегаковбокс с выбором предметов", icon: "/static/img/items/lootbox_mega.png" },
 ];
 
 function renderKovboxShowcase(products = []) {
@@ -33,7 +35,11 @@ function renderKovboxShowcase(products = []) {
               <img src="${box.icon}" alt="${box.name}" draggable="false" decoding="async">
               <div class="kovbox-shop-name">${box.name}</div>
               ${product ? `
-                <div class="kovbox-shop-price">${iconHtml("/static/img/ui/kovbaks.png", "sm", "")} ${product.price}${product.stock === -1 ? "" : ` · ${product.stock} шт.`}</div>
+                <div class="kovbox-shop-price">
+                  ${iconHtml("/static/img/ui/kovbaks.png", "sm", "")}
+                  ${box.oldPrice ? `<span class="kovbox-shop-old-price">${box.oldPrice}</span>` : ""}
+                  <span>${product.price}</span>${product.stock === -1 ? "" : `<span>· ${product.stock} шт.</span>`}
+                </div>
                 <button class="btn btn-sm" data-buy="${product.id}" ${product.stock === 0 ? "disabled" : ""}>${product.stock === 0 ? "Нет" : "Купить"}</button>
               ` : ""}
             </div>`;

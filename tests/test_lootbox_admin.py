@@ -437,6 +437,22 @@ def test_disabled_box_does_not_consume_inventory(lootbox_api):
     assert _quantity(sessions, "lootbox_disabled") == 1
 
 
+def test_mega_box_waits_for_selection_mechanic_without_consuming_inventory(lootbox_api):
+    client, sessions = lootbox_api
+    box, _ = _create_box(client, sessions, code="mega")
+    _grant_box(sessions, box["item_id"])
+    response = client.post(
+        "/api/profile/inventory/open-lootbox",
+        json={"item_id": box["item_id"], "request_id": "mega_pending_0001"},
+        headers=_headers(),
+    )
+    assert response.status_code == 409
+    assert "выбора предметов" in response.json()["detail"]
+    assert _quantity(sessions, "lootbox_mega") == 1
+    with sessions() as db:
+        assert db.query(models.LootboxOpen).count() == 0
+
+
 def test_fragment_assembly_cost_insufficient_and_parallel(lootbox_api):
     client, sessions = lootbox_api
     box, _ = _create_box(client, sessions, code="assembly")

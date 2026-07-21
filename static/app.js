@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=251";
-import { renderProfile } from "/static/pages/profile.js?v=251";
-import { renderKoverna } from "/static/pages/koverna.js?v=251";
-import { renderArcade } from "/static/pages/arcade.js?v=251";
-import { renderAdmin } from "/static/pages/admin.js?v=251";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=251";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=251";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=251";
-import { get, post, prefetch, peekCached } from "/static/api.js?v=251";
+import { renderHome } from "/static/pages/home.js?v=252";
+import { renderProfile } from "/static/pages/profile.js?v=252";
+import { renderKoverna } from "/static/pages/koverna.js?v=252";
+import { renderArcade } from "/static/pages/arcade.js?v=252";
+import { renderAdmin } from "/static/pages/admin.js?v=252";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=252";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=252";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=252";
+import { get, post, prefetch, peekCached } from "/static/api.js?v=252";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {

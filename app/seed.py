@@ -135,6 +135,8 @@ ITEM_ICON_BY_CODE: dict[str, str] = {
     "lootbox_rare": "/static/img/items/lootbox_rare.svg",
     "lootbox_epic": "/static/img/items/lootbox_epic.svg",
     "lootbox_legendary": "/static/img/items/lootbox_legendary.svg",
+    "lootbox_seasonal": "/static/img/items/lootbox_seasonal.png",
+    "lootbox_mega": "/static/img/items/lootbox_mega.png",
     "box_fragment": "/static/img/items/box_fragment.svg",
 }
 
@@ -578,6 +580,22 @@ def seed(db: Session) -> None:
         rarity="Легендарный",
         lootbox_pool_code="legendary",
     )
+    lootbox_seasonal = _get_or_create_item(
+        db, "lootbox_seasonal",
+        name="Сезонный ковбокс",
+        icon="/static/img/items/lootbox_seasonal.png",
+        category="Ковбоксы",
+        rarity="Сезонный",
+        lootbox_pool_code="seasonal",
+    )
+    lootbox_mega = _get_or_create_item(
+        db, "lootbox_mega",
+        name="Мегаковбокс с выбором предметов",
+        icon="/static/img/items/lootbox_mega.png",
+        category="Ковбоксы",
+        rarity="Мега",
+        lootbox_pool_code="mega",
+    )
     fragment = _get_or_create_item(
         db, "box_fragment",
         name="Фрагмент ковбокса",
@@ -586,13 +604,31 @@ def seed(db: Session) -> None:
         rarity="Обычный",
     )
     fragment.description = ""
-    for item in (lootbox_common, lootbox_rare, lootbox_epic, lootbox_legendary):
+    canonical_lootbox_items = {
+        "common": (lootbox_common, "Обычный ковбокс", "Обычный", "/static/img/items/lootbox_common.svg"),
+        "rare": (lootbox_rare, "Редкий ковбокс", "Редкий", "/static/img/items/lootbox_rare.svg"),
+        "epic": (lootbox_epic, "Эпический ковбокс", "Эпический", "/static/img/items/lootbox_epic.svg"),
+        "legendary": (lootbox_legendary, "Легендарный ковбокс", "Легендарный", "/static/img/items/lootbox_legendary.svg"),
+        "seasonal": (lootbox_seasonal, "Сезонный ковбокс", "Сезонный", "/static/img/items/lootbox_seasonal.png"),
+        "mega": (lootbox_mega, "Мегаковбокс с выбором предметов", "Мега", "/static/img/items/lootbox_mega.png"),
+    }
+    for code, (item, name, rarity, image_url) in canonical_lootbox_items.items():
+        item.name = name
         item.description = ""
+        item.icon = image_url
+        item.image_url = image_url
+        item.rarity = rarity
+        item.category = "Ковбоксы"
+        item.lootbox_pool_code = code
+        item.can_gift = True
+        item.can_activate = False
     seeded_lootbox_items = {
         "common": lootbox_common,
         "rare": lootbox_rare,
         "epic": lootbox_epic,
         "legendary": lootbox_legendary,
+        "seasonal": lootbox_seasonal,
+        "mega": lootbox_mega,
     }
     for code, lootbox_item in seeded_lootbox_items.items():
         lootbox_item.lootbox_pool_code = code
@@ -615,14 +651,18 @@ def seed(db: Session) -> None:
         "rare": _fill_pool("rare"),
         "epic": _fill_pool("epic"),
         "legendary": _fill_pool("legendary"),
+        "seasonal": _fill_pool("seasonal"),
+        "mega": _fill_pool("mega"),
     }
-    # Canonical pre-launch prices.  These four managed products are synced to
+    # Canonical pre-launch prices. These managed products are synced to
     # the real shop below, so purchase price never comes from the client.
     default_sale_prices = {
         "common": 19,
         "rare": 29,
         "epic": 39,
         "legendary": 59,
+        "seasonal": 45,
+        "mega": 79,
     }
     for code, pool in pools.items():
         pool.sale_price = default_sale_prices[code]
@@ -632,6 +672,12 @@ def seed(db: Session) -> None:
         "rare": (("kovbucks", 3, 6, 65), ("xp", 10, 20, 35)),
         "epic": (("kovbucks", 6, 12, 60), ("xp", 20, 40, 40)),
         "legendary": (("kovbucks", 12, 25, 55), ("xp", 40, 80, 45)),
+        "seasonal": (("kovbucks", 12, 25, 55), ("xp", 40, 80, 45)),
+        # The future selection mechanic has not been specified yet. A valid
+        # configuration keeps the editor and catalogue consistent, while the
+        # opening endpoint explicitly blocks this pool until that mechanic is
+        # implemented.
+        "mega": (("kovbucks", 1, 1, 100),),
     }
     for code, pool in pools.items():
         if not pool.entries:
@@ -646,24 +692,37 @@ def seed(db: Session) -> None:
                     sort_order=order,
                 ))
     pool_defaults = {
-        "common": ("Обычный", "/static/img/items/lootbox_common.svg"),
-        "rare": ("Редкий", "/static/img/items/lootbox_rare.svg"),
-        "epic": ("Эпический", "/static/img/items/lootbox_epic.svg"),
-        "legendary": ("Легендарный", "/static/img/items/lootbox_legendary.svg"),
+        code: (name, rarity, image_url)
+        for code, (_, name, rarity, image_url) in canonical_lootbox_items.items()
     }
     for code, pool in pools.items():
         item = seeded_lootbox_items.get(code)
         if item:
-            needs_backfill = pool.item_id is None
             pool.item_id = item.id
+            pool.name = pool_defaults[code][0]
             pool.description = ""
-            if needs_backfill and (not pool.image_url or pool.image_url == "/static/img/items/lootbox_common.svg"):
-                pool.image_url = item.icon
-            if needs_backfill and (not pool.rarity or pool.rarity == "Обычный"):
-                pool.rarity = pool_defaults[code][0]
+            pool.rarity = pool_defaults[code][1]
+            pool.image_url = pool_defaults[code][2]
+            pool.is_active = True
+            pool.is_archived = False
+            pool.sort_order = tuple(pools).index(code)
+            if code == "mega":
+                pool.is_droppable = False
+
+    # Remove obsolete editor-created duplicates. The live data is checked
+    # before this migration: these pools/items have no inventory, listings,
+    # shop rows, pass rewards or opening history.
+    legacy_codes = ("bronze", "silver", "gold")
+    for legacy_pool in db.query(models.LootboxPool).filter(models.LootboxPool.code.in_(legacy_codes)).all():
+        db.delete(legacy_pool)
+    db.flush()
+    legacy_item_codes = tuple(f"lootbox_{code}" for code in legacy_codes)
+    for legacy_item in db.query(models.Item).filter(models.Item.code.in_(legacy_item_codes)).all():
+        db.delete(legacy_item)
+    db.flush()
 
     # Older editor versions could create a pool without its inventory item.
-    # Repair every such row on startup, including legacy "bronze" pools.
+    # Repair every custom row which was created without an inventory item.
     for pool in db.query(models.LootboxPool).filter(models.LootboxPool.item_id.is_(None)).all():
         item_code = pool.code if pool.code.startswith("lootbox_") else f"lootbox_{pool.code}"
         item = db.query(models.Item).filter(models.Item.code == item_code).one_or_none()

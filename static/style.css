@@ -1510,6 +1510,12 @@ html.dark .toggle button.active {
   color: var(--text-soft);
   font-size: 13px;
 }
+.kovbox-shop-old-price {
+  color: var(--text-soft);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  opacity: .72;
+}
 .kovbox-shop-item .btn { margin-top: auto; }
 .shop-other-products { margin-top: 12px; }
 .koverna-mode-card { padding: 8px; }

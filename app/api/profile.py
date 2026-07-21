@@ -617,6 +617,8 @@ def open_lootbox_for_user(
     pool = _lootbox_pool_for_item(db, item)
     if pool is None:
         raise HTTPException(409, "Для ковбокса отсутствует серверная конфигурация")
+    if pool.code == "mega":
+        raise HTTPException(409, "Механика выбора предметов для мегаковбокса скоро будет доступна")
     entries = _validate_openable_pool(db, pool, user)
 
     if pool.daily_open_limit:

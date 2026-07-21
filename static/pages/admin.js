@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=251";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=252";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -20,18 +20,18 @@ function slugify(s = "") {
 }
 
 const SECTIONS = [
-  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=251" },
-  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=251" },
-  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=251" },
-  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=251" },
-  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=251" },
-  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=251" },
-  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=251" },
-  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=251" },
-  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=251" },
-  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=251" },
-  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=251" },
-  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=251" },
+  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=252" },
+  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=252" },
+  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=252" },
+  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=252" },
+  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=252" },
+  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=252" },
+  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=252" },
+  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=252" },
+  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=252" },
+  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=252" },
+  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=252" },
+  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=252" },
 ];
 
 let META = { items: [], users: [], categories: [] };
@@ -1465,8 +1465,8 @@ function openQuestionEditor(body, quizId, existing) {
 }
 
 // ---------- KOVBOX EDITOR ----------
-const LOOTBOX_RARITIES = ["Обычный", "Редкий", "Эпический", "Легендарный"];
-const EDITABLE_LOOTBOX_CODES = ["common", "rare", "epic", "legendary"];
+const LOOTBOX_RARITIES = ["Обычный", "Редкий", "Эпический", "Легендарный", "Сезонный", "Мега"];
+const EDITABLE_LOOTBOX_CODES = ["common", "rare", "epic", "legendary", "seasonal", "mega"];
 const LOOTBOX_REWARD_LABELS = {
   item: "Предмет",
   kovbucks: "Ковбаксы",
@@ -1691,9 +1691,7 @@ function openLootboxEditor(body, existing = null) {
 
 async function renderLootboxes(body) {
   const allRows = await get("/api/admin/lootboxes");
-  // The live economy deliberately has exactly four Kovboxes. Legacy/custom
-  // pools remain safely stored for already-issued inventory, but are never
-  // surfaced as editable game types.
+  // The live economy deliberately exposes these six canonical Kovboxes only.
   const rows = EDITABLE_LOOTBOX_CODES
     .map((code) => allRows.find((row) => row.code === code))
     .filter(Boolean);
@@ -1705,7 +1703,7 @@ async function renderLootboxes(body) {
         <select class="input input-sm" id="lb-active-filter"><option value="">Все статусы</option><option value="active">Активные</option><option value="inactive">Отключённые</option><option value="archived">Архив</option></select>
         <select class="input input-sm" id="lb-rarity-filter"><option value="">Все редкости</option>${rarities.map((rarity) => `<option>${escapeHtml(rarity)}</option>`).join("")}</select>
       </div>
-      <div class="admin-sub" style="margin-top:8px">Доступны четыре ковбокса Коверны и Пропуска. Выберите нужный, добавьте награды XP, ковбаксов и предметов, затем задайте реальные шансы с суммой 100%.</div>
+      <div class="admin-sub" style="margin-top:8px">Доступны шесть ковбоксов Коверны. Выберите нужный, добавьте награды XP, ковбаксов и предметов, затем задайте реальные шансы с суммой 100%.</div>
     </div>
     <div id="lb-list"></div>`;
 
