@@ -310,6 +310,33 @@ def test_chest_v2_can_have_only_guaranteed_rewards_when_bonus_is_disabled(lootbo
     assert response.json()["weight_total"] == 0
 
 
+def test_sold_out_lootbox_prize_is_replaced_with_available_shop_item(lootbox_api):
+    client, sessions = lootbox_api
+    with sessions() as db:
+        fragment = db.query(models.Item).filter_by(code="box_fragment").one()
+        prize = db.query(models.Item).filter_by(code="prize").one()
+        fallback = models.Item(code="fallback_prize", name="Запасной приз", icon="fallback.svg")
+        db.add(fallback)
+        db.flush()
+        db.add_all([
+            models.ShopProduct(item_id=prize.id, price=10, stock=0, is_active=True),
+            models.ShopProduct(item_id=fallback.id, price=10, stock=2, is_active=True),
+        ])
+        payload = _chest_payload(fragment.id, prize.id, code="fallback_chest")
+        db.commit()
+    created = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2)).json()
+    _grant_box(sessions, created["item_id"])
+    opened = client.post(
+        "/api/profile/inventory/open-lootbox",
+        json={"item_id": created["item_id"], "request_id": "fallback_chest_0001"},
+        headers=_headers(),
+    )
+    assert opened.status_code == 200, opened.text
+    item_codes = [reward["item"]["code"] for reward in opened.json()["rewards"] if reward["item"]]
+    assert "fallback_prize" in item_codes
+    assert "prize" not in item_codes
+
+
 def test_chest_v2_returns_ordered_presentation_and_stable_replay(lootbox_api):
     client, sessions = lootbox_api
     with sessions() as db:

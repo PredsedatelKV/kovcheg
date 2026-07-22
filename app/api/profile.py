@@ -648,10 +648,57 @@ def _limited_stock_product(
 def _entry_available_for_user(db: Session, user: models.User, entry: models.LootboxPoolEntry) -> bool:
     if entry.reward_kind != "item" or entry.item is None:
         return True
-    product = _limited_stock_product(db, user, entry.item)
-    if not uses_limited_lootbox_stock(user) or entry.item.code in {"box_fragment", "failure_fragment"}:
+    if entry.item.code in {"box_fragment", "failure_fragment"}:
         return True
-    return product is not None and product.stock != 0
+    product = db.query(models.ShopProduct).filter(
+        models.ShopProduct.item_id == entry.item.id,
+        models.ShopProduct.is_active.is_(True),
+    ).one_or_none()
+    if product is None:
+        return not uses_limited_lootbox_stock(user)
+    return product.stock != 0
+
+
+def _fallback_shop_item(
+    db: Session,
+    user: models.User,
+    *,
+    exclude_ids: set[int] | None = None,
+) -> models.Item:
+    excluded = exclude_ids or set()
+    rows = (
+        db.query(models.Item)
+        .join(models.ShopProduct, models.ShopProduct.item_id == models.Item.id)
+        .filter(
+            models.ShopProduct.is_active.is_(True),
+            models.ShopProduct.stock != 0,
+            models.Item.lootbox_pool_code.is_(None),
+            ~models.Item.code.in_(["box_fragment", "failure_fragment"]),
+        )
+        .all()
+    )
+    available = [item for item in rows if item.id not in excluded]
+    if not available:
+        raise HTTPException(409, "В магазине не осталось доступных предметов для замены награды")
+    return available[secrets.randbelow(len(available))]
+
+
+def _resolved_reward_item(
+    db: Session,
+    user: models.User,
+    item: models.Item,
+    *,
+    exclude_ids: set[int] | None = None,
+) -> models.Item:
+    if item.code in {"box_fragment", "failure_fragment"}:
+        return item
+    product = db.query(models.ShopProduct).filter(
+        models.ShopProduct.item_id == item.id,
+        models.ShopProduct.is_active.is_(True),
+    ).one_or_none()
+    unavailable = product is not None and product.stock == 0
+    unavailable = unavailable or (product is None and uses_limited_lootbox_stock(user))
+    return _fallback_shop_item(db, user, exclude_ids=exclude_ids) if unavailable else item
 
 
 def _decrement_limited_stock(
@@ -673,16 +720,25 @@ def _decrement_limited_stock(
         product.stock -= amount
 
 
-def _choice_option(entry: models.LootboxPoolEntry) -> dict:
+def _choice_option(
+    db: Session,
+    user: models.User,
+    entry: models.LootboxPoolEntry,
+    *,
+    exclude_item_ids: set[int] | None = None,
+) -> dict:
     amount = entry.amount_min + secrets.randbelow(entry.amount_max - entry.amount_min + 1)
+    item = entry.item
+    if entry.reward_kind == "item" and item is not None:
+        item = _resolved_reward_item(db, user, item, exclude_ids=exclude_item_ids)
     return {
         "kind": entry.reward_kind,
-        "item_id": entry.item_id,
+        "item_id": item.id if item else None,
         "amount": amount,
-        "label": _reward_label(entry.reward_kind, amount, entry.item),
-        "icon": _reward_icon(entry.reward_kind, entry.item),
-        "rarity": entry.item.rarity if entry.item else "Обычный",
-        "presentation_kind": _reward_presentation_kind(entry.reward_kind, entry.item),
+        "label": _reward_label(entry.reward_kind, amount, item),
+        "icon": _reward_icon(entry.reward_kind, item),
+        "rarity": item.rarity if item else "Обычный",
+        "presentation_kind": _reward_presentation_kind(entry.reward_kind, item),
     }
 
 
@@ -692,21 +748,27 @@ def _build_choice_plan(
     pool: models.LootboxPool,
     entries: list[models.LootboxPoolEntry],
 ) -> list[list[dict]]:
-    available = [entry for entry in entries if not entry.is_guaranteed and _entry_available_for_user(db, user, entry)]
-    if len(available) < 2:
-        raise HTTPException(409, "Для мегаковбокса сейчас недостаточно доступных наград")
-    if not pool.allow_duplicates and len(available) < pool.guaranteed_slots * 2:
-        raise HTTPException(409, "Для выбора без повторов недостаточно доступных наград")
+    available = [entry for entry in entries if not entry.is_guaranteed]
     plan: list[list[dict]] = []
     source = list(available)
+    used_item_ids: set[int] = set()
     for _ in range(pool.guaranteed_slots):
         first = _weighted_pick(source)
         second_source = [entry for entry in source if entry.id != first.id]
         if not second_source:
             second_source = [entry for entry in available if entry.id != first.id]
         second = _weighted_pick(second_source)
-        plan.append([_choice_option(first), _choice_option(second)])
+        excluded = used_item_ids if not pool.allow_duplicates else set()
+        first_option = _choice_option(db, user, first, exclude_item_ids=excluded)
+        excluded = set(excluded)
+        if first_option.get("item_id"):
+            excluded.add(first_option["item_id"])
+        second_option = _choice_option(db, user, second, exclude_item_ids=excluded)
+        plan.append([first_option, second_option])
         if not pool.allow_duplicates:
+            used_item_ids.update(
+                option["item_id"] for option in (first_option, second_option) if option.get("item_id")
+            )
             source = [entry for entry in source if entry.id not in {first.id, second.id}]
     return plan
 
@@ -724,6 +786,7 @@ def _grant_reward_specs(
         if kind == "item":
             if reward_item is None:
                 raise HTTPException(409, "Предмет награды удалён")
+            reward_item = _resolved_reward_item(db, user, reward_item)
             _decrement_limited_stock(db, user, reward_item, amount)
             reward_inventory = db.query(models.InventoryItem).filter(
                 models.InventoryItem.user_id == user.id,
@@ -908,6 +971,7 @@ def open_lootbox_for_user(
     guaranteed = [entry for entry in entries if entry.is_guaranteed]
     random_entries = [entry for entry in entries if not entry.is_guaranteed]
     selected = []
+    direct_specs: list[tuple[str, int, models.Item | None, int]] = []
     choice_plan: list[list[dict]] = []
     if pool.opening_mode == "chest_v2":
         selected.extend(sorted(guaranteed, key=lambda entry: (entry.sort_order, entry.id)))
@@ -916,8 +980,9 @@ def open_lootbox_for_user(
         ):
             available_random = [entry for entry in random_entries if _entry_available_for_user(db, user, entry)]
             if not available_random:
-                raise HTTPException(409, "Дополнительные предметы этого ковбокса закончились")
-            selected.append(_weighted_pick(available_random))
+                direct_specs.append(("item", 1, _fallback_shop_item(db, user), len(selected)))
+            else:
+                selected.append(_weighted_pick(available_random))
     elif pool.opening_mode == "choice_v2":
         choice_plan = _build_choice_plan(db, user, pool, entries)
     else:
@@ -931,7 +996,7 @@ def open_lootbox_for_user(
                 available.remove(chosen)
         if random_entries:
             selected.append(_weighted_pick(random_entries))
-    if not selected and not choice_plan:
+    if not selected and not direct_specs and not choice_plan:
         raise HTTPException(409, "У ковбокса нет доступных наград")
 
     inventory.quantity -= 1
@@ -955,7 +1020,7 @@ def open_lootbox_for_user(
     db.add(opening)
     db.flush()
 
-    if selected:
+    if selected or direct_specs:
         specs = [
             (
                 entry.reward_kind,
@@ -965,6 +1030,7 @@ def open_lootbox_for_user(
             )
             for selected_index, entry in enumerate(selected)
         ]
+        specs.extend(direct_specs)
         _grant_reward_specs(db, user, pool, opening, specs)
     db.commit()
     db.refresh(opening)

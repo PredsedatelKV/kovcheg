@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=254";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=255";
 
-import { playUISound } from "/static/pages/settings.js?v=254";
+import { playUISound } from "/static/pages/settings.js?v=255";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -817,23 +817,69 @@ function showMegaLootboxChoices(result) {
   const overlay = document.createElement("div");
   overlay.className = "lootbox-chest-overlay lootbox-theme-mega mega-choice-overlay";
   overlay.innerHTML = `
+    <div class="lootbox-chest-rays" aria-hidden="true"></div>
     <header class="lootbox-chest-head mega-choice-head">
-      <div class="lootbox-chest-kicker">Мегаковбокс</div>
-      <h2>Выберите награду</h2>
-      <div class="mega-choice-progress" id="mega-choice-progress"></div>
+      <div class="lootbox-chest-kicker">Открытие</div>
+      <h2>${escapeHtml(result.pool?.name || "Мегаковбокс")}</h2>
+      <div class="lootbox-remaining" id="mega-choice-progress"><span>${result.choice_groups.length}</span></div>
     </header>
-    <div class="mega-choice-stage" id="mega-choice-stage"></div>
-    <div class="lootbox-chest-floor"><div class="lootbox-chest-hint">Можно забрать только одну карточку</div></div>`;
+    <div class="lootbox-collected" aria-hidden="true"></div>
+    <div class="lootbox-reward-stage mega-choice-stage" id="mega-choice-stage"></div>
+    <div class="lootbox-chest-floor">
+      <button class="lootbox-chest-button" id="mega-chest-button" type="button" aria-label="Открыть мегаковбокс">
+        <img src="${escapeHtml(result.pool?.image_url || "/static/img/ui/box.svg")}" alt="" id="mega-chest-image"/>
+      </button>
+      <div class="lootbox-chest-hint" id="mega-choice-hint">Нажмите на ковбокс</div>
+      <button class="btn lootbox-chest-done" id="mega-choice-done" type="button" hidden>Забрать</button>
+    </div>`;
   document.body.appendChild(overlay);
   const stage = overlay.querySelector("#mega-choice-stage");
   const progress = overlay.querySelector("#mega-choice-progress");
+  const progressValue = progress.querySelector("span");
+  const chestButton = overlay.querySelector("#mega-chest-button");
+  const chestImage = overlay.querySelector("#mega-chest-image");
+  const hint = overlay.querySelector("#mega-choice-hint");
+  const done = overlay.querySelector("#mega-choice-done");
+  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=255");
+  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=255`));
+  const allSounds = [openSound, ...bonusSounds];
   const choices = [];
   let index = 0;
   let locked = false;
+  let opened = false;
+
+  function playAudio(audio) {
+    try {
+      allSounds.forEach((sound) => { if (sound !== audio) { sound.pause(); sound.currentTime = 0; } });
+      audio.currentTime = 0;
+      audio.play().catch(() => {});
+    } catch (_) {}
+  }
+
+  function rewardCard(reward) {
+    const card = document.createElement("article");
+    card.className = `lootbox-reward-card reward-${reward.presentation_kind || "item"} is-summary-visible`;
+    card.innerHTML = `<img src="${escapeHtml(reward.icon || "/static/img/ui/box.svg")}" alt=""/><strong>${escapeHtml(reward.label || "Награда")}</strong><span>${escapeHtml(reward.rarity || "Награда")}</span>`;
+    return card;
+  }
+
+  function finish(finalized) {
+    progress.hidden = true;
+    chestButton.hidden = true;
+    stage.className = "lootbox-reward-stage lootbox-reward-summary";
+    if (finalized.rewards.length === 3) stage.classList.add("is-three");
+    stage.replaceChildren(...finalized.rewards.map(rewardCard));
+    hint.textContent = "Все награды выбраны";
+    done.hidden = false;
+    try { sessionStorage.removeItem("kovcheg.pendingLootboxReveal"); } catch (_) {}
+    _updateSections(["inventory", "balance"]);
+    playUISound("win");
+  }
 
   const renderGroup = () => {
     const group = result.choice_groups[index];
-    progress.textContent = `${index + 1} / ${result.choice_groups.length}`;
+    progressValue.textContent = String(result.choice_groups.length - index);
+    hint.textContent = "Выберите одну из двух наград";
     stage.innerHTML = group.options.map((option, optionIndex) => `
       <button class="mega-choice-card" type="button" data-choice="${optionIndex}">
         <img src="${escapeHtml(option.icon || "/static/img/ui/box.svg")}" alt=""/>
@@ -847,7 +893,7 @@ function showMegaLootboxChoices(result) {
         const choice = Number(card.dataset.choice);
         choices.push(choice);
         card.classList.add("is-selected");
-        playUISound("cashout");
+        playAudio(bonusSounds[Math.min(index, bonusSounds.length - 1)]);
         await new Promise((resolve) => setTimeout(resolve, 360));
         index += 1;
         if (index < result.choice_groups.length) {
@@ -861,10 +907,7 @@ function showMegaLootboxChoices(result) {
             request_id: result.request_id,
             choices,
           });
-          try { sessionStorage.setItem("kovcheg.pendingLootboxReveal", JSON.stringify(finalized)); } catch (_) {}
-          overlay.remove();
-          _updateSections(["inventory", "balance"]);
-          showLootboxChest(finalized);
+          finish(finalized);
         } catch (error) {
           locked = false;
           // Stock may have changed while the player was choosing. Restart the
@@ -877,7 +920,28 @@ function showMegaLootboxChoices(result) {
       });
     });
   };
-  renderGroup();
+  chestButton.addEventListener("click", () => {
+    if (locked || opened) return;
+    opened = true;
+    locked = true;
+    chestButton.classList.add("is-bumping");
+    setTimeout(() => {
+      chestImage.src = result.pool?.open_image_url || result.pool?.image_url || "/static/img/ui/box.svg";
+    }, 220);
+    playAudio(openSound);
+    const startChoices = () => {
+      if (!locked) return;
+      openSound.pause();
+      locked = false;
+      renderGroup();
+    };
+    openSound.addEventListener("ended", startChoices, { once: true });
+    setTimeout(startChoices, 2200);
+  });
+  done.addEventListener("click", () => {
+    overlay.classList.add("is-closing");
+    setTimeout(() => overlay.remove(), 180);
+  });
 }
 
 function showLootboxChest(result) {
@@ -932,12 +996,26 @@ function showLootboxChest(result) {
   let locked = false;
   let previousReward = null;
   let finished = false;
-  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=254");
-  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=254");
-  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=254`));
-  [openSound, specialSound, ...bonusSounds].forEach((audio) => { audio.preload = "auto"; });
+  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=255");
+  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=255");
+  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=255`));
+  const allSounds = [openSound, specialSound, ...bonusSounds];
+  allSounds.forEach((audio) => { audio.preload = "auto"; });
   function playAudio(audio) {
-    try { audio.currentTime = 0; audio.play().catch(() => {}); } catch (_) {}
+    try {
+      allSounds.forEach((sound) => { if (sound !== audio) { sound.pause(); sound.currentTime = 0; } });
+      audio.currentTime = 0;
+      audio.play().catch(() => {});
+    } catch (_) {}
+  }
+  function playAudioAndWait(audio, maxWait = 2200) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => { if (!settled) { settled = true; resolve(); } };
+      audio.addEventListener("ended", finish, { once: true });
+      playAudio(audio);
+      setTimeout(finish, maxWait);
+    });
   }
 
   function updateCounter() {
@@ -980,8 +1058,10 @@ function showLootboxChest(result) {
     addCollected(previousReward);
     previousReward = null;
     collected.hidden = true;
+    counter.hidden = true;
     chestButton.hidden = true;
     stage.classList.add("lootbox-reward-summary");
+    if (rewards.length === 3) stage.classList.add("is-three");
     stage.replaceChildren(...rewards.map((reward) => {
       const card = rewardCard(reward);
       card.classList.add("is-summary-visible");
@@ -993,7 +1073,7 @@ function showLootboxChest(result) {
     try { window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success"); } catch (_) {}
   }
 
-  function revealNext() {
+  async function revealNext() {
     if (locked || finished) return;
     if (index >= rewards.length) {
       finishReveal();
@@ -1001,13 +1081,15 @@ function showLootboxChest(result) {
     }
     locked = true;
     chestButton.disabled = true;
-    playAudio(openSound);
     addCollected(previousReward);
     const reward = rewards[index];
-    if (index === 0) chestImage.src = openImage;
-    chestButton.classList.remove("is-bumping");
-    void chestButton.offsetWidth;
-    chestButton.classList.add("is-bumping");
+    if (index === 0) {
+      chestButton.classList.remove("is-bumping");
+      void chestButton.offsetWidth;
+      chestButton.classList.add("is-bumping");
+      setTimeout(() => { chestImage.src = openImage; }, 220);
+      await playAudioAndWait(openSound);
+    }
     const card = rewardCard(reward);
     stage.replaceChildren(card);
     const specialFinal = index === rewards.length - 1 && reward.presentation_kind === "item";

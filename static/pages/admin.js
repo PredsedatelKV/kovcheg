@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=254";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=255";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -20,18 +20,18 @@ function slugify(s = "") {
 }
 
 const SECTIONS = [
-  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=254" },
-  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=254" },
-  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=254" },
-  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=254" },
-  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=254" },
-  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=254" },
-  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=254" },
-  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=254" },
-  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=254" },
-  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=254" },
-  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=254" },
-  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=254" },
+  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=255" },
+  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=255" },
+  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=255" },
+  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=255" },
+  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=255" },
+  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=255" },
+  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=255" },
+  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=255" },
+  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=255" },
+  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=255" },
+  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=255" },
+  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=255" },
 ];
 
 let META = { items: [], users: [], categories: [] };
@@ -1618,7 +1618,7 @@ function openLootboxEditor(body, existing = null) {
         ${field("Начало", `<input class="input" id="lb-start" type="datetime-local" value="${lootboxDateValue(box.starts_at)}"/>`)}
         ${field("Окончание", `<input class="input" id="lb-end" type="datetime-local" value="${lootboxDateValue(box.ends_at)}"/>`)}
         ${field("Лимит открытий в сутки (0 — нет)", `<input class="input" id="lb-daily-limit" type="number" min="0" max="1000" value="${box.daily_open_limit || 0}"/>`)}
-        ${field("Гарантированных слотов", `<input class="input" id="lb-slots" type="number" min="1" max="10" value="${box.opening_mode === "chest_v2" ? 3 : (box.guaranteed_slots || 1)}" ${box.opening_mode === "chest_v2" ? "disabled" : ""}/>`)}
+        ${field(box.opening_mode === "choice_v2" ? "Количество этапов выбора" : "Гарантированных слотов", `<input class="input" id="lb-slots" type="number" min="1" max="10" value="${box.opening_mode === "chest_v2" ? 3 : (box.guaranteed_slots || 1)}" ${box.opening_mode === "chest_v2" ? "disabled" : ""}/>`)}
         ${field("Разрешить дубликаты", `<select class="input" id="lb-duplicates" ${box.opening_mode === "chest_v2" ? "disabled" : ""}><option value="true" ${box.allow_duplicates ? "selected" : ""}>Да</option><option value="false" ${!box.allow_duplicates ? "selected" : ""}>Нет</option></select>`)}
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin:10px 0">
@@ -1734,7 +1734,7 @@ async function renderLootboxes(body) {
         <select class="input input-sm" id="lb-active-filter"><option value="">Все статусы</option><option value="active">Активные</option><option value="inactive">Отключённые</option><option value="archived">Архив</option></select>
         <select class="input input-sm" id="lb-rarity-filter"><option value="">Все редкости</option>${rarities.map((rarity) => `<option>${escapeHtml(rarity)}</option>`).join("")}</select>
       </div>
-      <div class="admin-sub" style="margin-top:8px">Доступны основные ковбоксы и секретный утешительный. Для мегаковбокса каждый этап предлагает две карточки, из которых игрок выбирает одну. Сумма шансов вариантов — 100%.</div>
+      <div class="admin-sub" style="margin-top:8px">Для мегаковбокса настраиваются число этапов, повторы, состав наград, количество и шансы. При открытии каждый этап показывает две карточки, игрок забирает одну. Сумма шансов — 100%.</div>
     </div>
     <div id="lb-list"></div>`;
 
@@ -1758,7 +1758,7 @@ async function renderLootboxes(body) {
           <div style="min-width:0;flex:1">
             <h3 class="admin-card-title">${escapeHtml(row.name)} ${row.is_archived ? '<span class="admin-badge">архив</span>' : row.is_active ? '<span class="admin-badge">активен</span>' : ""}</h3>
             <div class="admin-sub">${escapeHtml(row.code)} · ${escapeHtml(row.rarity)} · версия ${row.version} · сумма шансов ${row.weight_total}%</div>
-            <div class="admin-sub">${row.entries.length} наград · ${row.opening_mode === "chest_v2" ? `сундук · доп. предмет ${row.bonus_item_chance}%` : "механика выбора"} · сборка вес ${row.assembly_weight}</div>
+            <div class="admin-sub">${row.entries.length} наград · ${row.opening_mode === "chest_v2" ? `сундук · доп. предмет ${row.bonus_item_chance}%` : `${row.guaranteed_slots} этапов выбора 1 из 2`} · сборка вес ${row.assembly_weight}</div>
           </div>
         </div>
         <div class="row gap wrap" style="margin-top:10px">
