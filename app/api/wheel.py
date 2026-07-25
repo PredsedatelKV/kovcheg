@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api._helpers import award_xp, ensure_wallet
+from app.api._helpers import award_xp, ensure_wallet, prize_icon
 from app.auth import current_user
 from app.db import begin_game_write, get_db
 
@@ -32,17 +32,22 @@ def _load_sectors(db: Session) -> list[dict]:
             raise HTTPException(status_code=503, detail=f"Некорректный вес приза колеса: {p.label}")
         if p.value is None or p.value < 0 or p.value > MAX_WHEEL_VALUE:
             raise HTTPException(status_code=503, detail=f"Некорректное значение приза колеса: {p.label}")
-        if p.kind == "item" and not p.item_code:
-            raise HTTPException(status_code=503, detail=f"Для приза «{p.label}» не выбран предмет")
-        if p.kind == "item" and db.query(models.Item).filter(models.Item.code == p.item_code).first() is None:
-            raise HTTPException(status_code=503, detail=f"Предмет приза «{p.label}» не найден")
+        item = None
+        if p.kind == "item":
+            if not p.item_code:
+                raise HTTPException(status_code=503, detail=f"Для приза «{p.label}» не выбран предмет")
+            item = db.query(models.Item).filter(models.Item.code == p.item_code).first()
+            if item is None:
+                raise HTTPException(status_code=503, detail=f"Предмет приза «{p.label}» не найден")
         sectors.append({
             "id": p.id,
             "label": p.label,
             "kind": p.kind,
             "value": p.value,
-            "icon": p.icon,
+            "icon": prize_icon(p.kind, item),
             "item_code": p.item_code,
+            # Lets the client paint a lootbox sector in that box's own colour.
+            "lootbox_pool_code": item.lootbox_pool_code if item is not None else None,
             "weight": p.weight,
         })
     total_percent = sum(sector["weight"] for sector in sectors)
@@ -87,7 +92,14 @@ def status(user: models.User = Depends(current_user), db: Session = Depends(get_
         "next_spin_at": next_at.isoformat() if next_at else None,
         "next_spin_seconds": next_spin_seconds,
         "sectors": [
-            {"label": s["label"], "icon": s["icon"], "kind": s["kind"], "value": s["value"]}
+            {
+                "label": s["label"],
+                "icon": s["icon"],
+                "kind": s["kind"],
+                "value": s["value"],
+                "item_code": s["item_code"],
+                "lootbox_pool_code": s["lootbox_pool_code"],
+            }
             for s in sectors
         ],
     }

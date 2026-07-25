@@ -543,7 +543,7 @@ async function renderWheel(body) {
     ? `<span style="color:var(--success)">Сумма шансов: 100% — готово.</span>`
     : `<span style="color:var(--danger)">Сумма шансов: ${activePercent}% из 100%. Осталось распределить: ${remainingPercent}%.</span>`;
   body.innerHTML = `
-    <div class="admin-sub" style="margin:0 0 12px">Укажите реальный шанс каждого сектора в процентах. ${chanceHint}</div>
+    <div class="admin-sub" style="margin:0 0 12px">Укажите реальный шанс каждого сектора в процентах. Иконка сектора подставляется автоматически: ковбаксы, XP или картинка выбранного предмета. ${chanceHint}</div>
     ${cardBlock(
       "Новый сектор",
       formGrid(
@@ -562,7 +562,6 @@ async function renderWheel(body) {
           "Предмет (если предмет)",
           `<select class="input" id="w-item"><option value="">—</option>${META.items.map((i) => `<option value="${i.code}">${escapeHtml(i.name)}</option>`).join("")}</select>`,
         ),
-        field("Иконка (URL)", `<input class="input" id="w-icon" value="/static/img/ui/kovbaks.png"/>`),
         field("Шанс, %", `<input class="input" id="w-weight" type="number" value="10" min="1" max="100"/>`),
       ) + `<button class="btn btn-sm" id="w-create">Добавить</button>`,
     )}
@@ -587,8 +586,7 @@ async function renderWheel(body) {
             "Предмет",
             `<select class="input" data-k="item_code"><option value="">—</option>${META.items.map((i) => `<option value="${i.code}" ${i.code === p.item_code ? "selected" : ""}>${escapeHtml(i.name)}</option>`).join("")}</select>`,
           ),
-          field("Иконка", `<input class="input" data-k="icon" value="${escapeHtml(p.icon)}"/>`),
-          field("Шанс, %", `<input class="input" data-k="weight" type="number" value="${p.weight}" min="1" max="100"/>`),
+            field("Шанс, %", `<input class="input" data-k="weight" type="number" value="${p.weight}" min="1" max="100"/>`),
         )}
         <div class="row gap">
           <button class="btn btn-sm" data-action="save">Сохранить</button>
@@ -620,7 +618,6 @@ async function renderWheel(body) {
       kind,
       value,
       item_code: kind === "item" ? itemCode : null,
-      icon: body.querySelector("#w-icon").value.trim(),
       weight,
       sort_order: 0,
       is_active: true,
@@ -645,7 +642,6 @@ async function renderWheel(body) {
         kind: card.querySelector('[data-k="kind"]').value,
         value: Number(card.querySelector('[data-k="value"]').value) || 0,
         item_code: card.querySelector('[data-k="kind"]').value === "item" ? (card.querySelector('[data-k="item_code"]').value || null) : null,
-        icon: card.querySelector('[data-k="icon"]').value,
         weight,
         sort_order: 0,
         is_active: true,

@@ -720,6 +720,46 @@ function _fmtCountdown(seconds) {
   return `Доступно через ${s}с`;
 }
 
+// Цвет сектора колеса определяется тем, что в нём лежит, а не его номером.
+const WHEEL_COINS_COLOR = "#f0b429";        // ковбаксы — золотой
+const WHEEL_XP_COLOR = "#8e44ec";           // XP — фиолетовый
+const WHEEL_ITEM_COLOR = "#2f7fe6";         // прочие предметы — синий
+const WHEEL_EMPTY_COLOR = "#4b5361";        // пустой сектор — тёмно-серый
+
+const WHEEL_ITEM_COLORS = {
+  box_fragment: "#9aa3b2",                  // фрагмент ковбокса — серый
+  failure_fragment: "#4b5361",              // фрагмент неудачи — тёмно-серый
+};
+
+// Ковбоксы красятся в собственный цвет пула: те же акценты, что --lb-accent
+// у .lootbox-theme-* в style.css.
+const WHEEL_LOOTBOX_COLORS = {
+  common: "#c7d2e5",
+  rare: "#6af079",
+  epic: "#cc63ff",
+  legendary: "#ffd54a",
+  seasonal: "#45e6f1",
+  consolation: "#8993a9",
+  mega: "#ffd650",
+};
+
+function wheelSectorColor(sector) {
+  if (sector.kind === "coins") return WHEEL_COINS_COLOR;
+  if (sector.kind === "xp") return WHEEL_XP_COLOR;
+  if (sector.kind !== "item") return WHEEL_EMPTY_COLOR;
+  if (sector.lootbox_pool_code) return WHEEL_LOOTBOX_COLORS[sector.lootbox_pool_code] || WHEEL_ITEM_COLOR;
+  return WHEEL_ITEM_COLORS[sector.item_code] || WHEEL_ITEM_COLOR;
+}
+
+// На светлых секторах (обычный ковбокс, золото) белая подпись не читается.
+function inkOn(hex) {
+  const n = parseInt(String(hex).replace("#", ""), 16);
+  const luma = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return luma > 0.62
+    ? { fill: "#1d2433", shadow: "0 1px 2px rgba(255,255,255,.65)" }
+    : { fill: "#ffffff", shadow: "0 1px 3px rgba(0,0,0,.55)" };
+}
+
 function shadeColor(color, percent) {
   const num = parseInt(color.replace("#", ""), 16);
   const amt = Math.round(2.55 * percent);
@@ -745,13 +785,6 @@ async function openWheel() {
     const contentR = N <= 3 ? 88 : 100; // radius where labels sit
     const labelChars = N >= 8 ? 7 : N >= 6 ? 9 : 12;
 
-    const palette = [
-      "#FF6B6B", "#FF8E53", "#FFD93D", "#6BCB77",
-      "#4D96FF", "#9B59B6", "#FF6B9D", "#00D2D3",
-      "#F368E0", "#54A0FF", "#5F27CD", "#01A3A4",
-      "#EE5A24", "#F9CA24", "#6AB04C", "#4834D4",
-    ];
-
     const sectorLabel = (s) => {
       if (s.label && String(s.label).trim()) return String(s.label);
       if (s.kind === "coins") return `${s.value} K`;
@@ -769,7 +802,8 @@ async function openWheel() {
     const slices = sectors.map((s, i) => {
       const start = i * seg, end = (i + 1) * seg, mid = start + seg / 2;
       const rad = ((mid - 90) * Math.PI) / 180;
-      const base = palette[i % palette.length];
+      const base = wheelSectorColor(s);
+      const ink = inkOn(base);
       const cx2 = C + contentR * Math.cos(rad);
       const cy2 = C + contentR * Math.sin(rad);
 
@@ -779,8 +813,8 @@ async function openWheel() {
         <g transform="rotate(${mid},${cx2},${cy2})">
           ${s.icon ? `<image href="${s.icon}" x="${cx2 - 16}" y="${cy2 - 28}" width="32" height="32"/>` : ""}
           ${amount ? `<text x="${cx2}" y="${cy2 + (s.icon ? 16 : 5)}" text-anchor="middle"
-                font-size="15" font-weight="800" fill="#fff"
-                style="text-shadow:0 1px 3px rgba(0,0,0,.55)">${escapeHtml(amount)}</text>` : ""}
+                font-size="15" font-weight="800" fill="${ink.fill}"
+                style="text-shadow:${ink.shadow}">${escapeHtml(amount)}</text>` : ""}
         </g>`;
 
       return `

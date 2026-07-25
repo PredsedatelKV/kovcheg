@@ -24,6 +24,26 @@ def require_open_section(section: str) -> Callable:
     return guard
 
 
+PRIZE_KIND_ICONS = {
+    "coins": "/static/img/ui/kovbaks.png",
+    "xp": "/static/img/ui/xp.png",
+}
+
+
+def prize_icon(kind: str, item: models.Item | None = None) -> str:
+    """Icon a prize should show, derived from what it actually gives.
+
+    The wheel used to render an icon URL typed into the admin form, and that
+    field defaulted to the Kovbaks image, so every sector looked like coins.
+    The already-loaded item is passed in so this never issues its own query.
+    """
+    if kind in PRIZE_KIND_ICONS:
+        return PRIZE_KIND_ICONS[kind]
+    if kind == "item" and item is not None:
+        return item.icon
+    return ""
+
+
 def ensure_wallet(db: Session, user: models.User) -> models.Wallet:
     """Гарантирует наличие кошелька у пользователя (самовосстановление для старых
     записей). Возвращает кошелёк, который можно безопасно мутировать."""

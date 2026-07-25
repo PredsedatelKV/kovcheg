@@ -14,6 +14,7 @@ from app import models, schemas
 from app.api._helpers import (
     award_xp,
     ensure_wallet,
+    prize_icon,
     return_market_listing_to_seller,
     sync_lootbox_shop_product,
 )
@@ -147,14 +148,17 @@ def _user_task_out(ut: models.UserTask) -> schemas.AdminUserTaskOut:
     )
 
 
-def _wheel_prize_out(p: models.WheelPrize) -> schemas.WheelPrizeOut:
+def _wheel_prize_out(db: Session, p: models.WheelPrize) -> schemas.WheelPrizeOut:
+    item = None
+    if p.kind == "item" and p.item_code:
+        item = db.query(models.Item).filter(models.Item.code == p.item_code).first()
     return schemas.WheelPrizeOut(
         id=p.id,
         label=p.label,
         kind=p.kind,
         value=p.value,
         item_code=p.item_code,
-        icon=p.icon,
+        icon=prize_icon(p.kind, item),
         weight=p.weight,
         sort_order=p.sort_order,
         is_active=p.is_active,
@@ -871,7 +875,7 @@ def _validate_wheel_percent_total(
 @router.get("/wheel", response_model=list[schemas.WheelPrizeOut])
 def list_wheel(db: Session = Depends(get_db)) -> list[schemas.WheelPrizeOut]:
     rows = db.query(models.WheelPrize).order_by(models.WheelPrize.sort_order, models.WheelPrize.id).all()
-    return [_wheel_prize_out(p) for p in rows]
+    return [_wheel_prize_out(db, p) for p in rows]
 
 
 @router.post("/wheel", response_model=schemas.WheelPrizeOut)
@@ -884,7 +888,7 @@ def create_wheel(body: schemas.AdminWheelPrizeBody, db: Session = Depends(get_db
     db.add(p)
     db.commit()
     db.refresh(p)
-    return _wheel_prize_out(p)
+    return _wheel_prize_out(db, p)
 
 
 @router.patch("/wheel/{prize_id}", response_model=schemas.WheelPrizeOut)
@@ -900,7 +904,7 @@ def update_wheel(prize_id: int, body: schemas.AdminWheelPrizeBody, db: Session =
         setattr(p, k, v)
     db.commit()
     db.refresh(p)
-    return _wheel_prize_out(p)
+    return _wheel_prize_out(db, p)
 
 
 @router.delete("/wheel/{prize_id}")

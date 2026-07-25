@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import access, models
-from app.api import arcade, battlepass, home, profile
+from app.api import arcade, battlepass, home, profile, wheel
 from app.auth import current_user
 from app.db import Base, get_db
 
@@ -451,3 +451,42 @@ def test_open_sections_stay_open_for_everyone_else(game_api):
             "/api/arcade/casino/start", json={"game": "slots", "amount": 1}, headers=headers,
         ).status_code == 200
         assert client.get("/api/battlepass", headers=headers).status_code == 200
+
+
+def _wheel_client(game_api_client):
+    """Колесо живёт в отдельном роутере, которого нет в основной тестовой сборке."""
+    app = FastAPI()
+    app.include_router(wheel.router)
+    app.dependency_overrides = dict(game_api_client.app.dependency_overrides)
+    return TestClient(app)
+
+
+def test_wheel_sector_icons_follow_kind_and_item(game_api):
+    client, sessions = game_api
+    with sessions() as db:
+        db.add_all([
+            models.WheelPrize(label="5 Ковбаксов", kind="coins", value=5, weight=40),
+            models.WheelPrize(label="50 XP", kind="xp", value=50, weight=30),
+            models.WheelPrize(
+                label="Обычный ковбокс", kind="item", value=1,
+                item_code="lootbox_common", weight=20,
+            ),
+            models.WheelPrize(
+                label="Фрагмент", kind="item", value=3,
+                item_code="box_fragment", weight=10,
+            ),
+        ])
+        db.commit()
+
+    sectors = _wheel_client(client).get("/api/wheel/status", headers=_headers()).json()["sectors"]
+    by_kind = {(s["kind"], s.get("item_code")): s for s in sectors}
+
+    # Иконка берётся из типа приза, а не из легаси-колонки icon.
+    assert by_kind[("coins", None)]["icon"] == "/static/img/ui/kovbaks.png"
+    assert by_kind[("xp", None)]["icon"] == "/static/img/ui/xp.png"
+    # У предметных призов — картинка самого предмета.
+    assert by_kind[("item", "lootbox_common")]["icon"] == "box.svg"
+    assert by_kind[("item", "box_fragment")]["icon"] == "fragment.svg"
+    # Пул нужен клиенту, чтобы покрасить сектор в цвет ковбокса.
+    assert by_kind[("item", "lootbox_common")]["lootbox_pool_code"] == "common"
+    assert by_kind[("item", "box_fragment")]["lootbox_pool_code"] is None

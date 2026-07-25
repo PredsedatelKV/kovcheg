@@ -325,7 +325,9 @@ class WheelPrize(Base):
     kind: Mapped[str] = mapped_column(String(32), default="coins")  # coins | item
     value: Mapped[int] = mapped_column(Integer, default=0)
     item_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    icon: Mapped[str] = mapped_column(String(256), default="/static/img/ui/kovbaks.png")
+    # Legacy column: the displayed icon is derived from kind/item_code, see
+    # app/api/_helpers.prize_icon.
+    icon: Mapped[str] = mapped_column(String(256), default="")
     weight: Mapped[int] = mapped_column(Integer, default=10)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
