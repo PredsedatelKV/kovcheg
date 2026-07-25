@@ -320,14 +320,26 @@ def test_legacy_casino_payout_is_rejected(game_api):
     assert _balance(sessions) == before
 
 
-def test_roulette_table_has_exact_90_percent_rtp():
-    assert sum(percent * chance for percent, chance in arcade.ROULETTE_PAYOUTS) == 90 * 100
-    assert sum(chance for _, chance in arcade.ROULETTE_PAYOUTS) == 100
+def test_casino_tables_have_exact_90_percent_rtp():
+    for table in (arcade.ROULETTE_PAYOUTS, arcade.RISKWHEEL_PAYOUTS):
+        assert sum(percent * chance for percent, chance in table) == 90 * 100
+        assert sum(chance for _, chance in table) == 100
+    assert sum(percent * chance for _, percent, chance in arcade.SLOTS_OUTCOMES) == 90 * 100
+    assert sum(chance for _, _, chance in arcade.SLOTS_OUTCOMES) == 100
+    assert arcade.DICE_EXACT_PAYOUT_PERCENT / 6 == 90
+    assert arcade.DICE_EVEN_PAYOUT_PERCENT / 2 == 90
+
+
+def test_rocket_has_ten_percent_immediate_bust_bucket(monkeypatch):
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 9000)
+    assert arcade._rocket_crash_point() == 1.0
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 3000)
+    assert arcade._rocket_crash_point() == 3.0
 
 
 def test_roulette_is_atomic_idempotent_and_awards_failure_fragment(game_api, monkeypatch):
     client, sessions = game_api
-    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "choices", lambda *args, **kwargs: [50])
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 17)
     payload = {"amount": 10, "request_id": "roulette_low_0001"}
     first = client.post("/api/arcade/roulette/spin", json=payload, headers=_headers())
     assert first.status_code == 200, first.text
@@ -343,7 +355,7 @@ def test_roulette_is_atomic_idempotent_and_awards_failure_fragment(game_api, mon
         assert db.query(models.InventoryItem).filter_by(user_id=1, item_id=fragment.id).one().quantity == 1
 
 
-def test_roulette_enforces_minimum_and_twenty_percent_maximum(game_api):
+def test_roulette_enforces_minimum_but_allows_the_whole_balance(game_api):
     client, _ = game_api
     assert client.post(
         "/api/arcade/roulette/spin",
@@ -352,46 +364,53 @@ def test_roulette_enforces_minimum_and_twenty_percent_maximum(game_api):
     ).status_code == 422
     assert client.post(
         "/api/arcade/roulette/spin",
-        json={"amount": 21, "request_id": "roulette_max_001"},
+        json={"amount": 100, "request_id": "roulette_full_balance_001"},
         headers=_headers(),
-    ).status_code == 400
+    ).status_code == 200
 
 
-def test_casino_cooldown_is_shared_across_all_games(game_api, monkeypatch):
+def test_casino_limit_is_three_rounds_per_game_per_hour(game_api, monkeypatch):
     client, sessions = game_api
     now = datetime(2026, 7, 24, 12, 0, 0)
     monkeypatch.setattr(arcade.models, "now_utc", lambda: now)
 
-    first = client.post(
-        "/api/arcade/casino/start",
-        json={"game": "slots", "amount": 1},
-        headers=_headers(),
-    )
-    assert first.status_code == 200
-
-    # created_at falls back to the real clock (the column default captured the
-    # original now_utc), so pin the stored round to the frozen time under test.
-    with sessions() as db:
-        stored = db.query(models.CasinoRound).one()
-        stored.created_at = now
-        db.commit()
+    for _ in range(3):
+        response = client.post(
+            "/api/arcade/casino/start",
+            json={"game": "slots", "amount": 1},
+            headers=_headers(),
+        )
+        assert response.status_code == 200
+        # The SQLAlchemy column default captured the original clock.
+        with sessions() as db:
+            for stored in db.query(models.CasinoRound).filter_by(game="slots").all():
+                stored.created_at = now
+            db.commit()
 
     blocked = client.post(
-        "/api/arcade/roulette/spin",
-        json={"amount": 10, "request_id": "roulette_cooldown_001"},
+        "/api/arcade/casino/start",
+        json={"game": "slots", "amount": 1},
         headers=_headers(),
     )
     assert blocked.status_code == 429
     assert blocked.headers["Retry-After"] == "3600"
 
+    # Лимиты разных игр не пересекаются.
+    other_game = client.post(
+        "/api/arcade/casino/start",
+        json={"game": "dice", "amount": 1, "choice": "odd"},
+        headers=_headers(),
+    )
+    assert other_game.status_code == 200
+
     monkeypatch.setattr(
         arcade.models,
         "now_utc",
-        lambda: now + arcade.CASINO_COOLDOWN,
+        lambda: now + arcade.CASINO_WINDOW,
     )
     allowed = client.post(
         "/api/arcade/casino/start",
-        json={"game": "dice", "amount": 1, "choice": "odd"},
+        json={"game": "slots", "amount": 1},
         headers=_headers(),
     )
     assert allowed.status_code == 200

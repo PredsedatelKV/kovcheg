@@ -216,41 +216,131 @@ def arcade_bet(
     raise HTTPException(status_code=410, detail="Используйте серверный раунд казино")
 
 
-CASINO_GAMES = {"roulette", "riskwheel", "slots", "dice", "rocket"}
-CASINO_COOLDOWN = timedelta(hours=1)
-ROULETTE_MULTS = [(0.05, 16), (0.25, 11), (0.5, 15), (0.75, 15), (1.0, 15), (1.5, 12), (2.0, 8), (2.5, 5), (3.0, 3)]
+CASINO_GAMES = {"riskwheel", "slots", "dice", "rocket"}
+
+# Целевая отдача казино. Каждая таблица ниже даёт РОВНО этот процент, поэтому
+# ожидание казино положительно на любой дистанции и не зависит от того, какую
+# игру и какую стратегию выбирает игрок.
+CASINO_RTP_PERCENT = 90
+
+# Лимит раундов: три игры в час на КАЖДУЮ игру отдельно.
+CASINO_ROUNDS_PER_WINDOW = 3
+CASINO_WINDOW = timedelta(hours=1)
+
+# Все выплаты хранятся в процентах от ставки (целые числа), а не во float:
+# payout = ставка * процент // 100 считается точно и не даёт копеечных
+# расхождений между показанным множителем и реально зачисленной суммой.
+
+# Колесо риска: 9 секторов, шансы в процентах, сумма шансов = 100.
+# sum(процент выплаты * шанс) = 9000 => RTP ровно 90%.
+RISKWHEEL_PAYOUTS = ((5, 15), (25, 13), (50, 15), (75, 16), (100, 15),
+                     (150, 11), (200, 8), (250, 4), (300, 3))
+
+# Рулетка: 11 секторов, та же схема, максимум x1.8.
 ROULETTE_PAYOUTS = ((10, 8), (30, 8), (50, 10), (70, 12), (80, 2), (90, 14),
                     (100, 14), (120, 12), (140, 10), (160, 6), (180, 4))
+
+# Слоты: выплата зависит от комбинации, а вероятности задаются напрямую,
+# а не выводятся из случайных барабанов. Раньше барабаны крутились независимо
+# по 7 символам, что давало 95.9% и джекпот x29; теперь исход выбирается по
+# таблице, а барабаны лишь показывают уже выбранный результат.
+SLOTS_OUTCOMES = (
+    ("jackpot", 1000, 2),   # три одинаковых премиальных: x10
+    ("triple", 500, 4),     # три одинаковых обычных: x5
+    ("pair_high", 200, 14),  # две премиальные: x2
+    ("pair", 100, 22),      # две одинаковых: возврат ставки
+    ("miss", 0, 58),
+)
+SLOTS_PREMIUM_SYMBOLS = ("7\ufe0f\u20e3", "\U0001f48e")
+SLOTS_COMMON_SYMBOLS = ("\U0001f352", "\U0001f34b", "\U0001f34a", "\U0001f347", "\u2b50")
+
+# Кубик: выплата подобрана так, чтобы RTP каждой ставки был ровно 90%.
+# Точное число: 1/6 * 540% = 90%. Чёт/нечет/больше/меньше: 1/2 * 180% = 90%.
+DICE_EXACT_PAYOUT_PERCENT = 540
+DICE_EVEN_PAYOUT_PERCENT = 180
+
+# Ракетка: шанс дожить до множителя t равен 0.90 / t, поэтому ожидание выплаты
+# t * 0.90/t = 90% при ЛЮБОЙ точке выхода. Прошлая версия брала экспоненту без
+# привязки к множителю, и выход на x1.05 давал игроку 105% — казино уходило
+# в минус тем вернее, чем аккуратнее играл игрок.
 ROCKET_GROWTH_PER_SECOND = 0.25
 ROCKET_MAX_MULTIPLIER = 5.0
+ROCKET_MIN_MULTIPLIER = 1.0
 
 
-def _require_casino_cooldown(db: Session, user_id: int) -> None:
-    """Allow one new casino round per user across all casino games each hour."""
-    latest = (
-        db.query(models.CasinoRound)
-        .filter(models.CasinoRound.user_id == user_id)
-        .order_by(models.CasinoRound.created_at.desc(), models.CasinoRound.id.desc())
-        .first()
-    )
-    if latest is None:
-        return
-    remaining_seconds = math.ceil(
-        (latest.created_at + CASINO_COOLDOWN - models.now_utc()).total_seconds()
-    )
-    if remaining_seconds <= 0:
-        return
-    remaining_minutes = max(1, math.ceil(remaining_seconds / 60))
-    hours, minutes = divmod(remaining_minutes, 60)
+def _weighted_percent(table: tuple) -> tuple[int, int]:
+    """Выбрать (процент выплаты, индекс) по таблице (процент, шанс).
+
+    Шансы — прямые проценты и обязаны давать в сумме 100: так таблица
+    одновременно задаёт и вероятности, и RTP, который можно проверить глазами.
+    """
+    percents = [percent for percent, _ in table]
+    chances = [chance for _, chance in table]
+    if sum(chances) != 100:
+        raise HTTPException(status_code=503, detail="Таблица шансов казино повреждена")
+    ticket = SYSTEM_RANDOM.randrange(1, 101)
+    current = 0
+    for index, chance in enumerate(chances):
+        current += chance
+        if ticket <= current:
+            return percents[index], index
+    raise HTTPException(status_code=503, detail="Не удалось выбрать исход раунда")
+
+
+def _rocket_crash_point() -> float:
+    """Точка срыва с P(дожить до t) = RTP/t — отдача 90% на любой стратегии."""
+    roll = SYSTEM_RANDOM.randrange(1, 10_001) / 10_000
+    if roll >= CASINO_RTP_PERCENT / 100:
+        # Мгновенный проигрыш необходим в 10% раундов. При минимуме x1.01
+        # моментальный вывод на x1.00 всегда возвращал ставку и давал RTP 100%.
+        return ROCKET_MIN_MULTIPLIER
+    crash_at = (CASINO_RTP_PERCENT / 100) / roll
+    return round(min(ROCKET_MAX_MULTIPLIER, max(ROCKET_MIN_MULTIPLIER, crash_at)), 2)
+
+
+def _casino_round_games(game: str) -> tuple[str, ...]:
+    """Имена раундов одной игры. Рулетка пишется как roulette_v2 с прошлой версии."""
+    return ("roulette", "roulette_v2") if game == "roulette" else (game,)
+
+
+def _format_wait(seconds: int) -> str:
+    minutes = max(1, math.ceil(seconds / 60))
+    hours, minutes = divmod(minutes, 60)
     if hours and minutes:
-        wait_text = f"{hours} ч {minutes} мин"
-    elif hours:
-        wait_text = f"{hours} ч"
-    else:
-        wait_text = f"{minutes} мин"
+        return f"{hours} ч {minutes} мин"
+    if hours:
+        return f"{hours} ч"
+    return f"{minutes} мин"
+
+
+def _require_casino_limit(db: Session, user_id: int, game: str) -> None:
+    """Не больше трёх раундов в час, лимит считается для каждой игры отдельно.
+
+    Окно скользящее: когда самый старый из трёх раундов выходит за час,
+    освобождается ровно один слот, а не все три сразу.
+    """
+    window_start = models.now_utc() - CASINO_WINDOW
+    recent = (
+        db.query(models.CasinoRound)
+        .filter(
+            models.CasinoRound.user_id == user_id,
+            models.CasinoRound.game.in_(_casino_round_games(game)),
+            models.CasinoRound.created_at > window_start,
+        )
+        .order_by(models.CasinoRound.created_at.desc(), models.CasinoRound.id.desc())
+        .limit(CASINO_ROUNDS_PER_WINDOW)
+        .all()
+    )
+    if len(recent) < CASINO_ROUNDS_PER_WINDOW:
+        return
+    frees_at = recent[-1].created_at + CASINO_WINDOW
+    remaining_seconds = max(1, math.ceil((frees_at - models.now_utc()).total_seconds()))
     raise HTTPException(
         status_code=429,
-        detail=f"Следующая игра в казино доступна через {wait_text}",
+        detail=(
+            f"Лимит {CASINO_ROUNDS_PER_WINDOW} игр в час исчерпан. "
+            f"Следующая игра через {_format_wait(remaining_seconds)}"
+        ),
         headers={"Retry-After": str(remaining_seconds)},
     )
 
@@ -262,7 +352,7 @@ def _rocket_progress(row: models.CasinoRound, now: datetime | None = None) -> di
         crash_at = float(outcome["crash_at"])
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=409, detail="Состояние раунда повреждено") from exc
-    if not math.isfinite(crash_at) or not 1.0 < crash_at <= ROCKET_MAX_MULTIPLIER:
+    if not math.isfinite(crash_at) or not 1.0 <= crash_at <= ROCKET_MAX_MULTIPLIER:
         raise HTTPException(status_code=409, detail="Состояние раунда повреждено")
 
     current_time = now or models.now_utc()
@@ -292,6 +382,31 @@ def _rocket_progress(row: models.CasinoRound, now: datetime | None = None) -> di
     }
 
 
+def _slots_reels(combo: str) -> list[str]:
+    """Барабаны, показывающие уже выбранный исход.
+
+    Исход берётся из таблицы вероятностей, а барабаны только иллюстрируют его,
+    иначе независимые барабаны задавали бы свой собственный RTP.
+    """
+    premium = list(SLOTS_PREMIUM_SYMBOLS)
+    common = list(SLOTS_COMMON_SYMBOLS)
+    if combo == "jackpot":
+        symbol = SYSTEM_RANDOM.choice(premium)
+        return [symbol, symbol, symbol]
+    if combo == "triple":
+        symbol = SYSTEM_RANDOM.choice(common)
+        return [symbol, symbol, symbol]
+    if combo in {"pair_high", "pair"}:
+        pool = premium if combo == "pair_high" else common
+        pair_symbol = SYSTEM_RANDOM.choice(pool)
+        others = [s for s in premium + common if s != pair_symbol]
+        reels = [pair_symbol, pair_symbol, SYSTEM_RANDOM.choice(others)]
+        SYSTEM_RANDOM.shuffle(reels)
+        return reels
+    # Промах: три разных символа.
+    return SYSTEM_RANDOM.sample(premium + common, 3)
+
+
 @router.post("/casino/start")
 def casino_start(
     payload: dict = Body(...),
@@ -306,24 +421,23 @@ def casino_start(
     if game not in CASINO_GAMES or amount <= 0 or amount > 1_000_000:
         raise HTTPException(status_code=400, detail="Некорректный раунд")
     begin_game_write(db)
-    _require_casino_cooldown(db, user.id)
+    _require_casino_limit(db, user.id, game)
     wallet = ensure_wallet(db, user)
     if wallet.balance < amount:
         raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
-    max_bet = max(1, wallet.balance // 5)
-    if amount > max_bet:
-        raise HTTPException(status_code=400, detail=f"Максимальная ставка — {max_bet} ковбаксов")
     outcome: dict = {}
     payout = 0
-    if game in {"roulette", "riskwheel"}:
-        mult = SYSTEM_RANDOM.choices([m for m, _ in ROULETTE_MULTS], weights=[w for _, w in ROULETTE_MULTS], k=1)[0]
-        outcome = {"multiplier": mult, "index": [m for m, _ in ROULETTE_MULTS].index(mult)}
-        payout = int(amount * mult)
+    if game == "riskwheel":
+        payout_percent, index = _weighted_percent(RISKWHEEL_PAYOUTS)
+        payout = amount * payout_percent // 100
+        outcome = {"payout_percent": payout_percent, "index": index}
     elif game == "slots":
-        symbols = ["🍒", "🍋", "🍊", "🍇", "⭐", "💎", "7️⃣"]
-        reels = [SYSTEM_RANDOM.choice(symbols) for _ in range(3)]
-        payout = amount * 29 if len(set(reels)) == 1 else amount if len(set(reels)) == 2 else 0
-        outcome = {"reels": reels}
+        payout_percent, index = _weighted_percent(
+            tuple((percent, chance) for _, percent, chance in SLOTS_OUTCOMES)
+        )
+        combo = SLOTS_OUTCOMES[index][0]
+        payout = amount * payout_percent // 100
+        outcome = {"reels": _slots_reels(combo), "payout_percent": payout_percent, "combo": combo}
     elif game == "dice":
         allowed = {"odd", "even", "low", "high", "1", "2", "3", "4", "5", "6"}
         if choice not in allowed:
@@ -331,13 +445,11 @@ def casino_start(
         roll = SYSTEM_RANDOM.randint(1, 6)
         won = ((choice == "odd" and roll % 2 == 1) or (choice == "even" and roll % 2 == 0)
                or (choice == "low" and roll <= 3) or (choice == "high" and roll >= 4) or choice == str(roll))
-        payout = (amount * 5 if choice and choice.isdigit() else int(amount * 1.8)) if won else 0
-        outcome = {"roll": roll, "choice": choice}
+        payout_percent = DICE_EXACT_PAYOUT_PERCENT if choice.isdigit() else DICE_EVEN_PAYOUT_PERCENT
+        payout = amount * payout_percent // 100 if won else 0
+        outcome = {"roll": roll, "choice": choice, "payout_percent": payout_percent if won else 0}
     else:
-        # Deterministic growth on the client; server-owned crash point prevents
-        # a forged multiplier. Cap 5x keeps the game economy bounded.
-        crash_at = round(min(ROCKET_MAX_MULTIPLIER, 1.05 + SYSTEM_RANDOM.expovariate(1.1)), 2)
-        outcome = {"crash_at": crash_at}
+        outcome = {"crash_at": _rocket_crash_point()}
 
     token = secrets.token_urlsafe(32)
     wallet.balance -= amount
@@ -391,22 +503,14 @@ def roulette_spin(
             "failure_fragment_count": fragment_count,
         }
 
-    _require_casino_cooldown(db, user.id)
+    _require_casino_limit(db, user.id, "roulette")
     wallet = ensure_wallet(db, user)
-    max_bet = wallet.balance // 5
-    if max_bet < 10:
-        raise HTTPException(400, "Для ставки нужен баланс не менее 50 ковбаксов")
-    if body.amount > max_bet:
-        raise HTTPException(400, f"Максимальная ставка — {max_bet} ковбаксов")
+    if body.amount < 10:
+        raise HTTPException(400, "Минимальная ставка — 10 ковбаксов")
     if wallet.balance < body.amount:
         raise HTTPException(400, "Недостаточно ковбаксов")
 
-    payout_percent = SYSTEM_RANDOM.choices(
-        [percent for percent, _ in ROULETTE_PAYOUTS],
-        weights=[chance for _, chance in ROULETTE_PAYOUTS],
-        k=1,
-    )[0]
-    index = [percent for percent, _ in ROULETTE_PAYOUTS].index(payout_percent)
+    payout_percent, index = _weighted_percent(ROULETTE_PAYOUTS)
     payout = body.amount * payout_percent // 100
     awarded_fragment = 1 if payout_percent <= 50 else 0
     fragment_count = 0

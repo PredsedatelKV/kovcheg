@@ -148,8 +148,9 @@ def test_pingpong_parallel_replay_cannot_double_credit(pingpong_api):
 
 
 @pytest.mark.parametrize("multiplier", ["NaN", "Infinity", "-Infinity"])
-def test_rocket_rejects_non_finite_multiplier_without_consuming_round(pingpong_api, multiplier):
+def test_rocket_rejects_non_finite_multiplier_without_consuming_round(pingpong_api, multiplier, monkeypatch):
     client, sessions = pingpong_api
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 3000)
     started = client.post(
         "/api/arcade/casino/start",
         json={"game": "rocket", "amount": 10},
@@ -182,7 +183,7 @@ def test_rocket_rejects_non_finite_multiplier_without_consuming_round(pingpong_a
 def test_rocket_start_and_live_status_hide_future_crash(pingpong_api, monkeypatch):
     client, sessions = pingpong_api
     # Keep the crash safely in the future even on a slow test runner.
-    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "expovariate", lambda _rate: 2.0)
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 3000)
 
     started = client.post(
         "/api/arcade/casino/start",
@@ -198,7 +199,7 @@ def test_rocket_start_and_live_status_hide_future_crash(pingpong_api, monkeypatc
     }
     with sessions() as db:
         game_round = db.query(models.CasinoRound).filter_by(token=body["token"]).one()
-        assert json.loads(game_round.outcome)["crash_at"] == pytest.approx(3.05)
+        assert json.loads(game_round.outcome)["crash_at"] == pytest.approx(3.0)
 
     status = client.get(
         "/api/arcade/casino/rocket/status",
@@ -226,7 +227,7 @@ def test_casino_rejects_non_integer_bets_without_spending(pingpong_api, amount):
 
 def test_rocket_settlement_ignores_forged_client_multiplier(pingpong_api, monkeypatch):
     client, sessions = pingpong_api
-    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "expovariate", lambda _rate: 2.0)
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 3000)
     started = client.post(
         "/api/arcade/casino/start",
         json={"game": "rocket", "amount": 10},
@@ -256,10 +257,9 @@ def test_rocket_settlement_ignores_forged_client_multiplier(pingpong_api, monkey
 
 def test_rocket_displayed_multiplier_matches_integer_payout(pingpong_api, monkeypatch):
     client, sessions = pingpong_api
-    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "expovariate", lambda _rate: 2.0)
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 3000)
     with sessions() as db:
-        # The casino enforces the same 20% max-bet rule as the client; a 500
-        # balance permits the round 100 wager used for an exact cents check.
+        # A larger balance permits the round 100 wager used for an exact cents check.
         db.query(models.Wallet).filter_by(user_id=1).one().balance = 500
         db.commit()
     started = client.post(
@@ -294,7 +294,7 @@ def test_rocket_displayed_multiplier_matches_integer_payout(pingpong_api, monkey
 
 def test_rocket_cannot_cash_out_after_server_crash(pingpong_api, monkeypatch):
     client, sessions = pingpong_api
-    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "expovariate", lambda _rate: 0.05)
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 6000)
     started = client.post(
         "/api/arcade/casino/start",
         json={"game": "rocket", "amount": 10},

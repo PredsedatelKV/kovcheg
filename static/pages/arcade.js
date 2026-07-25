@@ -55,8 +55,10 @@ function animateElement(el, animation, duration) {
   el.style.animation = `${animation} ${duration}ms ease-out forwards`;
 }
 
+// Ограничение «не больше 20% баланса» снято: ставить можно любую сумму
+// вплоть до всего баланса. Достаточность средств проверяет сервер.
 function getMaxBet() {
-  return Math.max(1, Math.floor(balance * 0.2));
+  return Math.max(1, Math.floor(balance));
 }
 
 function betInputHTML(id) {
@@ -746,8 +748,8 @@ function gameRoulette() {
     <div class="game-wheel-risk roulette-payout-wheel" id="roulette-wheel"></div>
     <div class="game-bet-custom">
       <label>Ставка:</label>
-      <input type="number" id="roulette-bet" value="10" min="10" max="${Math.floor(balance * .2)}" class="input input-sm"/>
-      <span class="game-bet-hint"><img src="/static/img/ui/kovbaks.png" alt="" class="game-icon-sm"/> макс ${Math.floor(balance * .2)}</span>
+      <input type="number" id="roulette-bet" value="10" min="10" max="${getMaxBet()}" class="input input-sm"/>
+      <span class="game-bet-hint"><img src="/static/img/ui/kovbaks.png" alt="" class="game-icon-sm"/> макс ${getMaxBet()}</span>
     </div>
     <button class="btn" id="roulette-spin-btn">Крутить</button>
     <div class="game-result" id="roulette-result"></div>
@@ -758,7 +760,7 @@ function gameRoulette() {
   const result = modal.querySelector("#roulette-result");
   let timer = null;
   const renderAmounts = () => {
-    const max = Math.floor(balance * .2);
+    const max = getMaxBet();
     const bet = Math.max(10, Math.min(max, Math.floor(Number(input.value) || 10)));
     wheel.innerHTML = payoutPercents.map((percent) =>
       `<div class="risk-sector" style="background:${sectorColor(percent)}">${Math.floor(bet * percent / 100)} К</div>`
@@ -770,7 +772,7 @@ function gameRoulette() {
 
   button.addEventListener("click", async () => {
     if (button.disabled) return;
-    const max = Math.floor(balance * .2);
+    const max = getMaxBet();
     const bet = Math.floor(Number(input.value));
     if (!Number.isInteger(bet) || bet < 10) {
       result.innerHTML = `<div class="game-lose">Минимальная ставка — 10 ковбаксов</div>`;
@@ -814,8 +816,8 @@ function gameRoulette() {
       if (spin.failure_fragment_awarded) {
         window.kov.toast(`Фрагмент неудачи получен · ${spin.failure_fragment_count}/10`);
       }
-      input.max = String(Math.floor(balance * .2));
-      input.value = String(Math.min(Math.max(10, Number(input.value) || 10), Math.floor(balance * .2)));
+      input.max = String(getMaxBet());
+      input.value = String(Math.min(Math.max(10, Number(input.value) || 10), getMaxBet()));
       renderAmounts();
       button.disabled = false;
       setCasinoRoundLocked(false);
@@ -824,17 +826,16 @@ function gameRoulette() {
 }
 
 function gameRiskWheel() {
-  // label — то, что видит игрок; mult — числовой множитель, который должен совпадать с подписью label.
-  // Целевой RTP ~92.8% (домовое преимущество ~7%): EV = Σ(mult*weight)/Σweight.
+  // Таблица совпадает с серверной: Σ(выплата × шанс) = RTP 90%.
   const sectors = [
-    { label: "x0.05", mult: 0.05, color: "#E55454", weight: 16 },
-    { label: "x0.25", mult: 0.25, color: "#D32F2F", weight: 11 },
+    { label: "x0.05", mult: 0.05, color: "#E55454", weight: 15 },
+    { label: "x0.25", mult: 0.25, color: "#D32F2F", weight: 13 },
     { label: "x0.5", mult: 0.5, color: "#FF8A65", weight: 15 },
-    { label: "x0.75", mult: 0.75, color: "#FFB74D", weight: 15 },
+    { label: "x0.75", mult: 0.75, color: "#FFB74D", weight: 16 },
     { label: "x1", mult: 1, color: "#F2B33C", weight: 15 },
-    { label: "x1.5", mult: 1.5, color: "#6BD995", weight: 12 },
+    { label: "x1.5", mult: 1.5, color: "#6BD995", weight: 11 },
     { label: "x2", mult: 2, color: "#6CB6FB", weight: 8 },
-    { label: "x2.5", mult: 2.5, color: "#D387E5", weight: 5 },
+    { label: "x2.5", mult: 2.5, color: "#D387E5", weight: 4 },
     { label: "x3", mult: 3, color: "#AB47BC", weight: 3 },
   ];
   
@@ -888,8 +889,7 @@ function gameRiskWheel() {
     updateBalanceDisplay("roulette-balance", balance);
 
     const chosen = sectors[serverRound.outcome.index];
-    const mult = Number(serverRound.outcome.multiplier);
-    const win = Math.floor(bet * mult);
+    const mult = Number(serverRound.outcome.payout_percent) / 100;
     const chosenIdx = serverRound.outcome.index;
 
     wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("active", "highlight"));
@@ -915,7 +915,7 @@ function gameRiskWheel() {
         balance = settled.balance;
         if (mult > 1) {
           updateBalanceDisplay("roulette-balance", balance);
-          resultEl.innerHTML = `<div class="game-win">${chosen.label}! Выигрыш: ${win} K</div>`;
+          resultEl.innerHTML = `<div class="game-win">${chosen.label}! Получено: ${settled.payout} K</div>`;
           animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
           playUISound("win");
         } else if (mult === 1) {
@@ -1617,7 +1617,7 @@ function gameSlots() {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <h2>Слоты</h2>
-    <p class="card-sub">3 одинаковых = x29</p>
+    <p class="card-sub">Максимальный выигрыш — x10</p>
     <div class="game-balance">Баланс: <strong id="slots-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
     <div id="slots-reels" style="display:flex;gap:8px;justify-content:center;margin:16px 0;font-size:36px;min-height:50px">
       <span id="s1" style="background:rgba(255,255,255,0.05);padding:8px 16px;border-radius:8px;min-width:50px;text-align:center">?</span>
@@ -1653,6 +1653,7 @@ function gameSlots() {
     updateBalanceDisplay("slots-balance", balance);
     playUISound("spin");
     const [r1, r2, r3] = serverRound.outcome.reels;
+    const combo = serverRound.outcome.combo;
     let spins = 0;
     si = setInterval(async () => {
       modal.querySelector("#s1").textContent = symbols[Math.floor(Math.random() * symbols.length)];
@@ -1668,15 +1669,19 @@ function gameSlots() {
         spinBtn.disabled = false;
         const settled = await post("/api/arcade/casino/settle", { token: serverRound.token });
         balance = settled.balance;
-        // Целевой RTP ~95.9% (чуть выгоднее игроку): джекпот x29 при p=7/343,
-        // пара x1 (возврат ставки) при p=126/343.
-        if (r1 === r2 && r2 === r3) {
-          const win = Math.floor(bet * 29);
+        if (combo === "jackpot") {
           updateBalanceDisplay("slots-balance", balance);
-          resultEl.innerHTML = '<div class="game-win">ДЖЕКПОТ! +' + win + ' K</div>';
+          resultEl.innerHTML = '<div class="game-win">ДЖЕКПОТ x10! Получено: ' + settled.payout + ' K</div>';
           playUISound("win");
-        } else if (r1 === r2 || r2 === r3 || r1 === r3) {
-          const win = Math.floor(bet * 1);
+        } else if (combo === "triple") {
+          updateBalanceDisplay("slots-balance", balance);
+          resultEl.innerHTML = '<div class="game-win">Три символа x5! Получено: ' + settled.payout + ' K</div>';
+          playUISound("win");
+        } else if (combo === "pair_high") {
+          updateBalanceDisplay("slots-balance", balance);
+          resultEl.innerHTML = '<div class="game-win">Премиальная пара x2! Получено: ' + settled.payout + ' K</div>';
+          playUISound("win");
+        } else if (combo === "pair") {
           updateBalanceDisplay("slots-balance", balance);
           resultEl.innerHTML = '<div class="game-neutral">Пара! Ставка возвращена.</div>';
           playUISound("cashout");
@@ -1905,12 +1910,12 @@ function gameDice() {
       <button class="btn btn-sm dice-pick" data-pick="even">Чёт (x1.8)</button>
     </div>
     <div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin:8px 0">
-      <button class="btn btn-sm dice-pick" data-pick="1">1 (x5)</button>
-      <button class="btn btn-sm dice-pick" data-pick="2">2 (x5)</button>
-      <button class="btn btn-sm dice-pick" data-pick="3">3 (x5)</button>
-      <button class="btn btn-sm dice-pick" data-pick="4">4 (x5)</button>
-      <button class="btn btn-sm dice-pick" data-pick="5">5 (x5)</button>
-      <button class="btn btn-sm dice-pick" data-pick="6">6 (x5)</button>
+      <button class="btn btn-sm dice-pick" data-pick="1">1 (x5.4)</button>
+      <button class="btn btn-sm dice-pick" data-pick="2">2 (x5.4)</button>
+      <button class="btn btn-sm dice-pick" data-pick="3">3 (x5.4)</button>
+      <button class="btn btn-sm dice-pick" data-pick="4">4 (x5.4)</button>
+      <button class="btn btn-sm dice-pick" data-pick="5">5 (x5.4)</button>
+      <button class="btn btn-sm dice-pick" data-pick="6">6 (x5.4)</button>
     </div>
     <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:8px 0">
       <button class="btn btn-sm dice-pick" data-pick="low">1-3 (x1.8)</button>
@@ -1948,20 +1953,12 @@ function gameDice() {
         if (spins > 15) {
           clearInterval(si);
           diceEl.innerHTML = diceSVG[roll - 1];
-          const pick = btn.dataset.pick;
-          let win = 0;
-          // Множители должны совпадать с подписями кнопок UI:
-          // чёт/нечёт/1-3/4-6 = x1.8, конкретное число = x5.
-          if (pick === "odd" && roll % 2 === 1) win = Math.floor(bet * 1.8);
-          else if (pick === "even" && roll % 2 === 0) win = Math.floor(bet * 1.8);
-          else if (pick === "low" && roll <= 3) win = Math.floor(bet * 1.8);
-          else if (pick === "high" && roll >= 4) win = Math.floor(bet * 1.8);
-          else if (pick === String(roll)) win = bet * 5;
+          const won = Number(serverRound.outcome.payout_percent) > 0;
           const settled = await post("/api/arcade/casino/settle", { token: serverRound.token });
           balance = settled.balance;
-          if (win > 0) {
+          if (won) {
             updateBalanceDisplay("dice-balance", balance);
-            resEl.innerHTML = '<div class="game-win">Выпало ' + roll + '! +' + win + ' K</div>';
+            resEl.innerHTML = '<div class="game-win">Выпало ' + roll + '! Получено: ' + settled.payout + ' K</div>';
             playUISound("win");
           } else {
             resEl.innerHTML = '<div class="game-lose">Выпало ' + roll + '. Мимо</div>';
@@ -2529,11 +2526,10 @@ export async function renderArcade(root) {
       <div class="hero-art" title="Аркада"><img src="/static/img/tabs/arcade.svg" alt="Аркада" class="hero-img"/></div>
     </section>
 
-    <h2 class="section-title">Новинки</h2>
+    <h2 class="section-title">Рулетка</h2>
     <div class="game-grid">
       <div class="game-tile roulette-feature-tile" data-game="roulette" style="grid-column: 1 / -1">
         ${arcadeIcon("roulette")}
-        <div class="game-tile-title">Рулетка</div>
         <span class="arcade-new-badge">Новое</span>
       </div>
     </div>
@@ -2542,7 +2538,7 @@ export async function renderArcade(root) {
     <div class="game-grid">
       <div class="game-tile clicker-feature-tile ${canUseClicker ? "" : "is-coming-soon"}" data-game="clicker" ${canUseClicker ? "" : 'data-locked="true"'} style="grid-column: 1 / -1">
         ${arcadeIcon("clicker")}
-        ${canUseClicker ? "" : '<span class="coming-soon-badge">Скоро</span>'}
+        ${canUseClicker ? '<span class="arcade-new-badge">Новое</span>' : '<span class="coming-soon-badge">Скоро</span>'}
       </div>
     </div>
 
