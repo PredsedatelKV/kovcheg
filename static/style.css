@@ -3305,13 +3305,9 @@ html.dark .bp-isle-lvl { background: linear-gradient(135deg, #2a4a6b 0%, #1a3a5c
 .bp-isle.is-locked .bp-isle-lvl { background: #d9e3ec; color:#7b8a9a; border-color:#aebccc; }
 html.dark .bp-isle.is-locked .bp-isle-lvl { background:#1f3148; color:#7b95b3; border-color:#3a567a; }
 
+/* Золотая окантовка текущего уровня убрана: островок сохраняет вид своего
+   биома, а положение игрока читается по покачиванию и подсветке бейджа. */
 .bp-isle.is-current .bp-isle-body {
-  border-color: #ffd86a;
-  box-shadow:
-    0 0 0 3px rgba(255,216,106,0.5),
-    0 6px 0 rgba(0,0,0,0.08),
-    0 10px 24px rgba(255,160,40,0.45),
-    inset 0 2px 0 rgba(255,255,255,0.5);
   animation: bp-isle-bob 2.2s ease-in-out infinite;
 }
 .bp-isle.is-current .bp-isle-lvl { background: linear-gradient(135deg,#fff3b0,#ffae42); color:#5a2d00; border-color:#ff7a1a; }

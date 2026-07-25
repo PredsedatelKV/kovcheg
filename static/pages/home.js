@@ -7,6 +7,12 @@ import { playUISound } from "/static/pages/settings.js?v=255";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+// Блоки Главной, временно снятые с показа. Разметка остаётся на месте: чтобы
+// вернуть блок, достаточно убрать его ключ из набора.
+const HIDDEN_HOME_BLOCKS = new Set(["assistant", "constitution", "legislation"]);
+
+const isHiddenHomeBlock = (key) => HIDDEN_HOME_BLOCKS.has(key);
+
 const dailyLoadVersions = new WeakMap();
 
 const fmtDate = (iso) =>
@@ -45,6 +51,7 @@ function bannerCarousel(banners) {
 }
 
 function assistantCard() {
+  if (isHiddenHomeBlock("assistant")) return "";
   return `
     <div class="card assistant-card-wide is-coming-soon" id="assistant-card" data-locked="1" aria-disabled="true" title="Скоро">
       <div class="assistant-bust">
@@ -203,12 +210,14 @@ ${bannerCarousel(data.banners)}
     </div>
 
     <div class="chip-row">
+      ${isHiddenHomeBlock("constitution") ? "" : `
       <button class="chip big-chip is-coming-soon" type="button" disabled aria-disabled="true" title="Скоро">
         ${iconHtml("/static/img/ui/constitution.svg", "md", "")}<span>Конституция</span><span class="coming-soon-badge" aria-hidden="true">Скоро</span>
-      </button>
+      </button>`}
+      ${isHiddenHomeBlock("legislation") ? "" : `
       <button class="chip big-chip is-coming-soon" type="button" disabled aria-disabled="true" title="Скоро">
         ${iconHtml("/static/img/ui/scales.svg", "md", "")}<span>Законодательство</span><span class="coming-soon-badge" aria-hidden="true">Скоро</span>
-      </button>
+      </button>`}
       <button class="chip big-chip" data-action="channel">
         ${iconHtml("/static/img/ui/telegram.svg", "md", "")}<span>Телеграм канал</span>
       </button>
