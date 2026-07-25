@@ -217,11 +217,42 @@ def arcade_bet(
 
 
 CASINO_GAMES = {"roulette", "riskwheel", "slots", "dice", "rocket"}
+CASINO_COOLDOWN = timedelta(hours=1)
 ROULETTE_MULTS = [(0.05, 16), (0.25, 11), (0.5, 15), (0.75, 15), (1.0, 15), (1.5, 12), (2.0, 8), (2.5, 5), (3.0, 3)]
 ROULETTE_PAYOUTS = ((10, 8), (30, 8), (50, 10), (70, 12), (80, 2), (90, 14),
                     (100, 14), (120, 12), (140, 10), (160, 6), (180, 4))
 ROCKET_GROWTH_PER_SECOND = 0.25
 ROCKET_MAX_MULTIPLIER = 5.0
+
+
+def _require_casino_cooldown(db: Session, user_id: int) -> None:
+    """Allow one new casino round per user across all casino games each hour."""
+    latest = (
+        db.query(models.CasinoRound)
+        .filter(models.CasinoRound.user_id == user_id)
+        .order_by(models.CasinoRound.created_at.desc(), models.CasinoRound.id.desc())
+        .first()
+    )
+    if latest is None:
+        return
+    remaining_seconds = math.ceil(
+        (latest.created_at + CASINO_COOLDOWN - models.now_utc()).total_seconds()
+    )
+    if remaining_seconds <= 0:
+        return
+    remaining_minutes = max(1, math.ceil(remaining_seconds / 60))
+    hours, minutes = divmod(remaining_minutes, 60)
+    if hours and minutes:
+        wait_text = f"{hours} ч {minutes} мин"
+    elif hours:
+        wait_text = f"{hours} ч"
+    else:
+        wait_text = f"{minutes} мин"
+    raise HTTPException(
+        status_code=429,
+        detail=f"Следующая игра в казино доступна через {wait_text}",
+        headers={"Retry-After": str(remaining_seconds)},
+    )
 
 
 def _rocket_progress(row: models.CasinoRound, now: datetime | None = None) -> dict:
@@ -275,6 +306,7 @@ def casino_start(
     if game not in CASINO_GAMES or amount <= 0 or amount > 1_000_000:
         raise HTTPException(status_code=400, detail="Некорректный раунд")
     begin_game_write(db)
+    _require_casino_cooldown(db, user.id)
     wallet = ensure_wallet(db, user)
     if wallet.balance < amount:
         raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
@@ -359,6 +391,7 @@ def roulette_spin(
             "failure_fragment_count": fragment_count,
         }
 
+    _require_casino_cooldown(db, user.id)
     wallet = ensure_wallet(db, user)
     max_bet = wallet.balance // 5
     if max_bet < 10:

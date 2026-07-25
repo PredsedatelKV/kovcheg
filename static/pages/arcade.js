@@ -875,8 +875,8 @@ function gameRiskWheel() {
     let serverRound;
     try {
       serverRound = await post("/api/arcade/casino/start", { game: "riskwheel", amount: bet });
-    } catch (_) {
-      resultEl.innerHTML = `<div class="game-lose">Ошибка ставки, попробуйте ещё</div>`;
+    } catch (error) {
+      resultEl.innerHTML = `<div class="game-lose">${escapeHtml(error.message || "Ошибка ставки, попробуйте ещё")}</div>`;
       spinBtn.disabled = false;
       return;
     }
@@ -1642,8 +1642,8 @@ function gameSlots() {
     let serverRound;
     try {
       serverRound = await post("/api/arcade/casino/start", { game: "slots", amount: bet });
-    } catch (_) {
-      resultEl.innerHTML = '<div class="game-lose">Ошибка ставки, попробуйте ещё</div>';
+    } catch (error) {
+      resultEl.innerHTML = `<div class="game-lose">${escapeHtml(error.message || "Ошибка ставки, попробуйте ещё")}</div>`;
       spinBtn.disabled = false;
       return;
     }
@@ -1818,8 +1818,8 @@ function gameRocket() {
     startBtn.disabled = true;
     try {
       serverRound = await post("/api/arcade/casino/start", { game: "rocket", amount: bet });
-    } catch (_) {
-      resultEl.innerHTML = '<div class="game-lose">Ошибка ставки, попробуйте ещё</div>';
+    } catch (error) {
+      resultEl.innerHTML = `<div class="game-lose">${escapeHtml(error.message || "Ошибка ставки, попробуйте ещё")}</div>`;
       startBtn.disabled = false;
       return;
     }
@@ -1933,8 +1933,8 @@ function gameDice() {
       let serverRound;
       try {
         serverRound = await post("/api/arcade/casino/start", { game: "dice", amount: bet, choice: btn.dataset.pick });
-      } catch (_) {
-        resEl.innerHTML = '<div class="game-lose">Ошибка ставки, попробуйте ещё</div>';
+      } catch (error) {
+        resEl.innerHTML = `<div class="game-lose">${escapeHtml(error.message || "Ошибка ставки, попробуйте ещё")}</div>`;
         rolling = false;
         return;
       }

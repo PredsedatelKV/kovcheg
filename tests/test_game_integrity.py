@@ -350,3 +350,43 @@ def test_roulette_enforces_minimum_and_twenty_percent_maximum(game_api):
         json={"amount": 21, "request_id": "roulette_max_001"},
         headers=_headers(),
     ).status_code == 400
+
+
+def test_casino_cooldown_is_shared_across_all_games(game_api, monkeypatch):
+    client, sessions = game_api
+    now = datetime(2026, 7, 24, 12, 0, 0)
+    monkeypatch.setattr(arcade.models, "now_utc", lambda: now)
+
+    first = client.post(
+        "/api/arcade/casino/start",
+        json={"game": "slots", "amount": 1},
+        headers=_headers(),
+    )
+    assert first.status_code == 200
+
+    # created_at falls back to the real clock (the column default captured the
+    # original now_utc), so pin the stored round to the frozen time under test.
+    with sessions() as db:
+        stored = db.query(models.CasinoRound).one()
+        stored.created_at = now
+        db.commit()
+
+    blocked = client.post(
+        "/api/arcade/roulette/spin",
+        json={"amount": 10, "request_id": "roulette_cooldown_001"},
+        headers=_headers(),
+    )
+    assert blocked.status_code == 429
+    assert blocked.headers["Retry-After"] == "3600"
+
+    monkeypatch.setattr(
+        arcade.models,
+        "now_utc",
+        lambda: now + arcade.CASINO_COOLDOWN,
+    )
+    allowed = client.post(
+        "/api/arcade/casino/start",
+        json={"game": "dice", "amount": 1, "choice": "odd"},
+        headers=_headers(),
+    )
+    assert allowed.status_code == 200
