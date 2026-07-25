@@ -11,11 +11,11 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.access import can_use_clicker
-from app.api._helpers import ensure_wallet
+from app.api._helpers import ensure_wallet, require_open_section
 from app.auth import current_user
 from app.db import begin_game_write, get_db
 
-router = APIRouter(prefix="/api/arcade", tags=["arcade"])
+router = APIRouter(prefix="/api/arcade", tags=["arcade"], dependencies=[Depends(require_open_section("arcade"))])
 SYSTEM_RANDOM = secrets.SystemRandom()
 
 MSK = timezone(timedelta(hours=3))

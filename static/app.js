@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=257";
-import { renderProfile } from "/static/pages/profile.js?v=257";
-import { renderKoverna } from "/static/pages/koverna.js?v=257";
-import { renderArcade } from "/static/pages/arcade.js?v=257";
-import { renderAdmin } from "/static/pages/admin.js?v=257";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=257";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=257";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=257";
-import { get, post, prefetch, peekCached } from "/static/api.js?v=257";
+import { renderHome } from "/static/pages/home.js?v=258";
+import { renderProfile } from "/static/pages/profile.js?v=258";
+import { renderKoverna } from "/static/pages/koverna.js?v=258";
+import { renderArcade } from "/static/pages/arcade.js?v=258";
+import { renderAdmin } from "/static/pages/admin.js?v=258";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=258";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=258";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=258";
+import { get, post, prefetch, peekCached } from "/static/api.js?v=258";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -132,7 +132,8 @@ async function ensureTabRendered(name) {
   div.innerHTML = '<div class="card"><p>Загрузка…</p></div>';
   state.renderPromise = (async () => {
     try {
-      await RENDERERS[name](div);
+      if (isSectionClosed(name)) renderMaintenance(div, name);
+      else await RENDERERS[name](div);
       state.rendered = true;
       state.lastRevalidatedAt = Date.now();
       div.removeAttribute("aria-busy");
@@ -161,7 +162,31 @@ const TAB_QUERIES = {
   battlepass: ["/api/battlepass"],
 };
 
+const SECTION_TITLES = {
+  koverna: "Коверна",
+  arcade: "Аркада",
+  battlepass: "Боевой пропуск",
+};
+
+// Sections the server closed for this account. Their APIs are rejected server
+// side too; this only keeps the client from rendering a page it cannot load.
+function isSectionClosed(name) {
+  const me = window.kov && window.kov.me;
+  const closed = (me && me.maintenance_sections) || [];
+  return closed.indexOf(name) !== -1;
+}
+
+function renderMaintenance(root, name) {
+  root.innerHTML = `
+    <div class="card maintenance-card">
+      <div class="maintenance-icon">🛠</div>
+      <h2 class="maintenance-title">${SECTION_TITLES[name] || "Раздел"} недоступен</h2>
+      <p class="maintenance-text">Ведутся технические работы. Загляните позже.</p>
+    </div>`;
+}
+
 function warmTab(name) {
+  if (isSectionClosed(name)) return;
   const paths = TAB_QUERIES[name];
   if (paths) prefetch(paths).catch(() => {});
 }
@@ -182,6 +207,7 @@ function comparableRevalidationValue(path, value) {
 }
 
 function revalidateVisibleTab(name) {
+  if (isSectionClosed(name)) return;
   const paths = TAB_QUERIES[name];
   const state = getTabState(name);
   const now = Date.now();
@@ -249,7 +275,8 @@ async function refreshTab(name) {
   tabShowListeners[name] = [];
   state.refreshPromise = (async () => {
     try {
-      await RENDERERS[name](div);
+      if (isSectionClosed(name)) renderMaintenance(div, name);
+      else await RENDERERS[name](div);
       state.rendered = true;
     } catch (error) {
       state.rendered = false;

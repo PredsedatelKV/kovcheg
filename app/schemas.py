@@ -19,6 +19,7 @@ class UserOut(BaseModel):
     xp: int = 0
     is_admin: bool = False
     can_use_clicker: bool = False
+    maintenance_sections: list[str] = []
 
 
 class PlayerOut(BaseModel):

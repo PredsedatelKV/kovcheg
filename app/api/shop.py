@@ -4,12 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api._helpers import ensure_wallet
+from app.api._helpers import ensure_wallet, require_open_section
 from app.api.profile import _item_to_out
 from app.auth import current_user
 from app.db import begin_game_write, get_db
 
-router = APIRouter(prefix="/api/shop", tags=["shop"])
+router = APIRouter(prefix="/api/shop", tags=["shop"], dependencies=[Depends(require_open_section("koverna"))])
 MAX_PRODUCT_PRICE = 1_000_000_000
 
 

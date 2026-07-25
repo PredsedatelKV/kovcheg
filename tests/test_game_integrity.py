@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app import models
+from app import access, models
 from app.api import arcade, battlepass, home, profile
 from app.auth import current_user
 from app.db import Base, get_db
@@ -229,11 +229,16 @@ def test_fragment_assembly_and_parallel_safety(game_api):
 
 
 def test_clicker_blocks_only_magomet_and_ibrahim(game_api):
-    client, _ = game_api
+    client, sessions = game_api
     assert client.get("/api/arcade/clicker/state", headers=_headers(1)).status_code == 200
     assert client.get("/api/arcade/clicker/state", headers=_headers(2)).status_code == 200
-    assert client.get("/api/arcade/clicker/state", headers=_headers(3)).status_code == 403
-    assert client.get("/api/arcade/clicker/state", headers=_headers(4)).status_code == 403
+    # Аркада для Магомета и Ибрагима закрыта целиком, поэтому раздел отвечает 503
+    # раньше, чем кликер успевает отдать свой 403. Сам запрет кликера при этом жив.
+    assert client.get("/api/arcade/clicker/state", headers=_headers(3)).status_code == 503
+    assert client.get("/api/arcade/clicker/state", headers=_headers(4)).status_code == 503
+    with sessions() as db:
+        assert access.can_use_clicker(db.get(models.User, 3)) is False
+        assert access.can_use_clicker(db.get(models.User, 4)) is False
     assert client.post("/api/arcade/round/start", json={"game": "clicker"}, headers=_headers(2)).status_code == 400
 
 
@@ -390,3 +395,59 @@ def test_casino_cooldown_is_shared_across_all_games(game_api, monkeypatch):
         headers=_headers(),
     )
     assert allowed.status_code == 200
+
+
+MAINTENANCE_USERS = ("3", "4")  # Магомет и Ибрагим
+OPEN_USERS = ("1", "2")  # обычный игрок и Омар
+
+
+def _koverna_client(game_api_client):
+    """Коверна живёт в роутерах shop/market, которых нет в основной тестовой сборке."""
+    from app.api import market, shop
+    app = FastAPI()
+    app.include_router(shop.router)
+    app.include_router(market.router)
+    app.dependency_overrides = dict(game_api_client.app.dependency_overrides)
+    return TestClient(app)
+
+
+def test_closed_sections_are_rejected_for_the_listed_players(game_api):
+    client, sessions = game_api
+    koverna = _koverna_client(client)
+
+    for user_id in MAINTENANCE_USERS:
+        headers = {"X-Test-User": user_id}
+        with sessions() as db:
+            assert access.maintenance_sections(db.get(models.User, int(user_id))) == [
+                "koverna", "arcade", "battlepass",
+            ]
+
+        assert koverna.get("/api/shop/products", headers=headers).status_code == 503
+        assert koverna.get("/api/market/listings", headers=headers).status_code == 503
+        assert client.post(
+            "/api/arcade/casino/start", json={"game": "slots", "amount": 1}, headers=headers,
+        ).status_code == 503
+
+        blocked = client.post("/api/battlepass/claim", json={"level": 1}, headers=headers)
+        assert blocked.status_code == 503
+        assert blocked.json()["detail"] == access.MAINTENANCE_MESSAGE
+
+        # Чтение пропуска остаётся открытым: Главная берёт из него уровень.
+        assert client.get("/api/battlepass", headers=headers).status_code == 200
+
+
+def test_open_sections_stay_open_for_everyone_else(game_api):
+    client, sessions = game_api
+    koverna = _koverna_client(client)
+
+    for user_id in OPEN_USERS:
+        headers = {"X-Test-User": user_id}
+        with sessions() as db:
+            assert access.maintenance_sections(db.get(models.User, int(user_id))) == []
+
+        assert koverna.get("/api/shop/products", headers=headers).status_code == 200
+        assert koverna.get("/api/market/listings", headers=headers).status_code == 200
+        assert client.post(
+            "/api/arcade/casino/start", json={"game": "slots", "amount": 1}, headers=headers,
+        ).status_code == 200
+        assert client.get("/api/battlepass", headers=headers).status_code == 200

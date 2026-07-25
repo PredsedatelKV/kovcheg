@@ -4,6 +4,24 @@ CLICKER_BLOCKED_TELEGRAM_IDS = frozenset({837611803, 7735808918})
 LIMITED_STOCK_LOOTBOX_TELEGRAM_IDS = CLICKER_BLOCKED_TELEGRAM_IDS
 
 
+# Sections temporarily closed for individual players while their content is
+# reworked. Keys match the client tab names in static/app.js.
+MAINTENANCE_SECTIONS = ("koverna", "arcade", "battlepass")
+MAINTENANCE_TELEGRAM_IDS = frozenset({837611803, 7735808918})
+MAINTENANCE_MESSAGE = "Ведутся технические работы"
+
+
+def maintenance_sections(user) -> list[str]:
+    """Sections this player must not see. Empty for everyone else."""
+    if not user or user.telegram_id not in MAINTENANCE_TELEGRAM_IDS:
+        return []
+    return list(MAINTENANCE_SECTIONS)
+
+
+def is_section_closed(user, section: str) -> bool:
+    return section in maintenance_sections(user)
+
+
 def can_use_clicker(user) -> bool:
     return bool(user and user.id and user.telegram_id not in CLICKER_BLOCKED_TELEGRAM_IDS)
 

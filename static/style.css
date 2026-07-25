@@ -3351,51 +3351,79 @@ html.dark .bp-isle.bp-isle-gold .bp-isle-lvl {
   border-color: rgba(140,120,40,0.4);
 }
 
-/* Final level: a bright blue diamond crowning the ladder. Declared after the
-   milestone/gold rules so the last round level keeps the diamond look. */
+/* Final level: a bright blue brilliant-cut diamond crowning the ladder.
+   Declared after the milestone/gold rules so the last round level keeps the
+   diamond look instead of turning gold. The silhouette is a clip-path, so the
+   glow has to be a drop-shadow on the wrapper: a box-shadow on the body would
+   be clipped away together with the corners, and a filter on the body itself
+   would fight the .is-locked dimming. */
+.bp-isle.bp-isle-diamond {
+  filter: drop-shadow(0 0 10px rgba(90,215,255,0.6)) drop-shadow(0 5px 12px rgba(20,120,190,0.38));
+}
 .bp-isle.bp-isle-diamond .bp-isle-body {
-  background: linear-gradient(160deg, #eafbff 0%, #a8ecff 22%, #5ed2ff 48%, #22b0f5 72%, #0a86d8 100%);
-  border-color: rgba(235,252,255,0.95);
-  border-radius: 42% 42% 46% 46% / 52% 52% 44% 44%;
-  box-shadow: 0 0 26px rgba(70,205,255,0.65), 0 6px 0 rgba(20,120,190,0.45),
-              0 10px 26px rgba(40,170,240,0.4), inset 0 2px 0 rgba(255,255,255,0.9),
-              inset 0 -6px 12px rgba(10,110,180,0.35);
-  animation: bp-isle-in .4s ease-out both, bp-diamond-glow 2.6s ease-in-out infinite;
+  width: 100%;
+  max-width: 132px;
+  min-height: 126px;
+  margin: 0 auto;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  /* Room for the pavilion: content must stay above the tapering tip. */
+  padding: 28px 12px 44px;
+  gap: 2px;
+  clip-path: polygon(21% 0%, 79% 0%, 100% 33%, 50% 100%, 0% 33%);
+  background:
+    /* table highlight, girdle line, shaded pavilion */
+    linear-gradient(180deg, rgba(255,255,255,0.42) 0 28%, rgba(255,255,255,0.85) 28% 33%,
+                    rgba(8,90,150,0.16) 33% 100%),
+    /* facets radiating from the pavilion tip */
+    conic-gradient(from -42deg at 50% 100%,
+                   rgba(255,255,255,0.30) 0deg 10deg,
+                   rgba(10,95,160,0.20) 10deg 20deg,
+                   rgba(255,255,255,0.22) 20deg 30deg,
+                   rgba(10,95,160,0.10) 30deg 40deg,
+                   rgba(255,255,255,0.34) 40deg 50deg,
+                   rgba(10,95,160,0.16) 50deg 60deg,
+                   rgba(255,255,255,0.20) 60deg 70deg,
+                   rgba(10,95,160,0.22) 70deg 84deg),
+    linear-gradient(160deg, #eafbff 0%, #a8ecff 22%, #5ed2ff 48%, #22b0f5 72%, #0a86d8 100%);
 }
+/* The badge normally overhangs the top edge; on the gem that overhang would be
+   clipped off, so it sits on the table facet instead. */
 .bp-isle.bp-isle-diamond .bp-isle-lvl {
-  background: rgba(255,255,255,0.82);
+  top: 5px;
+  background: rgba(255,255,255,0.9);
   color: #0a6a9a;
-  border-color: rgba(120,220,255,0.85);
+  border-color: rgba(120,220,255,0.9);
 }
-.bp-isle.bp-isle-diamond .bp-isle-shadow { background: rgba(30,150,220,0.28); }
+.bp-isle.bp-isle-diamond .bp-isle-shadow { width: 34%; background: rgba(30,150,220,0.3); }
 .bp-isle.bp-isle-diamond .bp-isle-check { color: #0a6a9a; }
 .bp-isle.bp-isle-diamond .bp-isle-icon { filter: drop-shadow(0 1px 4px rgba(0,140,220,0.45)); }
 .bp-isle.bp-isle-diamond .bp-isle-empty { color: #0a6a9a; }
+html.dark .bp-isle.bp-isle-diamond {
+  filter: drop-shadow(0 0 9px rgba(70,185,240,0.45)) drop-shadow(0 5px 12px rgba(10,70,110,0.5));
+}
+/* Only the base layer changes in the dark theme: the facet layers above it are
+   restated because `background` replaces the whole layer stack. */
 html.dark .bp-isle.bp-isle-diamond .bp-isle-body {
-  background: linear-gradient(160deg, #9fe6ff 0%, #56c4f0 25%, #2a9ad8 55%, #1a72ac 80%, #0d4f7d 100%);
-  border-color: rgba(150,230,255,0.7);
-  /* Own keyframes: the light-theme glow animation would otherwise keep
-     painting its bright box-shadow over the dark palette. */
-  animation: bp-isle-in .4s ease-out both, bp-diamond-glow-dark 2.6s ease-in-out infinite;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.30) 0 28%, rgba(220,248,255,0.6) 28% 33%,
+                    rgba(4,40,70,0.28) 33% 100%),
+    conic-gradient(from -42deg at 50% 100%,
+                   rgba(255,255,255,0.20) 0deg 10deg,
+                   rgba(6,50,85,0.28) 10deg 20deg,
+                   rgba(255,255,255,0.14) 20deg 30deg,
+                   rgba(6,50,85,0.16) 30deg 40deg,
+                   rgba(255,255,255,0.24) 40deg 50deg,
+                   rgba(6,50,85,0.24) 50deg 60deg,
+                   rgba(255,255,255,0.12) 60deg 70deg,
+                   rgba(6,50,85,0.30) 70deg 84deg),
+    linear-gradient(160deg, #9fe6ff 0%, #56c4f0 25%, #2a9ad8 55%, #1a72ac 80%, #0d4f7d 100%);
 }
 html.dark .bp-isle.bp-isle-diamond .bp-isle-lvl {
-  background: rgba(10,70,110,0.65);
+  background: rgba(10,70,110,0.7);
   color: #cdf1ff;
   border-color: rgba(90,190,240,0.55);
-}
-@keyframes bp-diamond-glow-dark {
-  0%, 100% { box-shadow: 0 0 20px rgba(60,180,235,0.4), 0 6px 0 rgba(8,60,95,0.5),
-                         0 10px 24px rgba(20,110,170,0.28), inset 0 2px 0 rgba(220,248,255,0.55); }
-  50%      { box-shadow: 0 0 30px rgba(90,205,250,0.6), 0 6px 0 rgba(8,60,95,0.5),
-                         0 12px 28px rgba(20,110,170,0.4), inset 0 2px 0 rgba(230,250,255,0.6); }
-}
-@keyframes bp-diamond-glow {
-  0%, 100% { box-shadow: 0 0 22px rgba(70,205,255,0.5), 0 6px 0 rgba(20,120,190,0.45),
-                         0 10px 26px rgba(40,170,240,0.35), inset 0 2px 0 rgba(255,255,255,0.9),
-                         inset 0 -6px 12px rgba(10,110,180,0.35); }
-  50%      { box-shadow: 0 0 34px rgba(120,225,255,0.8), 0 6px 0 rgba(20,120,190,0.45),
-                         0 12px 30px rgba(40,170,240,0.5), inset 0 2px 0 rgba(255,255,255,0.95),
-                         inset 0 -6px 12px rgba(10,110,180,0.3); }
 }
 
 .bp-isle-flag {
@@ -4306,3 +4334,14 @@ html.dark .input:disabled,
 html.dark .btn:disabled { color: #c3c8d4; }
 html.dark .error,
 html.dark [role="alert"] { color: #ff8a8a; }
+
+/* Per-account maintenance notice shown in place of a closed section. */
+.maintenance-card {
+  max-width: 460px;
+  margin: 32px auto;
+  padding: 32px 24px;
+  text-align: center;
+}
+.maintenance-icon { font-size: 44px; line-height: 1; margin-bottom: 12px; }
+.maintenance-title { margin: 0 0 8px; font-size: 18px; }
+.maintenance-text { margin: 0; color: var(--muted); }

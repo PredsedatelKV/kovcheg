@@ -1,9 +1,27 @@
 from __future__ import annotations
 
-from fastapi import HTTPException
+from collections.abc import Callable
+
+from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models
+from app.access import MAINTENANCE_MESSAGE, is_section_closed
+from app.auth import current_user
+
+
+def require_open_section(section: str) -> Callable:
+    """Router dependency closing a whole section for the players it is hidden from.
+
+    The client also hides the tab, but the check has to live on the server: a
+    hidden tab is not a closed API.
+    """
+
+    def guard(user: models.User = Depends(current_user)) -> None:
+        if is_section_closed(user, section):
+            raise HTTPException(status_code=503, detail=MAINTENANCE_MESSAGE)
+
+    return guard
 
 
 def ensure_wallet(db: Session, user: models.User) -> models.Wallet:

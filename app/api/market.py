@@ -4,12 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api._helpers import ensure_wallet, return_market_listing_to_seller
+from app.api._helpers import ensure_wallet, require_open_section, return_market_listing_to_seller
 from app.api.profile import _inventory_to_out, _item_to_out, _user_to_out
 from app.auth import current_user
 from app.db import begin_game_write, get_db
 
-router = APIRouter(prefix="/api/market", tags=["market"])
+router = APIRouter(prefix="/api/market", tags=["market"], dependencies=[Depends(require_open_section("koverna"))])
 MAX_LISTING_PRICE = 1_000_000_000
 MAX_LISTING_QUANTITY = 1_000_000
 

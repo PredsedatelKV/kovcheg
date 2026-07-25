@@ -220,7 +220,11 @@ ${bannerCarousel(data.banners)}
 
   // The compact pass card is optional. Do not issue a request when the active
   // home layout does not contain its mount (the old legacy layout did).
-  const bpMiniMount = root.querySelector("#bp-mini-card");
+  // A pass card that only leads to the "under maintenance" screen is worse than
+  // no card, so it is skipped for the accounts the pass is closed for.
+  var me = window.kov && window.kov.me;
+  var passClosed = ((me && me.maintenance_sections) || []).indexOf("battlepass") !== -1;
+  const bpMiniMount = passClosed ? null : root.querySelector("#bp-mini-card");
   if (bpMiniMount) get("/api/battlepass").then(function(bp) {
     if (!bp || !bp.season) return;
     var el = root.querySelector("#bp-mini-card");

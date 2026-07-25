@@ -43,6 +43,23 @@ function _isleTheme(lvl, totalLevels) {
   return "bp-isle-stone";
 }
 
+// With 100 levels the player's island is far below the fold, so the ladder is
+// positioned on it instead of at the top every time the tab is shown.
+function _scrollToCurrentIsland() {
+  if (!_bpRoot || !_bpData || !_bpData.season) return;
+  var total = Math.max(1, Number(_bpData.season.total_levels) || 1);
+  var level = Math.min(Math.max(Number(_bpData.current_level) || 0, 0), total - 1) + 1;
+  var island = document.getElementById("bp-lvl-" + level);
+  var view = document.getElementById("view");
+  if (!island || !view) return;
+  // Rect math instead of offsetTop: the island's offsetParent depends on which
+  // ancestors happen to be positioned.
+  var delta = island.getBoundingClientRect().top - view.getBoundingClientRect().top;
+  var target = view.scrollTop + delta - (view.clientHeight - island.offsetHeight) / 2;
+  var maxScroll = Math.max(0, view.scrollHeight - view.clientHeight);
+  view.scrollTop = Math.min(Math.max(0, target), maxScroll);
+}
+
 export async function renderBattlePass(root) {
   _bpRoot = root;
   root.classList.add("bp-page");
@@ -182,12 +199,13 @@ function _renderBP(data) {
     }
   })();
 
-  // Scroll to top on first render
-  if (!_bpRoot._bpScrolled) {
-    _bpRoot._bpScrolled = true;
-    requestAnimationFrame(function() {
-      var v = document.getElementById("view");
-      if (v) v.scrollTo({ top: 0, behavior: "auto" });
+  // Land on the current island — on first render and on every later switch to
+  // this tab. The shell restores its own remembered scroll inside a rAF right
+  // before notifying listeners, so this runs one frame later and wins.
+  requestAnimationFrame(_scrollToCurrentIsland);
+  if (window.kov && window.kov.onTabShow) {
+    window.kov.onTabShow("battlepass", function() {
+      requestAnimationFrame(_scrollToCurrentIsland);
     });
   }
 

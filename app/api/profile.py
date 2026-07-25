@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.access import can_use_clicker, uses_limited_lootbox_stock
+from app.access import can_use_clicker, maintenance_sections, uses_limited_lootbox_stock
 from app.api._helpers import award_xp, ensure_wallet
 from app.auth import current_user, is_admin
 from app.db import begin_game_write, get_db
@@ -47,6 +47,7 @@ def _user_to_out(user: models.User) -> schemas.UserOut:
         xp=user.xp,
         is_admin=is_admin(user),
         can_use_clicker=can_use_clicker(user),
+        maintenance_sections=maintenance_sections(user),
     )
 
 

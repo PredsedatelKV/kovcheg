@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.access import MAINTENANCE_MESSAGE, is_section_closed
 from app.api._helpers import award_xp, ensure_wallet
 from app.auth import current_user, is_admin
 from app.db import begin_game_write, get_db
@@ -125,6 +126,8 @@ def claim_reward(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    if is_section_closed(user, "battlepass"):
+        raise HTTPException(503, MAINTENANCE_MESSAGE)
     begin_game_write(db)
     season = _get_active_season(db)
     if not season:
