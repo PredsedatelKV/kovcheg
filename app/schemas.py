@@ -141,6 +141,15 @@ class ShopRestockRequestCreate(BaseModel):
     text: str = Field(min_length=1, max_length=30)
 
 
+class ShopRestockRequestAdminOut(BaseModel):
+    id: int
+    user_id: int
+    user_name: str
+    text: str
+    request_date: str
+    created_at: datetime
+
+
 class ListRequest(BaseModel):
     item_id: StrictInt = Field(gt=0)
     quantity: StrictInt = Field(ge=1, le=1_000_000)
@@ -741,7 +750,7 @@ class AdminLootboxBody(BaseModel):
     code: str = Field(min_length=2, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]*$")
     name: str = Field(min_length=1, max_length=128)
     rarity: str = Field(default="Обычный", min_length=1, max_length=32)
-    image_url: str = Field(default="/static/img/items/lootbox_common.svg", min_length=1, max_length=512)
+    image_url: str = Field(default="/static/img/items/lootbox_common.png", min_length=1, max_length=512)
     # Optional on writes so an older admin client cannot accidentally switch a
     # chest_v2 pool back to the legacy roulette while saving unrelated fields.
     opening_mode: Literal["legacy_v1", "chest_v2", "choice_v2"] | None = None

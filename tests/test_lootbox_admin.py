@@ -438,7 +438,7 @@ def test_seed_migrates_canonical_chests_once_and_preserves_admin_edits(lootbox_a
         for code in ("common", "rare", "epic", "legendary", "seasonal"):
             pool = canonical[code]
             assert pool.opening_mode == "chest_v2"
-            assert pool.open_image_url == f"/static/img/items/lootbox_{code}_open.svg"
+            assert pool.open_image_url == f"/static/img/items/lootbox_{code}_open.png"
             guaranteed = [entry for entry in pool.entries if entry.is_guaranteed]
             assert len(guaranteed) == 3
             assert {entry.reward_kind for entry in guaranteed} == {"item", "xp", "kovbucks"}

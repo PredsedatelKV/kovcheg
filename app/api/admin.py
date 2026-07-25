@@ -740,6 +740,36 @@ def list_shop(db: Session = Depends(get_db)) -> list[schemas.ShopProductOut]:
     return [_shop_product_out(p) for p in rows]
 
 
+@router.get("/shop/restock-requests", response_model=list[schemas.ShopRestockRequestAdminOut])
+def list_shop_restock_requests(db: Session = Depends(get_db)) -> list[schemas.ShopRestockRequestAdminOut]:
+    rows = db.query(models.ShopRestockRequest).order_by(
+        models.ShopRestockRequest.created_at.desc(),
+        models.ShopRestockRequest.id.desc(),
+    ).all()
+    return [
+        schemas.ShopRestockRequestAdminOut(
+            id=row.id,
+            user_id=row.user_id,
+            user_name=row.user.first_name if row.user else f"Игрок #{row.user_id}",
+            text=row.text,
+            request_date=row.request_date,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+
+
+@router.delete("/shop/restock-requests/{request_id}")
+def delete_shop_restock_request(request_id: int, db: Session = Depends(get_db)) -> dict:
+    begin_game_write(db)
+    row = db.query(models.ShopRestockRequest).filter(models.ShopRestockRequest.id == request_id).one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/shop", response_model=schemas.ShopProductOut)
 def create_shop(body: schemas.AdminShopProductBody, db: Session = Depends(get_db)) -> schemas.ShopProductOut:
     begin_game_write(db)
@@ -1403,8 +1433,8 @@ def _ensure_lootbox_item_link(db: Session, pool: models.LootboxPool) -> models.I
         item = models.Item(
             code=item_code,
             name=pool.name,
-            icon=pool.image_url or "/static/img/items/lootbox_common.svg",
-            image_url=pool.image_url or "/static/img/items/lootbox_common.svg",
+            icon=pool.image_url or "/static/img/items/lootbox_common.png",
+            image_url=pool.image_url or "/static/img/items/lootbox_common.png",
             description="",
             rarity=pool.rarity or "Обычный",
             category="Ковбоксы",

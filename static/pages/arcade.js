@@ -2583,7 +2583,7 @@ export async function renderArcade(root) {
         <div class="game-tile-title">Кубик</div>
       </div>
       <div class="game-tile casino" data-game="riskwheel">
-        ${arcadeIcon("roulette")}
+        ${arcadeIcon("riskwheel")}
         <div class="game-tile-title">Ва-банк</div>
       </div>
     </div>

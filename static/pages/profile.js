@@ -942,6 +942,7 @@ function showMegaLootboxChoices(result) {
     overlay.classList.add("is-closing");
     setTimeout(() => overlay.remove(), 180);
   });
+  requestAnimationFrame(() => chestButton.click());
 }
 
 function showLootboxChest(result) {
@@ -973,7 +974,7 @@ function showLootboxChest(result) {
       <h2>${escapeHtml(result.pool.name || "Ковбокс")}</h2>
       <div class="lootbox-remaining" id="lootbox-remaining"><span id="lootbox-remaining-value">${rewards.length}</span></div>
     </header>
-    <div class="lootbox-collected" id="lootbox-collected" aria-label="Полученные награды"></div>
+    <div class="lootbox-collected" id="lootbox-collected" aria-label="Полученные награды" hidden></div>
     <div class="lootbox-reward-stage" id="lootbox-reward-stage" aria-live="polite"></div>
     <div class="lootbox-chest-floor">
       <button class="lootbox-chest-button" id="lootbox-chest-button" type="button" aria-label="Открыть следующую награду">
@@ -1026,16 +1027,9 @@ function showLootboxChest(result) {
   }
 
   function addCollected(reward) {
-    if (!reward) return;
-    const chip = document.createElement("div");
-    chip.className = "lootbox-collected-chip";
-    const image = document.createElement("img");
-    image.src = reward.icon || "/static/img/ui/box.svg";
-    image.alt = "";
-    const amount = document.createElement("span");
-    amount.textContent = "×" + reward.amount;
-    chip.append(image, amount);
-    collected.appendChild(chip);
+    // The counter already shows how many rewards remain. Previous rewards are
+    // intentionally kept out of this area and appear together only at the end.
+    return reward;
   }
 
   function rewardCard(reward) {
@@ -1087,8 +1081,9 @@ function showLootboxChest(result) {
       chestButton.classList.remove("is-bumping");
       void chestButton.offsetWidth;
       chestButton.classList.add("is-bumping");
-      setTimeout(() => { chestImage.src = openImage; }, 220);
-      await playAudioAndWait(openSound);
+      playAudio(openSound);
+      setTimeout(() => { chestImage.src = openImage; }, 160);
+      await new Promise((resolve) => setTimeout(resolve, 420));
     }
     const card = rewardCard(reward);
     stage.replaceChildren(card);
@@ -1122,4 +1117,6 @@ function showLootboxChest(result) {
   chestButton.addEventListener("click", revealNext);
   done.addEventListener("click", closeReveal);
   updateCounter();
+  hint.textContent = "Открываем…";
+  requestAnimationFrame(() => revealNext());
 }

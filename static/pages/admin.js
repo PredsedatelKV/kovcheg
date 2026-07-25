@@ -664,8 +664,27 @@ async function renderWheel(body) {
 
 // ---------- SHOP ----------
 async function renderShop(body) {
-  const rows = await get("/api/admin/shop");
+  const [rows, restockRequests] = await Promise.all([
+    get("/api/admin/shop"),
+    get("/api/admin/shop/restock-requests"),
+  ]);
   body.innerHTML = `
+    ${cardBlock(
+      "Заявки на пополнение",
+      `<button class="btn btn-outline" id="restock-requests-toggle">
+        Заявки игроков${restockRequests.length ? ` · ${restockRequests.length}` : ""}
+      </button>
+      <div id="restock-requests-list" hidden>
+        ${restockRequests.length === 0
+          ? '<div class="admin-sub" style="margin-top:12px">Новых заявок пока нет</div>'
+          : restockRequests.map((request) => `
+            <div class="admin-card admin-restock-request" data-restock-id="${request.id}">
+              <h3 class="admin-card-title">${escapeHtml(request.text)}</h3>
+              <div class="admin-sub">${escapeHtml(request.user_name)} · ${escapeHtml(request.request_date)}</div>
+              <button class="btn btn-sm btn-danger" data-action="delete-restock" style="margin-top:9px">Удалить</button>
+            </div>`).join("")}
+      </div>`,
+    )}
     ${cardBlock(
       "Новый товар в магазине",
       formGrid(
@@ -693,6 +712,21 @@ async function renderShop(body) {
       )
       .join("")}
   `;
+  const requestsToggle = body.querySelector("#restock-requests-toggle");
+  const requestsList = body.querySelector("#restock-requests-list");
+  requestsToggle.addEventListener("click", () => {
+    requestsList.hidden = !requestsList.hidden;
+    requestsToggle.classList.toggle("active", !requestsList.hidden);
+  });
+  body.querySelectorAll("[data-action='delete-restock']").forEach((button) => {
+    button.addEventListener("click", () => {
+      const card = button.closest("[data-restock-id]");
+      confirmAction("Удалить заявку?", async () => {
+        await del(`/api/admin/shop/restock-requests/${card.dataset.restockId}`);
+        renderShop(body);
+      });
+    });
+  });
   body.querySelector("#s-create").addEventListener("click", async () => {
     const payload = {
       item_id: Number(body.querySelector("#s-item").value),
@@ -1580,12 +1614,12 @@ function validateLootboxPayload(payload) {
 function openLootboxEditor(body, existing = null) {
   const box = existing || {
     code: "", name: "", rarity: "Обычный",
-    image_url: "/static/img/items/lootbox_common.svg", is_active: false,
+    image_url: "/static/img/items/lootbox_common.png", is_active: false,
     is_droppable: false, is_archived: false, assembly_weight: 10,
     sale_price: null, sale_currency: "kovbucks", min_user_level: null,
     max_user_level: null, sort_order: 0, starts_at: null, ends_at: null,
     daily_open_limit: 0, guaranteed_slots: 1, allow_duplicates: true,
-    opening_mode: "chest_v2", open_image_url: "/static/img/items/lootbox_common_open.svg",
+    opening_mode: "chest_v2", open_image_url: "/static/img/items/lootbox_common_open.png",
     bonus_item_chance: 0,
     entries: [],
   };

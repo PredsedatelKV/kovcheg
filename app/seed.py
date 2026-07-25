@@ -131,10 +131,10 @@ def _seed_catalog_snacks(db: Session, fragment: models.Item) -> None:
 # Icons for existing rows are migrated to file paths on every startup so a
 # user can drop new SVG/PNG files into static/img/* without touching the DB.
 ITEM_ICON_BY_CODE: dict[str, str] = {
-    "lootbox_common": "/static/img/items/lootbox_common.svg",
-    "lootbox_rare": "/static/img/items/lootbox_rare.svg",
-    "lootbox_epic": "/static/img/items/lootbox_epic.svg",
-    "lootbox_legendary": "/static/img/items/lootbox_legendary.svg",
+    "lootbox_common": "/static/img/items/lootbox_common.png",
+    "lootbox_rare": "/static/img/items/lootbox_rare.png",
+    "lootbox_epic": "/static/img/items/lootbox_epic.png",
+    "lootbox_legendary": "/static/img/items/lootbox_legendary.png",
     "lootbox_seasonal": "/static/img/items/lootbox_seasonal.png",
     "lootbox_mega": "/static/img/items/lootbox_mega.png",
     "lootbox_consolation": "/static/img/items/lootbox_consolation.png",
@@ -156,8 +156,16 @@ def migrate_icons(db: Session) -> None:
     """Force icons to current paths on each boot so existing rows pick up new assets."""
     for code, path in ITEM_ICON_BY_CODE.items():
         item = db.query(models.Item).filter(models.Item.code == code).one_or_none()
-        if item is not None and item.icon != path:
-            item.icon = path
+        if item is not None:
+            if item.icon != path:
+                item.icon = path
+            # Keep bundled lootbox images in sync with their current assets,
+            # while preserving a custom image uploaded through the editor.
+            if code.startswith("lootbox_") and (
+                not item.image_url
+                or str(item.image_url).startswith("/static/img/items/lootbox_")
+            ):
+                item.image_url = path
     for name, path in TASK_ICON_BY_NAME.items():
         task = db.query(models.Task).filter(models.Task.name == name).one_or_none()
         if task is not None and task.icon != path:
@@ -264,7 +272,7 @@ def migrate_schema(db: Session) -> None:
         lootbox_pool_columns = [
             ("description", "TEXT NOT NULL DEFAULT ''"),
             ("rarity", "VARCHAR(32) NOT NULL DEFAULT 'Обычный'"),
-            ("image_url", "VARCHAR(512) NOT NULL DEFAULT '/static/img/items/lootbox_common.svg'"),
+            ("image_url", "VARCHAR(512) NOT NULL DEFAULT '/static/img/items/lootbox_common.png'"),
             ("open_image_url", "VARCHAR(512) NOT NULL DEFAULT ''"),
             ("opening_mode", "VARCHAR(16) NOT NULL DEFAULT 'legacy_v1'"),
             ("bonus_item_chance", "INTEGER NOT NULL DEFAULT 0"),
@@ -660,7 +668,7 @@ def seed(db: Session) -> None:
     lootbox_common = _get_or_create_item(
         db, "lootbox_common",
         name="Обычный ковбокс",
-        icon="/static/img/items/lootbox_common.svg",
+        icon="/static/img/items/lootbox_common.png",
         category="Ковбоксы",
         rarity="Обычный",
         lootbox_pool_code="common",
@@ -668,7 +676,7 @@ def seed(db: Session) -> None:
     lootbox_rare = _get_or_create_item(
         db, "lootbox_rare",
         name="Редкий ковбокс",
-        icon="/static/img/items/lootbox_rare.svg",
+        icon="/static/img/items/lootbox_rare.png",
         category="Ковбоксы",
         rarity="Редкий",
         lootbox_pool_code="rare",
@@ -676,7 +684,7 @@ def seed(db: Session) -> None:
     lootbox_epic = _get_or_create_item(
         db, "lootbox_epic",
         name="Эпический ковбокс",
-        icon="/static/img/items/lootbox_epic.svg",
+        icon="/static/img/items/lootbox_epic.png",
         category="Ковбоксы",
         rarity="Эпический",
         lootbox_pool_code="epic",
@@ -684,7 +692,7 @@ def seed(db: Session) -> None:
     lootbox_legendary = _get_or_create_item(
         db, "lootbox_legendary",
         name="Легендарный ковбокс",
-        icon="/static/img/items/lootbox_legendary.svg",
+        icon="/static/img/items/lootbox_legendary.png",
         category="Ковбоксы",
         rarity="Легендарный",
         lootbox_pool_code="legendary",
@@ -737,10 +745,10 @@ def seed(db: Session) -> None:
     consolation_item.description = ""
     consolation_item.image_url = "/static/img/items/lootbox_consolation.png"
     canonical_lootbox_items = {
-        "common": (lootbox_common, "Обычный ковбокс", "Обычный", "/static/img/items/lootbox_common.svg"),
-        "rare": (lootbox_rare, "Редкий ковбокс", "Редкий", "/static/img/items/lootbox_rare.svg"),
-        "epic": (lootbox_epic, "Эпический ковбокс", "Эпический", "/static/img/items/lootbox_epic.svg"),
-        "legendary": (lootbox_legendary, "Легендарный ковбокс", "Легендарный", "/static/img/items/lootbox_legendary.svg"),
+        "common": (lootbox_common, "Обычный ковбокс", "Обычный", "/static/img/items/lootbox_common.png"),
+        "rare": (lootbox_rare, "Редкий ковбокс", "Редкий", "/static/img/items/lootbox_rare.png"),
+        "epic": (lootbox_epic, "Эпический ковбокс", "Эпический", "/static/img/items/lootbox_epic.png"),
+        "legendary": (lootbox_legendary, "Легендарный ковбокс", "Легендарный", "/static/img/items/lootbox_legendary.png"),
         "seasonal": (lootbox_seasonal, "Сезонный ковбокс", "Сезонный", "/static/img/items/lootbox_seasonal.png"),
         "mega": (lootbox_mega, "Мегаковбокс с выбором предметов", "Мега", "/static/img/items/lootbox_mega.png"),
     }
@@ -944,12 +952,21 @@ def seed(db: Session) -> None:
                 if code == "mega":
                     pool.is_droppable = False
 
-    # One-time visual migration for the chest opening screen.  A custom image
-    # selected in the editor is authoritative and must survive every restart.
-    for code in chest_defaults:
+    # Keep bundled visuals current while preserving custom images uploaded
+    # through the editor (they live under /static/uploads).
+    visual_paths = {
+        code: (
+            f"/static/img/items/lootbox_{code}.png",
+            f"/static/img/items/lootbox_{code}_open.png",
+        )
+        for code in ("common", "rare", "epic", "legendary", "seasonal", "mega", "consolation")
+    }
+    for code, (closed_path, open_path) in visual_paths.items():
         pool = pools[code]
-        if not pool.open_image_url or pool.open_image_url == pool.image_url:
-            pool.open_image_url = f"/static/img/items/lootbox_{code}_open.svg"
+        if not pool.image_url or str(pool.image_url).startswith("/static/img/items/lootbox_"):
+            pool.image_url = closed_path
+        if not pool.open_image_url or str(pool.open_image_url).startswith("/static/img/items/lootbox_"):
+            pool.open_image_url = open_path
 
     # Remove obsolete editor-created duplicates. The live data is checked
     # before this migration: these pools/items have no inventory, listings,
@@ -971,8 +988,8 @@ def seed(db: Session) -> None:
         if item is None:
             item = models.Item(
                 code=item_code, name=pool.name, description="",
-                icon=pool.image_url or "/static/img/items/lootbox_common.svg",
-                image_url=pool.image_url or "/static/img/items/lootbox_common.svg",
+                icon=pool.image_url or "/static/img/items/lootbox_common.png",
+                image_url=pool.image_url or "/static/img/items/lootbox_common.png",
                 rarity=pool.rarity or "Обычный", category="Ковбоксы",
                 can_gift=True, can_activate=False, lootbox_pool_code=pool.code,
             )
