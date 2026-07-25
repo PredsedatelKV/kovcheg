@@ -449,7 +449,7 @@ class BattlePassSeason(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)  # "Сезон 1: Лето"
     theme: Mapped[str] = mapped_column(String(32), default="summer")  # summer/winter/...
     xp_per_level: Mapped[int] = mapped_column(Integer, default=100)
-    total_levels: Mapped[int] = mapped_column(Integer, default=30)
+    total_levels: Mapped[int] = mapped_column(Integer, default=100)
     price_current: Mapped[int] = mapped_column(Integer, default=499)
     price_old: Mapped[int] = mapped_column(Integer, default=799)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

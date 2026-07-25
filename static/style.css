@@ -3351,6 +3351,53 @@ html.dark .bp-isle.bp-isle-gold .bp-isle-lvl {
   border-color: rgba(140,120,40,0.4);
 }
 
+/* Final level: a bright blue diamond crowning the ladder. Declared after the
+   milestone/gold rules so the last round level keeps the diamond look. */
+.bp-isle.bp-isle-diamond .bp-isle-body {
+  background: linear-gradient(160deg, #eafbff 0%, #a8ecff 22%, #5ed2ff 48%, #22b0f5 72%, #0a86d8 100%);
+  border-color: rgba(235,252,255,0.95);
+  border-radius: 42% 42% 46% 46% / 52% 52% 44% 44%;
+  box-shadow: 0 0 26px rgba(70,205,255,0.65), 0 6px 0 rgba(20,120,190,0.45),
+              0 10px 26px rgba(40,170,240,0.4), inset 0 2px 0 rgba(255,255,255,0.9),
+              inset 0 -6px 12px rgba(10,110,180,0.35);
+  animation: bp-isle-in .4s ease-out both, bp-diamond-glow 2.6s ease-in-out infinite;
+}
+.bp-isle.bp-isle-diamond .bp-isle-lvl {
+  background: rgba(255,255,255,0.82);
+  color: #0a6a9a;
+  border-color: rgba(120,220,255,0.85);
+}
+.bp-isle.bp-isle-diamond .bp-isle-shadow { background: rgba(30,150,220,0.28); }
+.bp-isle.bp-isle-diamond .bp-isle-check { color: #0a6a9a; }
+.bp-isle.bp-isle-diamond .bp-isle-icon { filter: drop-shadow(0 1px 4px rgba(0,140,220,0.45)); }
+.bp-isle.bp-isle-diamond .bp-isle-empty { color: #0a6a9a; }
+html.dark .bp-isle.bp-isle-diamond .bp-isle-body {
+  background: linear-gradient(160deg, #9fe6ff 0%, #56c4f0 25%, #2a9ad8 55%, #1a72ac 80%, #0d4f7d 100%);
+  border-color: rgba(150,230,255,0.7);
+  /* Own keyframes: the light-theme glow animation would otherwise keep
+     painting its bright box-shadow over the dark palette. */
+  animation: bp-isle-in .4s ease-out both, bp-diamond-glow-dark 2.6s ease-in-out infinite;
+}
+html.dark .bp-isle.bp-isle-diamond .bp-isle-lvl {
+  background: rgba(10,70,110,0.65);
+  color: #cdf1ff;
+  border-color: rgba(90,190,240,0.55);
+}
+@keyframes bp-diamond-glow-dark {
+  0%, 100% { box-shadow: 0 0 20px rgba(60,180,235,0.4), 0 6px 0 rgba(8,60,95,0.5),
+                         0 10px 24px rgba(20,110,170,0.28), inset 0 2px 0 rgba(220,248,255,0.55); }
+  50%      { box-shadow: 0 0 30px rgba(90,205,250,0.6), 0 6px 0 rgba(8,60,95,0.5),
+                         0 12px 28px rgba(20,110,170,0.4), inset 0 2px 0 rgba(230,250,255,0.6); }
+}
+@keyframes bp-diamond-glow {
+  0%, 100% { box-shadow: 0 0 22px rgba(70,205,255,0.5), 0 6px 0 rgba(20,120,190,0.45),
+                         0 10px 26px rgba(40,170,240,0.35), inset 0 2px 0 rgba(255,255,255,0.9),
+                         inset 0 -6px 12px rgba(10,110,180,0.35); }
+  50%      { box-shadow: 0 0 34px rgba(120,225,255,0.8), 0 6px 0 rgba(20,120,190,0.45),
+                         0 12px 30px rgba(40,170,240,0.5), inset 0 2px 0 rgba(255,255,255,0.95),
+                         inset 0 -6px 12px rgba(10,110,180,0.3); }
+}
+
 .bp-isle-flag {
   position:absolute; top:-22px; right:8px;
   font-size:20px; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3));

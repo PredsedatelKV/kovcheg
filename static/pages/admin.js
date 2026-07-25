@@ -1919,7 +1919,7 @@ function openBpSeasonEditor(body, s) {
         id: s.id,
         name: overlay.querySelector("#bpe-name").value.trim(),
         xp_per_level: Number(overlay.querySelector("#bpe-xpl").value) || 100,
-        total_levels: Number(overlay.querySelector("#bpe-total").value) || 30,
+        total_levels: Number(overlay.querySelector("#bpe-total").value) || 100,
         is_active: overlay.querySelector("#bpe-active").value === "true",
       });
       window.kov.toast("Сезон сохранён");

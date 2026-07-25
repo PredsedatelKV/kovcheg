@@ -34,6 +34,15 @@ function _isMilestone(lvl) {
   return lvl % 10 === 0;
 }
 
+// Visual band of an island: clouds up to 30, green isles to 60, stone to the
+// level before last, and a diamond crown on the final level.
+function _isleTheme(lvl, totalLevels) {
+  if (lvl >= totalLevels) return "bp-isle-diamond";
+  if (lvl <= 30) return "bp-isle-cloudy";
+  if (lvl <= 60) return "bp-isle-grass";
+  return "bp-isle-stone";
+}
+
 export async function renderBattlePass(root) {
   _bpRoot = root;
   root.classList.add("bp-page");
@@ -132,7 +141,8 @@ function _renderBP(data) {
   (function() {
     var sky = _bpRoot.querySelector(".bp-sky");
     if (!sky) return;
-    for (var ci = 0; ci < Math.ceil(s.total_levels / 2); ci++) {
+    var cloudCount = Math.min(18, Math.ceil(s.total_levels / 2));
+    for (var ci = 0; ci < cloudCount; ci++) {
       var c = document.createElement("div");
       c.className = "bp-cloud";
       var size = 30 + Math.random() * 50;
@@ -147,14 +157,13 @@ function _renderBP(data) {
     }
   })();
 
-  // Island themes: cloudy 1-9, grass 10-19, stone 20-30; gold 1/10/20/30
+  // Island themes: clouds 1-30, green isles 31-60, stone 61-99, diamond at 100.
+  // Every tenth level is golden; the final level keeps its diamond look instead.
   for (var ci = 1; ci <= s.total_levels; ci++) {
     var el = document.getElementById("bp-lvl-" + ci);
     if (!el) continue;
-    if (ci <= 10) el.classList.add("bp-isle-cloudy");
-    else if (ci <= 20) el.classList.add("bp-isle-grass");
-    else el.classList.add("bp-isle-stone");
-    if (ci === 10 || ci === 20 || ci === 30) el.classList.add("bp-isle-gold");
+    el.classList.add(_isleTheme(ci, s.total_levels));
+    if (_isMilestone(ci) && ci !== s.total_levels) el.classList.add("bp-isle-gold");
   }
 
   // Cap XP display at level 30 (max 100%)
