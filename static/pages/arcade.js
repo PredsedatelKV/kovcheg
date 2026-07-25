@@ -841,7 +841,7 @@ function gameRiskWheel() {
   
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
-    <h2>Колесо риска</h2>
+    <h2>Ва-банк</h2>
     <p class="card-sub">Крути и умножай ставку!</p>
     <div class="game-balance">Баланс: <strong id="roulette-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
     <div class="game-wheel-risk" id="risk-wheel">
@@ -1992,8 +1992,7 @@ function gameClicker(hostRoot = null) {
   const content = `
     <div class="clicker-screen-head">
       ${hostRoot ? '<button class="clicker-back" id="clicker-back" type="button" aria-label="Вернуться в Аркаду">←</button>' : '<button class="close" onclick="closeModal()">×</button>'}
-      <div><h2>Кликер</h2><p class="card-sub">15 минут в день: развивай активный и пассивный доход без бесконечного фарма</p></div>
-      <span class="clicker-day" id="clicker-day">День 1</span>
+      <div><h2>Кликер</h2></div>
     </div>
     <div class="clicker-level">
       <div class="clicker-level-head">
@@ -2068,7 +2067,6 @@ function gameClicker(hostRoot = null) {
   const elWallet = modal.querySelector("#clicker-wallet");
   const elCashoutBtn = modal.querySelector("#clicker-cashout-btn");
   const elCashoutRate = modal.querySelector("#clicker-cashout-rate");
-  const elDay = modal.querySelector("#clicker-day");
 
   function fmt(n) { return Math.floor(n).toLocaleString("ru-RU"); }
   function now() { return Date.now(); }
@@ -2321,7 +2319,6 @@ function gameClicker(hostRoot = null) {
     if (s.energy != null) { lastSyncEnergy = s.energy; lastSyncTime = Date.now(); }
     const kc = st.kovcoins != null ? st.kovcoins : (st.balance || 0);
     elBalance.textContent = fmt(kc);
-    elDay.textContent = "День " + (st.progression_day || 1) + " из 7";
     elPower.textContent = "+" + powText(st.click_power || 1);
     elPassiveInfo.textContent = "💤 " + (st.passive_per_min || 0) + "/мин" + (passiveActive() ? " ×2" : "");
     updateEnergyBar();
@@ -2498,7 +2495,7 @@ function gameClicker(hostRoot = null) {
 // ============ RENDER ============
 
 function arcadeIcon(name) {
-  return `<div class="game-tile-icon arcade-icon-frame"><img class="arcade-icon-img" src="/static/img/ui/arcade/${name}.png?v=255" alt="" draggable="false" decoding="async"></div>`;
+  return `<div class="game-tile-icon arcade-icon-frame"><img class="arcade-icon-img" src="/static/img/ui/arcade/${name}.png?v=262" alt="" draggable="false" decoding="async"></div>`;
 }
 
 export async function renderArcade(root) {
@@ -2528,7 +2525,7 @@ export async function renderArcade(root) {
 
     <h2 class="section-title">Рулетка</h2>
     <div class="game-grid">
-      <div class="game-tile roulette-feature-tile" data-game="roulette" style="grid-column: 1 / -1">
+      <div class="game-tile casino roulette-feature-tile" data-game="roulette" style="grid-column: 1 / -1">
         ${arcadeIcon("roulette")}
         <span class="arcade-new-badge">Новое</span>
       </div>
@@ -2587,7 +2584,7 @@ export async function renderArcade(root) {
       </div>
       <div class="game-tile casino" data-game="riskwheel">
         ${arcadeIcon("roulette")}
-        <div class="game-tile-title">Колесо риска</div>
+        <div class="game-tile-title">Ва-банк</div>
       </div>
     </div>
   `;

@@ -171,6 +171,11 @@ export async function renderKoverna(root) {
       }
       return;
     }
+    const restockButton = event.target.closest("[data-restock-request]");
+    if (restockButton && !restockButton.disabled) {
+      openRestockRequestDialog(root);
+      return;
+    }
     const listingButton = event.target.closest("[data-buy-listing]");
     if (listingButton && !listingButton.disabled) {
       listingButton.disabled = true;
@@ -212,7 +217,18 @@ export async function renderKoverna(root) {
 
 async function renderShop(root, background) {
   const tools = root.querySelector("#market-tools");
-  if (tools) tools.innerHTML = "";
+  if (tools) {
+    tools.innerHTML = `
+      <div class="market-tools">
+        <button class="btn btn-outline" data-restock-request>Заявка на пополнение</button>
+      </div>`;
+    get("/api/shop/restock-request/status", { force: true }).then((status) => {
+      const button = tools.querySelector("[data-restock-request]");
+      if (!button || status.can_submit) return;
+      button.disabled = true;
+      button.textContent = "Заявка отправлена";
+    }).catch(() => {});
+  }
   const content = root.querySelector("#content");
   const requestVersion = (shopLoadVersions.get(root) || 0) + 1;
   shopLoadVersions.set(root, requestVersion);
@@ -230,6 +246,35 @@ async function renderShop(root, background) {
   if (showcase) showcase.innerHTML = renderKovboxShowcase(products);
   renderCategoryFilters(root);
   paintShop(root);
+}
+
+function openRestockRequestDialog(root) {
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Заявка на пополнение</h2>
+    <label class="field-label" for="restock-request-text">Какой товар добавить?</label>
+    <input class="input" id="restock-request-text" maxlength="30" autocomplete="off" placeholder="Название товара">
+    <button class="btn" id="restock-request-submit" style="margin-top:14px">Отправить</button>
+  `);
+  const input = modal.querySelector("#restock-request-text");
+  const button = modal.querySelector("#restock-request-submit");
+  input.focus();
+  button.addEventListener("click", async () => {
+    const text = input.value.trim();
+    if (!text) return window.kov.toast("Введите название товара");
+    button.disabled = true;
+    button.textContent = "Отправляем…";
+    try {
+      await post("/api/shop/restock-request", { text });
+      window.closeModal();
+      window.kov.toast("Заявка отправлена");
+      await renderShop(root, true);
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "Отправить";
+      window.kov.toast(error.message);
+    }
+  });
 }
 
 async function renderMarket(root, background) {

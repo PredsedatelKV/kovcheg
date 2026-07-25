@@ -1,7 +1,7 @@
 import { renderHome } from "/static/pages/home.js?v=260";
 import { renderProfile } from "/static/pages/profile.js?v=260";
-import { renderKoverna } from "/static/pages/koverna.js?v=260";
-import { renderArcade } from "/static/pages/arcade.js?v=261";
+import { renderKoverna } from "/static/pages/koverna.js?v=262";
+import { renderArcade } from "/static/pages/arcade.js?v=262";
 import { renderAdmin } from "/static/pages/admin.js?v=260";
 import { renderBattlePass } from "/static/pages/battlepass.js?v=260";
 import { initSettings, playUISound } from "/static/pages/settings.js?v=260";
@@ -155,8 +155,8 @@ async function ensureTabRendered(name) {
 }
 
 const TAB_QUERIES = {
-  home: ["/api/home", "/api/quiz/available"],
-  profile: ["/api/profile/me"],
+  home: ["/api/home", "/api/home/daily-reward", "/api/home/news", "/api/quiz/available", "/api/wheel/status"],
+  profile: ["/api/profile/me", "/api/profile/players", "/api/profile/transactions"],
   koverna: ["/api/shop/products", "/api/shop/categories", "/api/market/listings"],
   arcade: ["/api/profile/me", "/api/arcade/first-win-status"],
   battlepass: ["/api/battlepass"],

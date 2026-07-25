@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import access, models
-from app.api import arcade, battlepass, home, profile, wheel
+from app.api import arcade, battlepass, home, profile, shop, wheel
 from app.auth import current_user
 from app.db import Base, get_db
 
@@ -42,6 +42,7 @@ def game_api(tmp_path):
     app.include_router(profile.router)
     app.include_router(battlepass.router)
     app.include_router(arcade.router)
+    app.include_router(shop.router)
     app.dependency_overrides[get_db] = test_db
     app.dependency_overrides[current_user] = test_user
 
@@ -242,7 +243,7 @@ def test_clicker_blocks_only_magomet_and_ibrahim(game_api):
     assert client.post("/api/arcade/round/start", json={"game": "clicker"}, headers=_headers(2)).status_code == 400
 
 
-def test_clicker_progression_caps_are_10k_to_40k(game_api, monkeypatch):
+def test_clicker_progression_caps_are_5_to_30_kovbucks(game_api, monkeypatch):
     client, sessions = game_api
     clock = [datetime(2026, 7, 1, 9, 0, 0)]
     monkeypatch.setattr(arcade.models, "now_utc", lambda: clock[0])
@@ -251,7 +252,7 @@ def test_clicker_progression_caps_are_10k_to_40k(game_api, monkeypatch):
     assert first["progression_day"] == 1
     assert first["daily_cap"] == 10_000
 
-    expected = [15_000, 20_000, 25_000, 30_000, 35_000, 40_000, 40_000]
+    expected = [18_000, 26_000, 34_000, 42_000, 50_000, 60_000, 60_000]
     for offset, cap in enumerate(expected, start=1):
         with sessions() as db:
             state = db.query(models.ClickerState).filter_by(user_id=1).one()
@@ -261,6 +262,7 @@ def test_clicker_progression_caps_are_10k_to_40k(game_api, monkeypatch):
         snapshot = client.get("/api/arcade/clicker/state", headers=_headers()).json()
         assert snapshot["daily_cap"] == cap
         assert snapshot["progression_day"] == min(7, offset + 1)
+        assert snapshot["daily_cap"] // snapshot["cashout_rate"] <= 30
 
 
 def test_clicker_flood_is_locked_without_energy_or_income(game_api, monkeypatch):
@@ -311,6 +313,26 @@ def test_clicker_cashout_uses_safe_rate(game_api, monkeypatch):
     assert response.status_code == 200
     assert response.json()["cashed_out"] == 2
     assert _balance(sessions) == before + 2
+
+
+def test_shop_restock_request_is_limited_to_one_per_day(game_api):
+    client, sessions = game_api
+    assert client.get("/api/shop/restock-request/status", headers=_headers()).json()["can_submit"] is True
+    first = client.post(
+        "/api/shop/restock-request",
+        json={"text": "  Мармелад   кислый  "},
+        headers=_headers(),
+    )
+    assert first.status_code == 200
+    assert client.get("/api/shop/restock-request/status", headers=_headers()).json()["can_submit"] is False
+    assert client.post(
+        "/api/shop/restock-request",
+        json={"text": "Другой товар"},
+        headers=_headers(),
+    ).status_code == 409
+    with sessions() as db:
+        request = db.query(models.ShopRestockRequest).filter_by(user_id=1).one()
+        assert request.text == "Мармелад кислый"
 
 
 def test_legacy_casino_payout_is_rejected(game_api):

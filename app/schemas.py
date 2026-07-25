@@ -137,6 +137,10 @@ class BuyRequest(BaseModel):
     product_id: StrictInt = Field(gt=0)
 
 
+class ShopRestockRequestCreate(BaseModel):
+    text: str = Field(min_length=1, max_length=30)
+
+
 class ListRequest(BaseModel):
     item_id: StrictInt = Field(gt=0)
     quantity: StrictInt = Field(ge=1, le=1_000_000)

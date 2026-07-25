@@ -630,18 +630,17 @@ CLICKER_TAP_ENERGY_COST = 1
 CLICKER_MAX_PASSIVE_HOURS = 4
 CLICKER_PASSIVE_CAP_SHARE = 0.10
 CLICKER_PROGRESSION_MAX_DAY = 7
-CLICKER_PROGRESSION_STEP = 5_000
 CLICKER_PROGRESSION_MIN_EARNED = 0.80
 
 # Внутриигровая валюта — «ковкойны». Тапаешь → копишь ковкойны → выводишь в ковбаксы.
 CLICKER_START_KOVCOINS = 1        # стартовый баланс ковкойнов (сразу можно кликать)
-CLICKER_CASHOUT_RATE = 2_000      # максимум 5 → 20 ковбаксов в сутки по прогрессии
+CLICKER_CASHOUT_RATE = 2_000
 CLICKER_CASHOUT_MIN = 2_000       # минимальная сумма к выводу (в ковкойнах)
 
 # --- Дневной лимит заработка ---
-# Семь активных дней: 10k, 15k, 20k, 25k, 30k, 35k, затем 40k.
-CLICKER_DAILY_CAP_MIN = 10_000
-CLICKER_DAILY_CAP_MAX = 40_000
+# Семь активных дней: максимум 5, 9, 13, 17, 21, 25 и 30 ковбаксов.
+# Активный и пассивный доход расходуют один общий серверный лимит.
+CLICKER_DAILY_CAPS = (10_000, 18_000, 26_000, 34_000, 42_000, 50_000, 60_000)
 
 # --- Активные бусты (бесплатные, с дневным лимитом) ---
 CLICKER_TURBO_SECONDS = 30
@@ -719,7 +718,12 @@ def _clicker_upgrade_cost(key, current_level):
 def _clicker_daily_cap(state):
     """Predictable seven-day cap independent from purchases made mid-day."""
     day = max(1, min(CLICKER_PROGRESSION_MAX_DAY, int(state.progression_day or 1)))
-    return min(CLICKER_DAILY_CAP_MAX, CLICKER_DAILY_CAP_MIN + (day - 1) * CLICKER_PROGRESSION_STEP)
+    return CLICKER_DAILY_CAPS[day - 1]
+
+
+def _clicker_next_daily_cap(state):
+    day = max(1, min(CLICKER_PROGRESSION_MAX_DAY, int(state.progression_day or 1)))
+    return CLICKER_DAILY_CAPS[min(day, len(CLICKER_DAILY_CAPS) - 1)]
 
 
 def _clicker_credit(state, amount):
@@ -914,7 +918,7 @@ def _clicker_payload(state, wallet, now, passive_earned=0):
         # Дневной лимит
         "progression_day": max(1, int(state.progression_day or 1)),
         "daily_cap": cap,
-        "next_daily_cap": min(CLICKER_DAILY_CAP_MAX, cap + CLICKER_PROGRESSION_STEP),
+        "next_daily_cap": _clicker_next_daily_cap(state),
         "progression_required": math.ceil(cap * CLICKER_PROGRESSION_MIN_EARNED),
         "earned_today": earned_today,
         "cap_left": max(0, cap - earned_today),

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -11,6 +14,7 @@ from app.db import begin_game_write, get_db
 
 router = APIRouter(prefix="/api/shop", tags=["shop"], dependencies=[Depends(require_open_section("koverna"))])
 MAX_PRODUCT_PRICE = 1_000_000_000
+MSK = timezone(timedelta(hours=3))
 
 
 @router.get("/categories", response_model=list[schemas.ItemCategoryOut])
@@ -23,6 +27,48 @@ def list_categories(db: Session = Depends(get_db)) -> list[schemas.ItemCategoryO
 def list_products(db: Session = Depends(get_db)) -> list[schemas.ShopProductOut]:
     products = db.query(models.ShopProduct).filter(models.ShopProduct.is_active.is_(True)).order_by(models.ShopProduct.id).all()
     return [schemas.ShopProductOut(id=p.id, item=_item_to_out(p.item), price=p.price, stock=p.stock) for p in products]
+
+
+@router.get("/restock-request/status")
+def restock_request_status(
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    today = datetime.now(MSK).strftime("%Y-%m-%d")
+    existing = db.query(models.ShopRestockRequest.id).filter(
+        models.ShopRestockRequest.user_id == user.id,
+        models.ShopRestockRequest.request_date == today,
+    ).first()
+    return {"can_submit": existing is None}
+
+
+@router.post("/restock-request")
+def create_restock_request(
+    payload: schemas.ShopRestockRequestCreate,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    text = " ".join(payload.text.split())
+    if not text or len(text) > 30:
+        raise HTTPException(status_code=422, detail="Введите короткое название товара")
+    begin_game_write(db)
+    today = datetime.now(MSK).strftime("%Y-%m-%d")
+    existing = db.query(models.ShopRestockRequest.id).filter(
+        models.ShopRestockRequest.user_id == user.id,
+        models.ShopRestockRequest.request_date == today,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Сегодня заявка уже отправлена")
+    db.add(models.ShopRestockRequest(user_id=user.id, request_date=today, text=text))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Сегодня заявка уже отправлена")
+    from app.notify import log_player_action
+
+    log_player_action("Заявка на пополнение", user.first_name, text)
+    return {"ok": True, "can_submit": False}
 
 
 @router.post("/buy", response_model=schemas.UserOut)

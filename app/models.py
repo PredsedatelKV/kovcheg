@@ -247,6 +247,21 @@ class ShopProduct(Base):
     item: Mapped[Item] = relationship("Item")
 
 
+class ShopRestockRequest(Base):
+    __tablename__ = "shop_restock_requests"
+    __table_args__ = (
+        UniqueConstraint("user_id", "request_date", name="uq_shop_restock_request_user_day"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    request_date: Mapped[str] = mapped_column(String(10), index=True, nullable=False)
+    text: Mapped[str] = mapped_column(String(30), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    user: Mapped[User] = relationship("User")
+
+
 class MarketListing(Base):
     __tablename__ = "market_listings"
 
