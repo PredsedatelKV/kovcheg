@@ -1044,19 +1044,6 @@ function showLootboxChest(result) {
     return reward;
   }
 
-  function spinSpecialReward(card) {
-    if (typeof card.animate !== "function") return;
-    card.animate([
-      { opacity: 1, transform: "translateY(18px) rotateX(-12deg) rotateY(0deg) scale(.82)" },
-      { opacity: 1, transform: "translateY(-8px) rotateX(12deg) rotateY(720deg) scale(1.06)", offset: .5 },
-      { opacity: 1, transform: "translateY(0) rotateX(-6deg) rotateY(1440deg) scale(1)" },
-    ], {
-      duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 900 : 4000,
-      easing: "linear",
-      fill: "forwards",
-    });
-  }
-
   function rewardCard(reward) {
     const card = document.createElement("article");
     card.className = `lootbox-reward-card reward-${reward.presentation_kind || "item"}`;
@@ -1116,9 +1103,9 @@ function showLootboxChest(result) {
     if (specialFinal) {
       card.classList.add("is-special-spinning");
       playAudio(specialSound);
+      void card.offsetWidth;
       requestAnimationFrame(() => {
         card.classList.add("is-visible");
-        spinSpecialReward(card);
       });
     } else {
       playAudio(bonusSounds[Math.min(index, bonusSounds.length - 1)]);
@@ -1133,7 +1120,7 @@ function showLootboxChest(result) {
       if (specialFinal) card.classList.add("is-special-revealed");
       locked = false;
       chestButton.disabled = false;
-    }, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 80 : (specialFinal ? 4000 : 520));
+    }, specialFinal ? 4050 : (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 80 : 520));
   }
 
   function closeReveal() {
