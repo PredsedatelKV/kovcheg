@@ -2,7 +2,7 @@ import { get, post, iconHtml } from "/static/api.js?v=266";
 
 import { openAssistantChat } from "/static/pages/assistant.js?v=264";
 
-import { playUISound } from "/static/pages/settings.js?v=266";
+import { playUISound } from "/static/pages/settings.js?v=267";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

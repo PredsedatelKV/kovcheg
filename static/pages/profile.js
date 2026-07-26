@@ -1,6 +1,6 @@
 import { get, post, iconHtml, productImg } from "/static/api.js?v=266";
 
-import { playUISound, getSettings, setManagedMediaVolume } from "/static/pages/settings.js?v=266";
+import { playUISound, getSettings, playManagedMedia } from "/static/pages/settings.js?v=267";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -843,20 +843,24 @@ function showMegaLootboxChoices(result) {
   const openSound = new Audio("/static/audio/lootbox/open.mp3?v=264");
   const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=264`));
   const allSounds = [openSound, ...bonusSounds];
+  allSounds.forEach((audio) => {
+    audio.preload = "auto";
+    try { audio.load(); } catch (_) {}
+  });
   const choices = [];
   let index = 0;
   let locked = false;
   let opened = false;
 
-  function playAudio(audio) {
+  async function playAudio(audio) {
     try {
       const settings = getSettings();
-      if (!settings.uiSounds) return;
+      if (!settings.uiSounds) return false;
       allSounds.forEach((sound) => { if (sound !== audio) { sound.pause(); sound.currentTime = 0; } });
-      setManagedMediaVolume(audio, settings.uiSoundsVolume);
-      audio.currentTime = 0;
-      audio.play().catch(() => {});
-    } catch (_) {}
+      return await playManagedMedia(audio, settings.uiSoundsVolume);
+    } catch (_) {
+      return false;
+    }
   }
 
   function rewardCard(reward) {
@@ -923,15 +927,15 @@ function showMegaLootboxChoices(result) {
       });
     });
   };
-  chestButton.addEventListener("click", () => {
+  chestButton.addEventListener("click", async () => {
     if (locked || opened) return;
     opened = true;
     locked = true;
+    await playAudio(openSound);
     chestButton.classList.add("is-bumping");
     setTimeout(() => {
       chestImage.src = result.pool?.open_image_url || result.pool?.image_url || "/static/img/ui/box.svg";
     }, 220);
-    playAudio(openSound);
     const startChoices = () => {
       if (!locked) return;
       openSound.pause();
@@ -1003,16 +1007,19 @@ function showLootboxChest(result) {
   const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=264");
   const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=264`));
   const allSounds = [openSound, specialSound, ...bonusSounds];
-  allSounds.forEach((audio) => { audio.preload = "auto"; });
-  function playAudio(audio) {
+  allSounds.forEach((audio) => {
+    audio.preload = "auto";
+    try { audio.load(); } catch (_) {}
+  });
+  async function playAudio(audio) {
     try {
       const settings = getSettings();
-      if (!settings.uiSounds) return;
+      if (!settings.uiSounds) return false;
       allSounds.forEach((sound) => { if (sound !== audio) { sound.pause(); sound.currentTime = 0; } });
-      setManagedMediaVolume(audio, settings.uiSoundsVolume);
-      audio.currentTime = 0;
-      audio.play().catch(() => {});
-    } catch (_) {}
+      return await playManagedMedia(audio, settings.uiSoundsVolume);
+    } catch (_) {
+      return false;
+    }
   }
   function playAudioAndWait(audio, maxWait = 2200) {
     return new Promise((resolve) => {
@@ -1096,10 +1103,10 @@ function showLootboxChest(result) {
     addCollected(previousReward);
     const reward = rewards[index];
     if (index === 0) {
+      await playAudio(openSound);
       chestButton.classList.remove("is-bumping");
       void chestButton.offsetWidth;
       chestButton.classList.add("is-bumping");
-      playAudio(openSound);
       setTimeout(() => { chestImage.src = openImage; }, 160);
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }

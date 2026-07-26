@@ -17,6 +17,7 @@ const DEFAULT_SETTINGS = {
 
 let audio = null;
 let audioCtx = null;
+let audioUnlockInstalled = false;
 const managedMedia = new WeakMap();
 
 function getAudioCtx() {
@@ -46,6 +47,51 @@ export function setManagedMediaVolume(media, volume) {
     if (ctx.state === "suspended") ctx.resume().catch(() => {});
   } catch (_) {
     try { media.volume = value; } catch (_) {}
+  }
+}
+
+async function resumeManagedAudio() {
+  try {
+    const ctx = getAudioCtx();
+    if (ctx.state === "suspended") await ctx.resume();
+    return ctx.state === "running";
+  } catch (_) {
+    return false;
+  }
+}
+
+function waitUntilMediaReady(media) {
+  if (media.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return Promise.resolve();
+  return new Promise((resolve) => {
+    let finished = false;
+    const done = () => {
+      if (finished) return;
+      finished = true;
+      media.removeEventListener("loadeddata", done);
+      media.removeEventListener("canplay", done);
+      media.removeEventListener("error", done);
+      resolve();
+    };
+    media.addEventListener("loadeddata", done, { once: true });
+    media.addEventListener("canplay", done, { once: true });
+    media.addEventListener("error", done, { once: true });
+    try { media.load(); } catch (_) {}
+    setTimeout(done, 1500);
+  });
+}
+
+export async function playManagedMedia(media, volume, restart = true) {
+  setManagedMediaVolume(media, volume);
+  await Promise.all([resumeManagedAudio(), waitUntilMediaReady(media)]);
+  if (restart) {
+    media.pause();
+    try { media.currentTime = 0; } catch (_) {}
+  }
+  try {
+    await media.play();
+    return true;
+  } catch (_) {
+    return false;
   }
 }
 
@@ -101,10 +147,10 @@ function stopMusic() {
   document.removeEventListener("touchstart", resumePlay);
 }
 
-function resumePlay() {
-  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+async function resumePlay() {
+  await resumeManagedAudio();
   if (audio && audio.paused) {
-    audio.play().catch(() => {});
+    playManagedMedia(audio, getSettings().musicVolume, false).catch(() => {});
   }
 }
 
@@ -113,9 +159,10 @@ function initAudio(src, loop, volume) {
   const a = new Audio();
   a.src = src;
   a.loop = loop;
-  setManagedMediaVolume(a, volume);
+  a.preload = "auto";
   audio = a;
-  a.play().catch(() => {
+  playManagedMedia(a, volume, false).then((started) => {
+    if (started) return;
     // Autoplay blocked — wait for user gesture
     document.addEventListener("pointerdown", resumePlay, { once: true });
     document.addEventListener("touchstart", resumePlay, { once: true });
@@ -290,6 +337,12 @@ function applyTheme(dark) {
 export function initSettings() {
   const s = getSettings();
   applyTheme(s.darkMode);
+  if (!audioUnlockInstalled) {
+    audioUnlockInstalled = true;
+    const unlock = () => { resumeManagedAudio(); };
+    document.addEventListener("pointerdown", unlock, { once: true, capture: true, passive: true });
+    document.addEventListener("touchstart", unlock, { once: true, capture: true, passive: true });
+  }
   if (s.musicPaused) return;
   if (s.customTrackUrl) {
     playCustomMusic(s.customTrackUrl, s.musicVolume);
