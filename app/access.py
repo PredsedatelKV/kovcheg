@@ -1,13 +1,13 @@
 # Stable Telegram identifiers. Display names and usernames are intentionally
 # not used: both can be changed or duplicated.
-CLICKER_BLOCKED_TELEGRAM_IDS = frozenset({837611803, 7735808918})
-LIMITED_STOCK_LOOTBOX_TELEGRAM_IDS = CLICKER_BLOCKED_TELEGRAM_IDS
+CLICKER_BLOCKED_TELEGRAM_IDS = frozenset()
+LIMITED_STOCK_LOOTBOX_TELEGRAM_IDS = frozenset()
 
 
 # Sections temporarily closed for individual players while their content is
 # reworked. Keys match the client tab names in static/app.js.
-MAINTENANCE_SECTIONS = ("koverna", "arcade", "battlepass")
-MAINTENANCE_TELEGRAM_IDS = frozenset({837611803, 7735808918})
+MAINTENANCE_SECTIONS = ()
+MAINTENANCE_TELEGRAM_IDS = frozenset()
 MAINTENANCE_MESSAGE = "Ведутся технические работы"
 
 

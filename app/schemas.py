@@ -17,6 +17,7 @@ class UserOut(BaseModel):
     restrictions: str | None = None
     balance: int
     xp: int = 0
+    level: int = 1
     is_admin: bool = False
     can_use_clicker: bool = False
     maintenance_sections: list[str] = []
@@ -238,6 +239,7 @@ class AdminUserOut(BaseModel):
     restrictions: str | None = None
     balance: int
     xp: int = 0
+    level: int = 1
     is_admin: bool = False
     pending_login_gifts: int = 0
 
@@ -435,6 +437,22 @@ class QuizQuestionBody(BaseModel):
     sort_order: StrictInt = Field(default=0, ge=-100_000, le=100_000)
 
 
+class QuizReward(BaseModel):
+    kind: Literal["xp", "kovbucks", "item"]
+    amount: StrictInt = Field(default=1, ge=1, le=1_000_000)
+    item_id: StrictInt | None = Field(default=None, gt=0)
+    label: str = Field(default="", max_length=256)
+    icon: str = Field(default="", max_length=512)
+
+    @model_validator(mode="after")
+    def validate_reward(self):
+        if self.kind == "item" and self.item_id is None:
+            raise ValueError("Для предметной награды выберите предмет")
+        if self.kind != "item" and self.item_id is not None:
+            raise ValueError("Предмет можно указывать только для предметной награды")
+        return self
+
+
 class QuizOut(BaseModel):
     id: int
     title: str
@@ -446,6 +464,10 @@ class QuizOut(BaseModel):
     prize_label: str
     threshold_good: int
     threshold_excellent: int
+    time_limit_seconds: int = 0
+    rewards_bad: list[QuizReward] = []
+    rewards_good: list[QuizReward] = []
+    rewards_excellent: list[QuizReward] = []
     questions: list[QuizQuestionOut] = []
 
 
@@ -454,7 +476,7 @@ class QuizBody(BaseModel):
     description: str = Field(default="", max_length=4000)
     is_active: bool = True
     prize_kind: Literal["coins", "item"] = "coins"
-    prize_value: StrictInt = Field(default=1, ge=1, le=1_000_000)
+    prize_value: StrictInt = Field(default=0, ge=0, le=1_000_000)
     prize_item_code: str | None = Field(
         default=None,
         min_length=1,
@@ -464,15 +486,19 @@ class QuizBody(BaseModel):
     prize_label: str = Field(default="", max_length=128)
     threshold_good: StrictInt = Field(default=1, ge=1, le=1000)
     threshold_excellent: StrictInt = Field(default=1, ge=1, le=1000)
+    time_limit_seconds: StrictInt = Field(default=0, ge=0, le=86_400)
+    rewards_bad: list[QuizReward] = Field(default_factory=list, max_length=3)
+    rewards_good: list[QuizReward] = Field(default_factory=list, max_length=3)
+    rewards_excellent: list[QuizReward] = Field(default_factory=list, max_length=3)
 
     @model_validator(mode="after")
     def validate_quiz_config(self):
-        if self.threshold_excellent < self.threshold_good:
-            raise ValueError("Порог «Отлично» не может быть ниже порога «Хорошо»")
-        if self.prize_kind == "item" and not self.prize_item_code:
-            raise ValueError("Для предметной награды укажите код предмета")
-        if self.prize_kind != "item" and self.prize_item_code is not None:
-            raise ValueError("Код предмета допустим только для предметной награды")
+        if 0 < self.time_limit_seconds < 10:
+            raise ValueError("Лимит времени должен быть не меньше 10 секунд")
+        for rewards in (self.rewards_bad, self.rewards_good, self.rewards_excellent):
+            kinds = [reward.kind for reward in rewards]
+            if len(kinds) != len(set(kinds)):
+                raise ValueError("Для каждой оценки можно выбрать каждый тип награды только один раз")
         return self
 
 
@@ -494,6 +520,10 @@ class QuizForUser(BaseModel):
     prize_label: str
     question_count: int
     already_passed: bool
+    time_limit_seconds: int = 0
+    rewards_bad: list[QuizReward] = []
+    rewards_good: list[QuizReward] = []
+    rewards_excellent: list[QuizReward] = []
 
 
 class QuizQuestionForUser(BaseModel):
@@ -508,6 +538,8 @@ class QuizQuestionForUser(BaseModel):
 class QuizStartOut(BaseModel):
     run_token: str
     questions: list[QuizQuestionForUser]
+    time_limit_seconds: int = 0
+    expires_at: datetime
 
 
 class QuizSubmitRequest(BaseModel):
@@ -524,6 +556,7 @@ class QuizResultOut(BaseModel):
     prize_label: str
     prize_awarded: bool
     xp_to_coins: int = 0
+    rewards: list[QuizReward] = []
 
 
 class ChatMessageOut(BaseModel):
@@ -860,6 +893,6 @@ class AwardXpRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_set_cap(self):
-        if self.mode == "set" and self.amount > 3000:
-            raise ValueError("XP нельзя установить выше максимума 3000")
+        if self.mode == "set" and self.amount > 99:
+            raise ValueError("Текущий XP должен быть от 0 до 99")
         return self

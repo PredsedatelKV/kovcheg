@@ -18,6 +18,7 @@ from app.api._helpers import (
     return_market_listing_to_seller,
     sync_lootbox_shop_product,
 )
+from app.api.quiz import quiz_rewards_out, serialize_quiz_rewards
 from app.auth import is_admin, require_admin
 from app.db import begin_game_write, get_db
 from app.models import now_utc
@@ -59,6 +60,7 @@ def _admin_user_out(u: models.User) -> schemas.AdminUserOut:
         restrictions=u.restrictions,
         balance=u.wallet.balance if u.wallet else 0,
         xp=u.xp,
+        level=u.level,
         is_admin=is_admin(u),
         pending_login_gifts=sum(1 for gift in u.login_gifts if gift.delivered_at is None),
     )
@@ -500,6 +502,18 @@ def delete_item(item_id: int, db: Session = Depends(get_db)) -> dict:
         or db.query(models.Quiz).filter(models.Quiz.prize_item_code == item.code).first()
         or db.query(models.WheelPrize).filter(models.WheelPrize.item_code == item.code).first()
     )
+    if references is None:
+        for quiz in db.query(models.Quiz).all():
+            for raw in (quiz.rewards_bad, quiz.rewards_good, quiz.rewards_excellent):
+                try:
+                    rewards = json.loads(raw or "[]")
+                except (TypeError, json.JSONDecodeError):
+                    rewards = []
+                if any(reward.get("item_id") == item.id for reward in rewards if isinstance(reward, dict)):
+                    references = quiz
+                    break
+            if references is not None:
+                break
     if references is not None:
         raise HTTPException(409, "Предмет используется в игре и не может быть удалён")
     db.delete(item)
@@ -976,18 +990,15 @@ def _validate_quiz_config(
     *,
     question_count: int,
 ) -> None:
-    if body.prize_kind == "item":
-        item = db.query(models.Item).filter(models.Item.code == body.prize_item_code).one_or_none()
-        if item is None:
-            raise HTTPException(400, "Предмет-награда теста не найден")
-    if body.is_active and (
-        question_count < 1
-        or body.threshold_good > question_count
-        or body.threshold_excellent > question_count
-    ):
-        raise HTTPException(400, "Активный тест должен иметь достаточно вопросов для заданных порогов")
+    for rewards in (body.rewards_bad, body.rewards_good, body.rewards_excellent):
+        for reward in rewards:
+            if reward.kind == "item" and db.query(models.Item).filter(models.Item.id == reward.item_id).one_or_none() is None:
+                raise HTTPException(400, "Предмет-награда теста не найден")
+    if body.is_active and question_count < 1:
+        raise HTTPException(400, "В активном тесте должен быть хотя бы один вопрос")
 
-def _quiz_out(q: models.Quiz) -> schemas.QuizOut:
+
+def _quiz_out(db: Session, q: models.Quiz) -> schemas.QuizOut:
     return schemas.QuizOut(
         id=q.id,
         title=q.title,
@@ -999,6 +1010,10 @@ def _quiz_out(q: models.Quiz) -> schemas.QuizOut:
         prize_label=q.prize_label,
         threshold_good=q.threshold_good,
         threshold_excellent=q.threshold_excellent,
+        time_limit_seconds=q.time_limit_seconds,
+        rewards_bad=quiz_rewards_out(db, q, "bad"),
+        rewards_good=quiz_rewards_out(db, q, "good"),
+        rewards_excellent=quiz_rewards_out(db, q, "excellent"),
         questions=[
             schemas.QuizQuestionOut(
                 id=qq.id,
@@ -1019,18 +1034,24 @@ def _quiz_out(q: models.Quiz) -> schemas.QuizOut:
 @router.get("/quizzes", response_model=list[schemas.QuizOut])
 def list_quizzes(db: Session = Depends(get_db)) -> list[schemas.QuizOut]:
     rows = db.query(models.Quiz).order_by(models.Quiz.id).all()
-    return [_quiz_out(q) for q in rows]
+    return [_quiz_out(db, q) for q in rows]
 
 
 @router.post("/quizzes", response_model=schemas.QuizOut)
 def create_quiz(body: schemas.QuizBody, db: Session = Depends(get_db)) -> schemas.QuizOut:
     begin_game_write(db)
     _validate_quiz_config(db, body, question_count=0)
-    q = models.Quiz(**body.model_dump())
+    values = body.model_dump(exclude={"rewards_bad", "rewards_good", "rewards_excellent"})
+    q = models.Quiz(
+        **values,
+        rewards_bad=serialize_quiz_rewards(body.rewards_bad),
+        rewards_good=serialize_quiz_rewards(body.rewards_good),
+        rewards_excellent=serialize_quiz_rewards(body.rewards_excellent),
+    )
     db.add(q)
     db.commit()
     db.refresh(q)
-    return _quiz_out(q)
+    return _quiz_out(db, q)
 
 
 @router.patch("/quizzes/{quiz_id}", response_model=schemas.QuizOut)
@@ -1040,11 +1061,14 @@ def update_quiz(quiz_id: int, body: schemas.QuizBody, db: Session = Depends(get_
     if q is None:
         raise HTTPException(status_code=404, detail="Тест не найден")
     _validate_quiz_config(db, body, question_count=len(q.questions))
-    for k, v in body.model_dump().items():
+    for k, v in body.model_dump(exclude={"rewards_bad", "rewards_good", "rewards_excellent"}).items():
         setattr(q, k, v)
+    q.rewards_bad = serialize_quiz_rewards(body.rewards_bad)
+    q.rewards_good = serialize_quiz_rewards(body.rewards_good)
+    q.rewards_excellent = serialize_quiz_rewards(body.rewards_excellent)
     db.commit()
     db.refresh(q)
-    return _quiz_out(q)
+    return _quiz_out(db, q)
 
 
 @router.delete("/quizzes/{quiz_id}")
@@ -1103,12 +1127,8 @@ def delete_question(quiz_id: int, q_id: int, db: Session = Depends(get_db)) -> d
         raise HTTPException(status_code=404, detail="Вопрос не найден")
     quiz = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).one()
     remaining = len(quiz.questions) - 1
-    if quiz.is_active and (
-        remaining < 1
-        or quiz.threshold_good > remaining
-        or quiz.threshold_excellent > remaining
-    ):
-        raise HTTPException(409, "Сначала отключите тест или уменьшите пороги")
+    if quiz.is_active and remaining < 1:
+        raise HTTPException(409, "Сначала отключите тест")
     db.delete(qq)
     db.commit()
     return {"ok": True}
@@ -1348,6 +1368,7 @@ def admin_reset_bp(user_id: int, db: Session = Depends(get_db)):
     if not u:
         raise HTTPException(404, "Пользователь не найден")
     u.xp = 0
+    u.level = 1
     db.query(models.BattlePassClaim).filter(models.BattlePassClaim.user_id == user_id).delete(
         synchronize_session=False,
     )

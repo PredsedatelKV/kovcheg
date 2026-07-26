@@ -4,7 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api._helpers import sync_lootbox_shop_product
+from app.api._helpers import return_market_listing_to_seller, sync_lootbox_shop_product
 from app.players import PLAYER_BINDINGS
 
 
@@ -41,10 +41,6 @@ def _get_or_create_item(
 
 
 CATALOG_SNACKS = (
-    ("solonina_flavour_mix", "Арахис Вкусовой микс Solonina", "peanut_flavour_mix.jpeg", 35, 1),
-    ("solonina_crayfish_dill", "Арахис со вкусом раков и укропом Solonina", "peanut_crayfish_dill.jpeg", 35, 1),
-    ("solonina_sourcream_onion", "Арахис со вкусом сметаны и лука жареный Solonina", "peanut_sourcream_onion.jpeg", 35, 1),
-    ("solonina_cheese", "Арахис со вкусом сыра Solonina", "peanut_cheese.jpeg", 35, 1),
 )
 
 CATALOG_SWEETS = (
@@ -250,6 +246,19 @@ def migrate_schema(db: Session) -> None:
     if "xp" not in ucols:
         db.execute(text("ALTER TABLE users ADD COLUMN xp INTEGER NOT NULL DEFAULT 0"))
         db.commit()
+    if "level" not in ucols:
+        # Legacy XP was cumulative. Preserve progress while moving to the
+        # explicit level + 0..99 XP representation.
+        db.execute(text("ALTER TABLE users ADD COLUMN level INTEGER NOT NULL DEFAULT 1"))
+        db.execute(text("""
+            UPDATE users
+            SET level = MIN(100, MAX(1, CAST(xp / 100 AS INTEGER) + 1)),
+                xp = CASE
+                    WHEN CAST(xp / 100 AS INTEGER) + 1 >= 100 THEN 0
+                    ELSE MAX(0, xp % 100)
+                END
+        """))
+        db.commit()
 
     # tasks.xp_reward — XP за выполнение задания
     tcols = {row[1] for row in db.execute(text("PRAGMA table_info(tasks)")).fetchall()}
@@ -261,6 +270,116 @@ def migrate_schema(db: Session) -> None:
     icols = {row[1] for row in db.execute(text("PRAGMA table_info(items)")).fetchall()}
     if "lootbox_pool_code" not in icols:
         db.execute(text("ALTER TABLE items ADD COLUMN lootbox_pool_code VARCHAR(64)"))
+        db.commit()
+
+    # Tests use fixed percentage grades and independent multi-reward sets.
+    qcols = {row[1] for row in db.execute(text("PRAGMA table_info(quizzes)")).fetchall()}
+    if qcols:
+        quiz_columns = [
+            ("time_limit_seconds", "INTEGER NOT NULL DEFAULT 0"),
+            ("rewards_bad", "TEXT NOT NULL DEFAULT '[]'"),
+            ("rewards_good", "TEXT NOT NULL DEFAULT '[]'"),
+            ("rewards_excellent", "TEXT NOT NULL DEFAULT '[]'"),
+        ]
+        quiz_columns_added = False
+        for col, ddl in quiz_columns:
+            if col not in qcols:
+                db.execute(text(f"ALTER TABLE quizzes ADD COLUMN {col} {ddl}"))
+                quiz_columns_added = True
+        if quiz_columns_added:
+            # Preserve the configured legacy prize for both passing grades,
+            # without retaining the old hidden automatic XP bonus.
+            legacy_quizzes = db.query(models.Quiz).all()
+            import json
+            for quiz in legacy_quizzes:
+                rewards = []
+                if quiz.prize_value > 0:
+                    if quiz.prize_kind == "coins":
+                        rewards.append({"kind": "kovbucks", "amount": quiz.prize_value})
+                    elif quiz.prize_kind == "item" and quiz.prize_item_code:
+                        item = db.query(models.Item).filter(models.Item.code == quiz.prize_item_code).one_or_none()
+                        if item:
+                            rewards.append({"kind": "item", "amount": quiz.prize_value, "item_id": item.id})
+                quiz.rewards_bad = "[]"
+                quiz.rewards_good = json.dumps(rewards, ensure_ascii=False)
+                quiz.rewards_excellent = json.dumps(rewards, ensure_ascii=False)
+            db.commit()
+
+    # One-time pre-launch catalogue cleanup requested before release.
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS maintenance_migrations (
+            key VARCHAR(128) PRIMARY KEY,
+            applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    cleanup_key = "2026-07-26-prelaunch-market-and-peanuts"
+    cleanup_done = db.execute(
+        text("SELECT 1 FROM maintenance_migrations WHERE key = :key"),
+        {"key": cleanup_key},
+    ).first()
+    if cleanup_done is None:
+        for listing in db.query(models.MarketListing).filter(models.MarketListing.is_active.is_(True)).all():
+            return_market_listing_to_seller(db, listing)
+
+        retired_codes = (
+            "solonina_flavour_mix",
+            "solonina_crayfish_dill",
+            "solonina_sourcream_onion",
+            "solonina_cheese",
+        )
+        retired = db.query(models.Item).filter(models.Item.code.in_(retired_codes)).all()
+        retired_ids = [item.id for item in retired]
+        if retired_ids:
+            db.query(models.LootboxOpenReward).filter(
+                models.LootboxOpenReward.item_id.in_(retired_ids)
+            ).update({models.LootboxOpenReward.item_id: None}, synchronize_session=False)
+            db.query(models.LootboxPoolEntry).filter(
+                models.LootboxPoolEntry.item_id.in_(retired_ids)
+            ).delete(synchronize_session=False)
+            db.query(models.ShopProduct).filter(
+                models.ShopProduct.item_id.in_(retired_ids)
+            ).delete(synchronize_session=False)
+            db.query(models.MarketListing).filter(
+                models.MarketListing.item_id.in_(retired_ids)
+            ).delete(synchronize_session=False)
+            db.query(models.InventoryItem).filter(
+                models.InventoryItem.item_id.in_(retired_ids)
+            ).delete(synchronize_session=False)
+            for gift in db.query(models.PendingLoginGift).filter(
+                models.PendingLoginGift.item_id.in_(retired_ids)
+            ).all():
+                if gift.kovbucks == 0 and gift.xp == 0:
+                    db.delete(gift)
+                else:
+                    gift.item_id = None
+                    gift.item_quantity = 0
+            for task in db.query(models.Task).filter(models.Task.reward_item_id.in_(retired_ids)).all():
+                task.reward_item_id = None
+                task.reward_item_quantity = 0
+            for prize in db.query(models.WheelPrize).filter(models.WheelPrize.item_code.in_(retired_codes)).all():
+                prize.kind = "nothing"
+                prize.item_code = None
+                prize.value = 0
+            import json
+            for quiz in db.query(models.Quiz).all():
+                for attr in ("rewards_bad", "rewards_good", "rewards_excellent"):
+                    try:
+                        rewards = json.loads(getattr(quiz, attr) or "[]")
+                    except (TypeError, json.JSONDecodeError):
+                        rewards = []
+                    filtered = [reward for reward in rewards if reward.get("item_id") not in retired_ids]
+                    setattr(quiz, attr, json.dumps(filtered, ensure_ascii=False))
+                if quiz.prize_item_code in retired_codes:
+                    quiz.prize_item_code = None
+                    quiz.prize_kind = "coins"
+                    quiz.prize_value = 0
+                    quiz.prize_label = ""
+            for item in retired:
+                db.delete(item)
+        db.execute(
+            text("INSERT INTO maintenance_migrations(key) VALUES (:key)"),
+            {"key": cleanup_key},
+        )
         db.commit()
 
     # Expand legacy prize-only pools into complete, server-owned Kovbox
@@ -531,7 +650,7 @@ def migrate_schema(db: Session) -> None:
         integrity_checks = {
             "wallets": "SELECT COUNT(*) FROM wallets WHERE balance < 0 OR balance > 2000000000",
             "inventory": "SELECT COUNT(*) FROM inventory WHERE quantity < 0 OR quantity > 2000000000",
-            "users.xp": "SELECT COUNT(*) FROM users WHERE xp < 0 OR xp > 3000",
+            "users.xp": "SELECT COUNT(*) FROM users WHERE xp < 0 OR xp >= 100 OR level < 1 OR level > 100 OR (level = 100 AND xp != 0)",
             "shop_products": "SELECT COUNT(*) FROM shop_products WHERE price <= 0 OR stock < -1",
             "market_listings": "SELECT COUNT(*) FROM market_listings WHERE quantity <= 0 OR price <= 0",
         }
@@ -542,15 +661,18 @@ def migrate_schema(db: Session) -> None:
         guarded_tables = {
             "wallets": "NEW.balance < 0 OR NEW.balance > 2000000000",
             "inventory": "NEW.quantity < 0 OR NEW.quantity > 2000000000",
-            "users": "NEW.xp < 0 OR NEW.xp > 3000",
+            "users": "NEW.xp < 0 OR NEW.xp >= 100 OR NEW.level < 1 OR NEW.level > 100 OR (NEW.level = 100 AND NEW.xp != 0)",
             "shop_products": "NEW.price <= 0 OR NEW.stock < -1",
             "market_listings": "NEW.quantity <= 0 OR NEW.price <= 0",
         }
         for table_name, condition in guarded_tables.items():
             for operation in ("INSERT", "UPDATE"):
                 trigger_name = f"guard_{table_name}_{operation.lower()}"
+                # Conditions evolve with the economy rules; rebuild instead of
+                # keeping the first historical IF NOT EXISTS definition.
+                db.execute(text(f"DROP TRIGGER IF EXISTS {trigger_name}"))
                 db.execute(text(
-                    f"CREATE TRIGGER IF NOT EXISTS {trigger_name} "
+                    f"CREATE TRIGGER {trigger_name} "
                     f"BEFORE {operation} ON {table_name} "
                     f"WHEN {condition} BEGIN "
                     "SELECT RAISE(ABORT, 'game economy integrity violation'); END"

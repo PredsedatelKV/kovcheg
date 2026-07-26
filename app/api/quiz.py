@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 from datetime import timedelta
 
@@ -7,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api._helpers import XP_MAX, award_xp, ensure_wallet
+from app.api._helpers import MAX_PLAYER_LEVEL, XP_PER_LEVEL, award_xp, ensure_wallet
 from app.auth import current_user
 from app.db import begin_game_write, get_db
 
@@ -18,48 +19,63 @@ MAX_GAME_BALANCE = 2_000_000_000
 MAX_INVENTORY_QUANTITY = 2_000_000_000
 
 
-def _validate_thresholds(q: models.Quiz, question_count: int) -> None:
-    """Reject an active quiz whose grading can award impossible results."""
-    good = q.threshold_good
-    excellent = q.threshold_excellent
-    if (
-        isinstance(good, bool)
-        or not isinstance(good, int)
-        or isinstance(excellent, bool)
-        or not isinstance(excellent, int)
-        or not (1 <= good <= excellent <= question_count)
-    ):
-        raise HTTPException(status_code=503, detail="Пороги теста настроены некорректно")
-
-
 def _expected_xp_overflow(user: models.User, amount: int) -> int:
-    current_xp = max(0, min(int(user.xp or 0), XP_MAX))
-    xp_added = min(amount, max(0, XP_MAX - current_xp))
-    return (amount - xp_added) // 10
+    level = max(1, min(int(getattr(user, "level", 1) or 1), MAX_PLAYER_LEVEL))
+    current_xp = 0 if level >= MAX_PLAYER_LEVEL else max(0, min(int(user.xp or 0), XP_PER_LEVEL - 1))
+    available = max(0, (MAX_PLAYER_LEVEL - level) * XP_PER_LEVEL - current_xp)
+    return max(0, amount - available) // 10
 
 
-def _validate_prize_config(db: Session, q: models.Quiz) -> None:
-    if (
-        isinstance(q.prize_value, bool)
-        or not isinstance(q.prize_value, int)
-        or not 1 <= q.prize_value <= MAX_QUIZ_COIN_PRIZE
-    ):
-        raise HTTPException(status_code=503, detail="Награда теста настроена некорректно")
-    if q.prize_kind == "coins":
-        if q.prize_item_code:
-            raise HTTPException(status_code=503, detail="Награда теста настроена некорректно")
-        return
-    if q.prize_kind != "item" or not q.prize_item_code:
-        raise HTTPException(status_code=503, detail="Тип награды теста не поддерживается")
-    item = db.query(models.Item).filter(models.Item.code == q.prize_item_code).one_or_none()
-    if item is None:
-        raise HTTPException(status_code=503, detail="Предмет-награда теста не найден")
-    if item.lootbox_pool_code:
-        pool = db.query(models.LootboxPool).filter(
-            models.LootboxPool.code == item.lootbox_pool_code,
-        ).one_or_none()
-        if pool is None or not pool.is_active or not pool.is_droppable or pool.is_archived:
-            raise HTTPException(status_code=503, detail="Предмет-награда теста сейчас недоступен")
+def serialize_quiz_rewards(rewards: list[schemas.QuizReward]) -> str:
+    return json.dumps(
+        [{"kind": reward.kind, "amount": reward.amount, "item_id": reward.item_id} for reward in rewards],
+        ensure_ascii=False,
+    )
+
+
+def quiz_rewards_out(db: Session, q: models.Quiz, grade: str) -> list[schemas.QuizReward]:
+    attr = f"rewards_{grade}"
+    try:
+        raw = json.loads(getattr(q, attr, "[]") or "[]")
+    except (TypeError, json.JSONDecodeError):
+        raise HTTPException(status_code=503, detail="Награды теста настроены некорректно") from None
+    if not isinstance(raw, list) or len(raw) > 3:
+        raise HTTPException(status_code=503, detail="Награды теста настроены некорректно")
+    result: list[schemas.QuizReward] = []
+    seen: set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise HTTPException(status_code=503, detail="Награды теста настроены некорректно")
+        kind = entry.get("kind")
+        amount = entry.get("amount")
+        item_id = entry.get("item_id")
+        if kind not in {"xp", "kovbucks", "item"} or kind in seen:
+            raise HTTPException(status_code=503, detail="Награды теста настроены некорректно")
+        if isinstance(amount, bool) or not isinstance(amount, int) or not 1 <= amount <= MAX_QUIZ_COIN_PRIZE:
+            raise HTTPException(status_code=503, detail="Награды теста настроены некорректно")
+        seen.add(kind)
+        if kind == "xp":
+            result.append(schemas.QuizReward(kind=kind, amount=amount, label=f"{amount} XP", icon="/static/img/ui/xp.png"))
+        elif kind == "kovbucks":
+            result.append(schemas.QuizReward(kind=kind, amount=amount, label=f"{amount} ковбаксов", icon="/static/img/ui/kovbaks.png"))
+        else:
+            if isinstance(item_id, bool) or not isinstance(item_id, int):
+                raise HTTPException(status_code=503, detail="Предмет-награда теста не выбран")
+            item = db.query(models.Item).filter(models.Item.id == item_id).one_or_none()
+            if item is None:
+                raise HTTPException(status_code=503, detail="Предмет-награда теста не найден")
+            result.append(schemas.QuizReward(
+                kind=kind,
+                amount=amount,
+                item_id=item.id,
+                label=f"{item.name} ×{amount}",
+                icon=item.image_url or item.icon,
+            ))
+    return result
+
+
+def quiz_reward_label(rewards: list[schemas.QuizReward]) -> str:
+    return " · ".join(reward.label for reward in rewards)
 
 
 @router.get("/available", response_model=list[schemas.QuizForUser])
@@ -73,8 +89,9 @@ def available(user: models.User = Depends(current_user), db: Session = Depends(g
     for q in quizzes:
         q_count = db.query(models.QuizQuestion).filter(models.QuizQuestion.quiz_id == q.id).count()
         try:
-            _validate_thresholds(q, q_count)
-            _validate_prize_config(db, q)
+            rewards_bad = quiz_rewards_out(db, q, "bad")
+            rewards_good = quiz_rewards_out(db, q, "good")
+            rewards_excellent = quiz_rewards_out(db, q, "excellent")
         except HTTPException:
             # Do not advertise a broken legacy/admin configuration to players.
             continue
@@ -83,9 +100,13 @@ def available(user: models.User = Depends(current_user), db: Session = Depends(g
                 id=q.id,
                 title=q.title,
                 description=q.description,
-                prize_label=q.prize_label,
+                prize_label=quiz_reward_label(rewards_excellent),
                 question_count=q_count,
                 already_passed=q.id in passed_ids,
+                time_limit_seconds=q.time_limit_seconds,
+                rewards_bad=rewards_bad,
+                rewards_good=rewards_good,
+                rewards_excellent=rewards_excellent,
             )
         )
     return result
@@ -114,20 +135,22 @@ def start_quiz(
     )
     if not questions:
         raise HTTPException(status_code=503, detail="В тесте нет вопросов")
-    _validate_thresholds(q, len(questions))
-    _validate_prize_config(db, q)
+    for grade in ("bad", "good", "excellent"):
+        quiz_rewards_out(db, q, grade)
     now = models.now_utc()
     db.query(models.QuizRun).filter(
         models.QuizRun.user_id == user.id,
         models.QuizRun.expires_at < now,
     ).delete(synchronize_session=False)
+    ttl = timedelta(seconds=q.time_limit_seconds) if q.time_limit_seconds > 0 else QUIZ_RUN_TTL
+    expires_at = now + min(ttl, QUIZ_RUN_TTL)
     run = models.QuizRun(
         token=secrets.token_urlsafe(32),
         quiz_id=quiz_id,
         user_id=user.id,
         question_count=len(questions),
         started_at=now,
-        expires_at=now + QUIZ_RUN_TTL,
+        expires_at=expires_at,
     )
     db.add(run)
     db.commit()
@@ -139,7 +162,12 @@ def start_quiz(
         )
         for qq in questions
     ]
-    return schemas.QuizStartOut(run_token=run.token, questions=public_questions)
+    return schemas.QuizStartOut(
+        run_token=run.token,
+        questions=public_questions,
+        time_limit_seconds=q.time_limit_seconds,
+        expires_at=expires_at,
+    )
 
 
 @router.post("/submit", response_model=schemas.QuizResultOut)
@@ -187,8 +215,6 @@ def submit_quiz(
     total = len(questions)
     if total == 0:
         raise HTTPException(status_code=503, detail="В тесте нет вопросов")
-    _validate_thresholds(q, total)
-    _validate_prize_config(db, q)
     if total != run.question_count:
         raise HTTPException(status_code=409, detail="Тест был обновлён — открой его заново")
     minimum_seconds = max(2.0, min(30.0, total * 0.75))
@@ -211,62 +237,33 @@ def submit_quiz(
     # Защита от выхода за число вопросов (дубликаты/мусор в payload).
     if score > total:
         score = total
-    if score >= q.threshold_excellent:
-        grade = "excellent"
-    elif score >= q.threshold_good:
-        grade = "good"
-    else:
-        grade = "bad"
+    percent = score * 100 / total
+    grade = "bad" if percent <= 40 else "good" if percent <= 70 else "excellent"
+    rewards = quiz_rewards_out(db, q, grade)
+    xp_award = sum(reward.amount for reward in rewards if reward.kind == "xp")
+    kovbucks_award = sum(reward.amount for reward in rewards if reward.kind == "kovbucks")
+    xp_overflow_coins = _expected_xp_overflow(user, xp_award)
+    wallet = ensure_wallet(db, user)
+    wallet_increment = kovbucks_award + xp_overflow_coins
+    if wallet.balance < 0 or wallet.balance > MAX_GAME_BALANCE - wallet_increment:
+        raise HTTPException(status_code=409, detail="Достигнут предел баланса")
 
-    prize_item = None
-    prize_inventory = None
-    xp_award = 0
-    xp_overflow_coins = 0
-    if grade in ("good", "excellent"):
-        xp_award = 25 if grade == "excellent" else 10
-        xp_overflow_coins = _expected_xp_overflow(user, xp_award)
-        if q.prize_kind == "coins":
-            if (
-                isinstance(q.prize_value, bool)
-                or not isinstance(q.prize_value, int)
-                or q.prize_value <= 0
-                or q.prize_value > MAX_QUIZ_COIN_PRIZE
-            ):
-                raise HTTPException(status_code=503, detail="Награда теста настроена некорректно")
-        elif q.prize_kind == "item":
-            if (
-                isinstance(q.prize_value, bool)
-                or not isinstance(q.prize_value, int)
-                or q.prize_value <= 0
-                or q.prize_value > MAX_QUIZ_COIN_PRIZE
-            ):
-                raise HTTPException(status_code=503, detail="Количество предмета-награды настроено некорректно")
-            if not q.prize_item_code:
-                raise HTTPException(status_code=503, detail="Для теста не выбран предмет-награда")
-            prize_item = db.query(models.Item).filter(models.Item.code == q.prize_item_code).one_or_none()
-            if prize_item is None:
-                raise HTTPException(status_code=503, detail="Предмет-награда теста не найден")
-            prize_inventory = (
-                db.query(models.InventoryItem)
-                .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == prize_item.id)
-                .with_for_update()
-                .one_or_none()
-            )
-            if prize_inventory is not None and (
-                prize_inventory.quantity < 0
-                or prize_inventory.quantity > MAX_INVENTORY_QUANTITY - q.prize_value
-            ):
-                raise HTTPException(status_code=409, detail="Достигнут предел количества предмета")
-        else:
-            raise HTTPException(status_code=503, detail="Тип награды теста не поддерживается")
-
-        # XP overflow and the configured coin prize share one wallet.  Validate
-        # their combined effect before creating an attempt or changing XP.
-        coin_prize = q.prize_value if q.prize_kind == "coins" else 0
-        wallet = ensure_wallet(db, user)
-        wallet_increment = coin_prize + xp_overflow_coins
-        if wallet.balance < 0 or wallet.balance > MAX_GAME_BALANCE - wallet_increment:
-            raise HTTPException(status_code=409, detail="Достигнут предел баланса")
+    item_rewards: list[tuple[schemas.QuizReward, models.Item, models.InventoryItem | None]] = []
+    for reward in rewards:
+        if reward.kind != "item":
+            continue
+        item = db.query(models.Item).filter(models.Item.id == reward.item_id).one()
+        inventory = (
+            db.query(models.InventoryItem)
+            .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == item.id)
+            .with_for_update()
+            .one_or_none()
+        )
+        if inventory is not None and (
+            inventory.quantity < 0 or inventory.quantity > MAX_INVENTORY_QUANTITY - reward.amount
+        ):
+            raise HTTPException(status_code=409, detail="Достигнут предел количества предмета")
+        item_rewards.append((reward, item, inventory))
 
     attempt = models.QuizAttempt(
         quiz_id=q.id,
@@ -294,34 +291,24 @@ def submit_quiz(
         db.rollback()
         raise HTTPException(status_code=400, detail="Ты уже проходил этот тест")
 
-    # Award prize if grade is good or excellent
-    prize_awarded = False
+    prize_awarded = bool(rewards)
     xp_to_coins = 0
-    if grade in ("good", "excellent"):
+    if xp_award:
         xp_to_coins = award_xp(db, user, xp_award)["coins"]
-        if q.prize_kind == "coins":
-            wallet = ensure_wallet(db, user)
-            wallet.balance += q.prize_value
-            db.add(
-                models.Transaction(
-                    sender_id=None,
-                    recipient_id=user.id,
-                    amount=q.prize_value,
-                    note=f"quiz:{q.id}:{grade}",
-                )
-            )
-            prize_awarded = True
-        elif q.prize_kind == "item" and prize_item is not None:
-            if prize_inventory:
-                prize_inventory.quantity += q.prize_value
-            else:
-                db.add(models.InventoryItem(
-                    user_id=user.id,
-                    item_id=prize_item.id,
-                    quantity=q.prize_value,
-                ))
-            prize_awarded = True
-        attempt.prize_awarded = prize_awarded
+    if kovbucks_award:
+        wallet.balance += kovbucks_award
+        db.add(models.Transaction(
+            sender_id=None,
+            recipient_id=user.id,
+            amount=kovbucks_award,
+            note=f"quiz:{q.id}:{grade}",
+        ))
+    for reward, item, inventory in item_rewards:
+        if inventory:
+            inventory.quantity += reward.amount
+        else:
+            db.add(models.InventoryItem(user_id=user.id, item_id=item.id, quantity=reward.amount))
+    attempt.prize_awarded = prize_awarded
 
     db.commit()
     db.refresh(attempt)
@@ -332,7 +319,8 @@ def submit_quiz(
         total=total,
         grade=grade,
         grade_label=grade_labels.get(grade, grade),
-        prize_label=q.prize_label,
+        prize_label=quiz_reward_label(rewards),
         prize_awarded=prize_awarded,
         xp_to_coins=xp_to_coins,
+        rewards=rewards,
     )

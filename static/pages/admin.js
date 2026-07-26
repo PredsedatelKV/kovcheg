@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=255";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=264";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -1236,33 +1236,92 @@ async function renderLegal(body) {
 }
 
 // ---------- QUIZZES ----------
+function quizRewardFields(prefix, rewards = []) {
+  const byKind = Object.fromEntries((rewards || []).map((reward) => [reward.kind, reward]));
+  const item = byKind.item || {};
+  const itemOptions = (META?.items || []).map((row) =>
+    `<option value="${row.id}" ${Number(item.item_id) === row.id ? "selected" : ""}>${escapeHtml(row.name)}</option>`
+  ).join("");
+  return `
+    <div class="admin-card quiz-reward-editor">
+      <h4>${prefix === "bad" ? "Плохо · 0–40%" : prefix === "good" ? "Хорошо · 41–70%" : "Отлично · 71–100%"}</h4>
+      ${formGrid(
+        field("XP", `<input class="input" data-reward="${prefix}-xp" type="number" min="0" value="${byKind.xp?.amount || 0}"/>`),
+        field("Ковбаксы", `<input class="input" data-reward="${prefix}-kovbucks" type="number" min="0" value="${byKind.kovbucks?.amount || 0}"/>`),
+        field("Предмет", `<select class="input" data-reward="${prefix}-item"><option value="">Без предмета</option>${itemOptions}</select>`),
+        field("Количество предмета", `<input class="input" data-reward="${prefix}-item-amount" type="number" min="1" value="${item.amount || 1}"/>`),
+      )}
+    </div>`;
+}
+
+function collectQuizRewards(scope, prefix) {
+  const rewards = [];
+  const xp = Number(scope.querySelector(`[data-reward="${prefix}-xp"]`)?.value || 0);
+  const kovbucks = Number(scope.querySelector(`[data-reward="${prefix}-kovbucks"]`)?.value || 0);
+  const itemId = Number(scope.querySelector(`[data-reward="${prefix}-item"]`)?.value || 0);
+  const itemAmount = Number(scope.querySelector(`[data-reward="${prefix}-item-amount"]`)?.value || 1);
+  if (xp > 0) rewards.push({ kind: "xp", amount: Math.floor(xp), item_id: null });
+  if (kovbucks > 0) rewards.push({ kind: "kovbucks", amount: Math.floor(kovbucks), item_id: null });
+  if (itemId > 0) rewards.push({ kind: "item", amount: Math.max(1, Math.floor(itemAmount)), item_id: itemId });
+  return rewards;
+}
+
+function quizPayloadFrom(scope, quiz = null) {
+  return {
+    title: scope.querySelector('[data-q-field="title"]')?.value.trim() || quiz?.title || "",
+    description: scope.querySelector('[data-q-field="description"]')?.value || quiz?.description || "",
+    is_active: quiz?.is_active || false,
+    prize_kind: "coins",
+    prize_value: 0,
+    prize_item_code: null,
+    prize_label: "",
+    threshold_good: 1,
+    threshold_excellent: 1,
+    time_limit_seconds: Math.max(0, Math.floor(Number(scope.querySelector('[data-q-field="time"]')?.value || 0))),
+    rewards_bad: collectQuizRewards(scope, "bad"),
+    rewards_good: collectQuizRewards(scope, "good"),
+    rewards_excellent: collectQuizRewards(scope, "excellent"),
+  };
+}
+
+function quizRewardsSummary(rewards) {
+  return (rewards || []).map((reward) => escapeHtml(reward.label || "")).filter(Boolean).join(" · ") || "без награды";
+}
+
 async function renderQuizzes(body) {
   const rows = await get("/api/admin/quizzes");
   body.innerHTML = `
     ${cardBlock(
       "Новый тест",
       formGrid(
-        field("Название", `<input class="input" id="q-title"/>`),
-        field("Описание", `<textarea class="input" id="q-desc" rows="2"></textarea>`),
-        field("Тип приза", `<select class="input" id="q-prize-kind"><option value="coins">Ковбаксы</option><option value="item">Предмет</option></select>`),
-        field("Значение приза", `<input class="input" id="q-prize-value" type="number" min="1" value="1"/>`),
-        field("Код предмета (если предмет)", `<input class="input" id="q-prize-item"/>`),
-        field("Название приза (для отображения)", `<input class="input" id="q-prize-label"/>`),
-        field("Порог 'Хорошо' (правильных ответов)", `<input class="input" id="q-threshold-good" type="number" min="1" value="1"/>`),
-        field("Порог 'Отлично' (правильных ответов)", `<input class="input" id="q-threshold-excellent" type="number" min="1" value="1"/>`),
-      ) + `<button class="btn btn-sm" id="q-create">Создать тест</button>`,
+        field("Название", `<input class="input" data-q-field="title"/>`),
+        field("Описание", `<textarea class="input" data-q-field="description" rows="2"></textarea>`),
+        field("Лимит времени, секунд (0 — без лимита)", `<input class="input" data-q-field="time" type="number" min="0" value="0"/>`),
+      ) + quizRewardFields("bad") + quizRewardFields("good") + quizRewardFields("excellent") +
+      `<button class="btn btn-sm" id="q-create">Создать тест</button>`,
     )}
     ${rows
       .map(
         (q) => `
       <div class="admin-card" data-id="${q.id}">
         <h3 class="admin-card-title">${escapeHtml(q.title)} ${q.is_active ? '<span class="admin-badge">активен</span>' : ""}</h3>
-        <div class="admin-sub">Приз: ${escapeHtml(q.prize_label)} · Хорошо: ${q.threshold_good}+ · Отлично: ${q.threshold_excellent}+ · Вопросов: ${q.questions.length}</div>
+        <div class="admin-sub">Плохо: ${quizRewardsSummary(q.rewards_bad)}<br>Хорошо: ${quizRewardsSummary(q.rewards_good)}<br>Отлично: ${quizRewardsSummary(q.rewards_excellent)}<br>${q.time_limit_seconds ? `Лимит: ${q.time_limit_seconds} сек. · ` : ""}Вопросов: ${q.questions.length}</div>
         <div class="row gap">
           <button class="btn btn-sm" data-action="edit-quiz">Редактировать</button>
           <button class="btn btn-sm btn-secondary" data-action="toggle-quiz">${q.is_active ? "Отключить" : "Активировать"}</button>
           <button class="btn btn-sm" data-action="view-attempts">Попытки</button>
           <button class="btn btn-sm btn-danger" data-action="delete-quiz">Удалить</button>
+        </div>
+        <div class="quiz-config-editor" style="display:none">
+          ${formGrid(
+            field("Название", `<input class="input" data-q-field="title" value="${escapeHtml(q.title)}"/>`),
+            field("Описание", `<textarea class="input" data-q-field="description" rows="2">${escapeHtml(q.description || "")}</textarea>`),
+            field("Лимит времени, секунд (0 — без лимита)", `<input class="input" data-q-field="time" type="number" min="0" value="${q.time_limit_seconds || 0}"/>`),
+          )}
+          ${quizRewardFields("bad", q.rewards_bad)}
+          ${quizRewardFields("good", q.rewards_good)}
+          ${quizRewardFields("excellent", q.rewards_excellent)}
+          <button class="btn btn-sm" data-action="save-quiz">Сохранить настройки</button>
         </div>
         <div class="quiz-questions-list" data-quiz-id="${q.id}" style="display:none">
           <hr class="admin-sep"/>
@@ -1287,17 +1346,7 @@ async function renderQuizzes(body) {
   `;
 
   body.querySelector("#q-create").addEventListener("click", async () => {
-    const payload = {
-      title: body.querySelector("#q-title").value.trim(),
-      description: body.querySelector("#q-desc").value,
-      prize_kind: body.querySelector("#q-prize-kind").value,
-      prize_value: Number(body.querySelector("#q-prize-value").value) || 1,
-      prize_item_code: body.querySelector("#q-prize-item").value.trim() || null,
-      prize_label: body.querySelector("#q-prize-label").value.trim(),
-      threshold_good: Number(body.querySelector("#q-threshold-good").value) || 5,
-      threshold_excellent: Number(body.querySelector("#q-threshold-excellent").value) || 8,
-      is_active: false,
-    };
+    const payload = quizPayloadFrom(body);
     if (!payload.title) return window.kov.toast("Название обязательно");
     try {
       await post("/api/admin/quizzes", payload);
@@ -1315,7 +1364,30 @@ async function renderQuizzes(body) {
       const quiz = rows.find((r) => r.id === Number(id));
       if (!quiz) return;
       const qList = card.querySelector(".quiz-questions-list");
-      qList.style.display = qList.style.display === "none" ? "block" : "none";
+      const editor = card.querySelector(".quiz-config-editor");
+      const opening = editor.style.display === "none";
+      editor.style.display = opening ? "block" : "none";
+      qList.style.display = opening ? "block" : "none";
+    });
+  });
+
+  body.querySelectorAll('[data-action="save-quiz"]').forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const card = btn.closest('.admin-card[data-id]');
+      const quiz = rows.find((row) => row.id === Number(card?.dataset.id));
+      const editor = card?.querySelector(".quiz-config-editor");
+      if (!quiz || !editor || btn.disabled) return;
+      const payload = quizPayloadFrom(editor, quiz);
+      if (!payload.title) return window.kov.toast("Название обязательно");
+      btn.disabled = true;
+      try {
+        await patch(`/api/admin/quizzes/${quiz.id}`, payload);
+        window.kov.toast("Настройки теста сохранены");
+        renderQuizzes(body);
+      } catch (err) {
+        btn.disabled = false;
+        window.kov.toast(err.message);
+      }
     });
   });
 
@@ -1333,12 +1405,16 @@ async function renderQuizzes(body) {
           title: quiz.title,
           description: quiz.description || "",
           is_active: !quiz.is_active,
-          prize_kind: quiz.prize_kind,
-          prize_value: quiz.prize_value,
-          prize_item_code: quiz.prize_item_code || null,
-          prize_label: quiz.prize_label || "",
-          threshold_good: quiz.threshold_good,
-          threshold_excellent: quiz.threshold_excellent,
+          prize_kind: "coins",
+          prize_value: 0,
+          prize_item_code: null,
+          prize_label: "",
+          threshold_good: 1,
+          threshold_excellent: 1,
+          time_limit_seconds: quiz.time_limit_seconds || 0,
+          rewards_bad: quiz.rewards_bad || [],
+          rewards_good: quiz.rewards_good || [],
+          rewards_excellent: quiz.rewards_excellent || [],
         });
         window.kov.toast(quiz.is_active ? "Тест отключён" : "Тест активирован");
         renderQuizzes(body);

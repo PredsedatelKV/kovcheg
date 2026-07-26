@@ -30,7 +30,7 @@ def _get_bp_level(db: Session, user: models.User) -> int:
         return 0
     if not 1 <= season.total_levels <= MAX_BATTLEPASS_LEVELS:
         return 0
-    return min(max(0, user.xp) // season.xp_per_level, season.total_levels - 1) + 1
+    return min(max(1, int(getattr(user, "level", 1) or 1)), season.total_levels)
 
 
 def _user_to_out(user: models.User) -> schemas.UserOut:
@@ -45,6 +45,7 @@ def _user_to_out(user: models.User) -> schemas.UserOut:
         restrictions=user.restrictions,
         balance=user.wallet.balance if user.wallet else 0,
         xp=user.xp,
+        level=user.level,
         is_admin=is_admin(user),
         can_use_clicker=can_use_clicker(user),
         maintenance_sections=maintenance_sections(user),

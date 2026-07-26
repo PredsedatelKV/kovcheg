@@ -82,7 +82,8 @@ def get_battlepass(
         return None
     _validate_season(season)
     ubp = _get_ubp(db, user.id, season)
-    level, current_xp = _calc_level(user.xp, season.xp_per_level)
+    level = max(0, min(int(getattr(user, "level", 1) or 1) - 1, season.total_levels - 1))
+    current_xp = 0 if user.level >= season.total_levels else max(0, min(int(user.xp or 0), season.xp_per_level - 1))
     claimed_raw: list = []
     if ubp.claimed_rewards:
         try:
@@ -113,7 +114,7 @@ def get_battlepass(
 
     return schemas.UserBattlePassOut(
         season=season_out,
-        current_level=min(level, season.total_levels - 1),
+        current_level=level,
         current_xp=current_xp,
         xp_for_level=season.xp_per_level,
         claimed_rewards=sorted(claimed),
@@ -134,7 +135,7 @@ def claim_reward(
         raise HTTPException(404, "Нет активного сезона")
     _validate_season(season)
     ubp = _get_ubp(db, user.id, season)
-    level_index, _ = _calc_level(user.xp, season.xp_per_level)
+    level_index = max(0, min(int(getattr(user, "level", 1) or 1) - 1, season.total_levels - 1))
     # API stores a zero-based progress index, while rewards are numbered 1..N.
     achieved_level = min(level_index + 1, season.total_levels)
 
@@ -243,14 +244,14 @@ def award_xp_route(
 
     xp_to_coins = 0
     if body.mode == "set":
-        target.xp = max(0, body.amount)
+        target.xp = 0 if target.level >= 100 else min(99, max(0, body.amount))
     elif body.mode == "sub":
         target.xp = max(0, target.xp - body.amount)
     else:
         xp_to_coins = award_xp(db, target, body.amount)["coins"]
 
     db.commit()
-    return {"ok": True, "xp": target.xp, "xp_to_coins": xp_to_coins}
+    return {"ok": True, "xp": target.xp, "level": target.level, "xp_to_coins": xp_to_coins}
 
 
 @router.post("/open-lootbox", response_model=schemas.LootboxOpenResult)

@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=255";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=264";
 
-import { playUISound } from "/static/pages/settings.js?v=255";
+import { playUISound, getSettings } from "/static/pages/settings.js?v=264";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -840,8 +840,8 @@ function showMegaLootboxChoices(result) {
   const chestImage = overlay.querySelector("#mega-chest-image");
   const hint = overlay.querySelector("#mega-choice-hint");
   const done = overlay.querySelector("#mega-choice-done");
-  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=255");
-  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=255`));
+  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=264");
+  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=264`));
   const allSounds = [openSound, ...bonusSounds];
   const choices = [];
   let index = 0;
@@ -850,7 +850,10 @@ function showMegaLootboxChoices(result) {
 
   function playAudio(audio) {
     try {
+      const settings = getSettings();
+      if (!settings.uiSounds) return;
       allSounds.forEach((sound) => { if (sound !== audio) { sound.pause(); sound.currentTime = 0; } });
+      audio.volume = Math.max(0, Math.min(1, Number(settings.uiSoundsVolume) || 0));
       audio.currentTime = 0;
       audio.play().catch(() => {});
     } catch (_) {}
@@ -935,8 +938,7 @@ function showMegaLootboxChoices(result) {
       locked = false;
       renderGroup();
     };
-    openSound.addEventListener("ended", startChoices, { once: true });
-    setTimeout(startChoices, 2200);
+    setTimeout(startChoices, 1000);
   });
   done.addEventListener("click", () => {
     overlay.classList.add("is-closing");
@@ -997,14 +999,17 @@ function showLootboxChest(result) {
   let locked = false;
   let previousReward = null;
   let finished = false;
-  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=255");
-  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=255");
-  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=255`));
+  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=264");
+  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=264");
+  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=264`));
   const allSounds = [openSound, specialSound, ...bonusSounds];
   allSounds.forEach((audio) => { audio.preload = "auto"; });
   function playAudio(audio) {
     try {
+      const settings = getSettings();
+      if (!settings.uiSounds) return;
       allSounds.forEach((sound) => { if (sound !== audio) { sound.pause(); sound.currentTime = 0; } });
+      audio.volume = Math.max(0, Math.min(1, Number(settings.uiSoundsVolume) || 0));
       audio.currentTime = 0;
       audio.play().catch(() => {});
     } catch (_) {}
@@ -1030,6 +1035,19 @@ function showLootboxChest(result) {
     // The counter already shows how many rewards remain. Previous rewards are
     // intentionally kept out of this area and appear together only at the end.
     return reward;
+  }
+
+  function spinSpecialReward(card) {
+    if (typeof card.animate !== "function") return;
+    card.animate([
+      { opacity: 1, transform: "translateY(18px) rotateX(-12deg) rotateY(0deg) scale(.82)" },
+      { opacity: 1, transform: "translateY(-8px) rotateX(12deg) rotateY(720deg) scale(1.06)", offset: .5 },
+      { opacity: 1, transform: "translateY(0) rotateX(-6deg) rotateY(1440deg) scale(1)" },
+    ], {
+      duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 900 : 4000,
+      easing: "linear",
+      fill: "forwards",
+    });
   }
 
   function rewardCard(reward) {
@@ -1083,7 +1101,7 @@ function showLootboxChest(result) {
       chestButton.classList.add("is-bumping");
       playAudio(openSound);
       setTimeout(() => { chestImage.src = openImage; }, 160);
-      await new Promise((resolve) => setTimeout(resolve, 420));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
     const card = rewardCard(reward);
     stage.replaceChildren(card);
@@ -1091,7 +1109,10 @@ function showLootboxChest(result) {
     if (specialFinal) {
       card.classList.add("is-special-spinning");
       playAudio(specialSound);
-      requestAnimationFrame(() => card.classList.add("is-visible"));
+      requestAnimationFrame(() => {
+        card.classList.add("is-visible");
+        spinSpecialReward(card);
+      });
     } else {
       playAudio(bonusSounds[Math.min(index, bonusSounds.length - 1)]);
       requestAnimationFrame(() => card.classList.add("is-visible"));

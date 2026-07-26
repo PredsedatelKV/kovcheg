@@ -48,6 +48,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_seen: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     xp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     wallet: Mapped[Wallet] = relationship("Wallet", back_populates="user", uselist=False, cascade="all, delete-orphan")
     inventory: Mapped[list[InventoryItem]] = relationship(
@@ -361,6 +362,10 @@ class Quiz(Base):
     prize_label: Mapped[str] = mapped_column(String(128), default="")
     threshold_good: Mapped[int] = mapped_column(Integer, default=5)  # min correct for "good"
     threshold_excellent: Mapped[int] = mapped_column(Integer, default=8)  # min correct for "excellent"
+    time_limit_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    rewards_bad: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    rewards_good: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    rewards_excellent: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
 
     questions: Mapped[list["QuizQuestion"]] = relationship("QuizQuestion", back_populates="quiz", cascade="all, delete-orphan")
     attempts: Mapped[list["QuizAttempt"]] = relationship("QuizAttempt", back_populates="quiz", cascade="all, delete-orphan")

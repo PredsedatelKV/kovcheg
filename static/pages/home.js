@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=255";
+import { get, post, iconHtml } from "/static/api.js?v=264";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=255";
+import { openAssistantChat } from "/static/pages/assistant.js?v=264";
 
-import { playUISound } from "/static/pages/settings.js?v=255";
+import { playUISound } from "/static/pages/settings.js?v=264";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -936,6 +936,23 @@ async function openWheel() {
   }
 }
 
+function quizRewardBadges(rewards) {
+  if (!Array.isArray(rewards) || rewards.length === 0) return '<span class="quiz-reward-empty">без награды</span>';
+  return rewards.map((reward) => `
+    <span class="quiz-reward-badge">
+      <img src="${escapeHtml(reward.icon || "/static/img/ui/box.svg")}" alt=""/>
+      ${escapeHtml(reward.label || "")}
+    </span>`).join("");
+}
+
+function quizRewardsTable(q) {
+  return `<div class="quiz-reward-table">
+    <div><strong>Плохо</strong>${quizRewardBadges(q.rewards_bad)}</div>
+    <div><strong>Хорошо</strong>${quizRewardBadges(q.rewards_good)}</div>
+    <div><strong>Отлично</strong>${quizRewardBadges(q.rewards_excellent)}</div>
+  </div>`;
+}
+
 async function loadQuizzes(root) {
   const container = root.querySelector("#quiz-list");
   if (!container) return;
@@ -952,7 +969,8 @@ async function loadQuizzes(root) {
            ${q.already_passed ? 'style="opacity:.68;cursor:default"' : ""}>
         <div class="quiz-row-info">
           <h4>${escapeHtml(q.title)}</h4>
-          <p>${escapeHtml(q.description || "")} ${q.question_count} вопросов · ${q.already_passed ? "Пройдено" : `Приз: ${escapeHtml(q.prize_label)}`}</p>
+          <p>${escapeHtml(q.description || "")} ${q.question_count} вопросов${q.time_limit_seconds ? ` · ${q.time_limit_seconds} сек.` : ""}${q.already_passed ? " · Пройдено" : ""}</p>
+          ${q.already_passed ? "" : quizRewardsTable(q)}
         </div>
         <div class="quiz-row-badge" aria-hidden="true">${q.already_passed ? "✓" : "▶"}</div>
       </div>
@@ -976,10 +994,12 @@ async function loadQuizzes(root) {
 async function openQuiz(quizId, quizRoot = null) {
   let questions = [];
   let runToken = "";
+  let timeLimit = 0;
   try {
     const started = await post(`/api/quiz/${quizId}/start`);
     questions = started.questions || [];
     runToken = started.run_token || "";
+    timeLimit = Number(started.time_limit_seconds) || 0;
   } catch (err) {
     window.kov.toast(err.message);
     return;
@@ -992,6 +1012,7 @@ async function openQuiz(quizId, quizRoot = null) {
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <h2>Тест</h2>
+    ${timeLimit > 0 ? `<div class="quiz-timer" id="quiz-timer">Осталось: <strong>${timeLimit}</strong> сек.</div>` : ""}
     <div id="quiz-questions"></div>
     <button class="btn" id="quiz-submit" style="margin-top:16px">Ответить</button>
   `);
@@ -1009,20 +1030,25 @@ async function openQuiz(quizId, quizRoot = null) {
     </div>
   `).join("");
 
-  modal.querySelector("#quiz-submit").addEventListener("click", async (event) => {
-    const submitButton = event.currentTarget;
-    if (submitButton.disabled) return;
+  const submitButton = modal.querySelector("#quiz-submit");
+  let submitting = false;
+  let timerId = null;
+
+  async function submitQuiz(timeExpired = false) {
+    if (submitting) return;
     const answers = {};
     questions.forEach((q) => {
       const sel = modal.querySelector(`input[name="q-${q.id}"]:checked`);
       if (sel) answers[q.id] = sel.value;
     });
-    if (Object.keys(answers).length < questions.length) {
+    if (!timeExpired && Object.keys(answers).length < questions.length) {
       window.kov.toast("Ответь на все вопросы");
       return;
     }
+    submitting = true;
+    if (timerId) clearInterval(timerId);
     submitButton.disabled = true;
-    submitButton.textContent = "Проверяем…";
+    submitButton.textContent = timeExpired ? "Время вышло — проверяем…" : "Проверяем…";
     try {
       const result = await post("/api/quiz/submit", { quiz_id: quizId, run_token: runToken, answers });
       if (result && result.xp_to_coins > 0) {
@@ -1030,7 +1056,10 @@ async function openQuiz(quizId, quizRoot = null) {
       }
       window.closeModal();
       if (quizRoot && quizRoot.isConnected) loadQuizzes(quizRoot);
-      const gradeLabels = { bad: "Не сдан", good: "Хорошо", excellent: "Отлично" };
+      const gradeLabels = { bad: "Плохо", good: "Хорошо", excellent: "Отлично" };
+      const rewardsHtml = (result.rewards || []).map((reward) =>
+        `<span class="quiz-reward-badge"><img src="${escapeHtml(reward.icon || "/static/img/ui/box.svg")}" alt=""/>${escapeHtml(reward.label || "")}</span>`
+      ).join("");
       window.kov.showModal(`
         <button class="close" onclick="closeModal()">×</button>
         <h2>Результат</h2>
@@ -1038,7 +1067,7 @@ async function openQuiz(quizId, quizRoot = null) {
           <div style="font-size:48px; font-weight:800">${result.score}/${result.total}</div>
           <div style="font-size:18px; margin-top:8px; color:var(--primary)">${gradeLabels[result.grade] || result.grade}</div>
           ${result.prize_awarded
-            ? `<div class="quiz-prize-awarded" style="margin-top:16px">🎁 Приз получен: ${escapeHtml(result.prize_label)}</div>`
+            ? `<div class="quiz-prize-awarded" style="margin-top:16px">Призы получены<div class="quiz-result-rewards">${rewardsHtml}</div></div>`
             : ""
           }
         </div>
@@ -1048,6 +1077,25 @@ async function openQuiz(quizId, quizRoot = null) {
       window.kov.toast(err.message);
       submitButton.disabled = false;
       submitButton.textContent = "Ответить";
+      submitting = false;
     }
-  });
+  }
+
+  submitButton.addEventListener("click", () => submitQuiz(false));
+  if (timeLimit > 0) {
+    const timer = modal.querySelector("#quiz-timer strong");
+    let left = timeLimit;
+    timerId = setInterval(() => {
+      if (!modal.isConnected) {
+        clearInterval(timerId);
+        return;
+      }
+      left -= 1;
+      timer.textContent = String(Math.max(0, left));
+      if (left <= 0) {
+        clearInterval(timerId);
+        submitQuiz(true);
+      }
+    }, 1000);
+  }
 }

@@ -10,7 +10,10 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError
 
-from app import models  # noqa: F401  ensure models imported for create_all
+from app import (
+    models,  # noqa: F401  ensure models imported for create_all
+    web_auth,
+)
 from app.api import admin as admin_api
 from app.api import arcade as arcade_api
 from app.api import battlepass as battlepass_api
@@ -25,7 +28,6 @@ from app.api import shop as shop_api
 from app.api import tasks as tasks_api
 from app.api import wheel as wheel_api
 from app.assistant.api import router as assistant_api
-from app import web_auth
 from app.bot import configure_webhook, feed_update, set_menu_button
 from app.config import get_settings
 from app.db import Base, SessionLocal, engine, session_scope
@@ -147,15 +149,23 @@ async def telegram_webhook(secret: str, request: Request) -> JSONResponse:
 
 
 if STATIC_DIR.exists():
-    # No-cache headers are applied by the no_cache_static middleware below,
-    # so a plain StaticFiles mount is sufficient here.
     sf = StaticFiles(directory=str(STATIC_DIR))
     app.mount("/static", sf, name="static")
 
     @app.middleware("http")
-    async def no_cache_static(request, call_next):
+    async def cache_static(request, call_next):
         resp = await call_next(request)
-        if request.url.path.startswith("/static/") or request.url.path == "/" or request.url.path == "/manifest.json":
+        path = request.url.path.lower()
+        if path.startswith("/static/"):
+            if path.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".mp3", ".ogg", ".woff", ".woff2")):
+                # Stable media remains in the WebView cache; uploaded content
+                # gets a new URL and bundled replacements get a bumped ?v.
+                resp.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=604800"
+            elif request.url.query:
+                resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            else:
+                resp.headers["Cache-Control"] = "no-cache"
+        elif path == "/" or path == "/manifest.json":
             resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             resp.headers["Pragma"] = "no-cache"
             resp.headers["Expires"] = "0"

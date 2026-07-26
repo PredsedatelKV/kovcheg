@@ -5,13 +5,14 @@ const escapeHtml = (s = "") =>
 
 const DEFAULT_SETTINGS = {
   darkMode: false,
-  musicTrack: null,
-  musicVolume: 0.3,
+  musicTrack: "golden-deck",
+  musicVolume: 0.5,
   musicPaused: false,
   customTrackUrl: null,
   customTrackName: null,
   uiSounds: true,
   uiSoundsVolume: 0.5,
+  audioSettingsVersion: 2,
 };
 
 let audio = null;
@@ -26,7 +27,18 @@ function getAudioCtx() {
 
 function getSettings() {
   try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") };
+    const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    const settings = { ...DEFAULT_SETTINGS, ...stored };
+    if (stored.audioSettingsVersion !== 2) {
+      settings.audioSettingsVersion = 2;
+      settings.musicVolume = 0.5;
+      if (!settings.customTrackUrl && !stored.musicPaused) {
+        settings.musicTrack = "golden-deck";
+        settings.musicPaused = false;
+      }
+      saveSettings(settings);
+    }
+    return settings;
   } catch (_) {
     return { ...DEFAULT_SETTINGS };
   }
@@ -51,7 +63,7 @@ function saveSettings(s) {
 }
 
 const TRACKS = [
-  { id: "summer", name: "☀️ Солнечное утро", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" },
+  { id: "golden-deck", name: "Фоновая музыка", url: "/static/audio/background/golden-deck.mp3?v=264" },
 ];
 
 function stopMusic() {
@@ -261,7 +273,7 @@ export function initSettings() {
 }
 
 export function openSettings() {
-  const s = getSettings();
+  let s = getSettings();
   const active = getActiveTrack(s);
   const playing = isCurrentlyPlaying();
 
@@ -281,7 +293,7 @@ export function openSettings() {
     </div>
 
     <div class="settings-section">
-      <h3>Музыка</h3>
+      <h3>Фоновая музыка</h3>
       <div class="settings-track-list" id="track-list"></div>
       ${s.customTrackUrl ? `
         <div class="settings-custom-track-info">
@@ -391,6 +403,7 @@ export function openSettings() {
   }
 
   modal.querySelector("#theme-toggle").addEventListener("click", () => {
+    s = getSettings();
     s.darkMode = !s.darkMode;
     modal.querySelector("#theme-toggle").classList.toggle("active", s.darkMode);
     saveSettings(s);
@@ -414,6 +427,7 @@ export function openSettings() {
       }
       const reader = new FileReader();
       reader.onload = (ev) => {
+        s = getSettings();
         const url = ev.target.result;
         s.customTrackUrl = url;
         s.customTrackName = file.name.replace(/\.[^.]+$/, "");
@@ -431,6 +445,7 @@ export function openSettings() {
   const removeBtn = modal.querySelector("#remove-audio-btn");
   if (removeBtn) {
     removeBtn.addEventListener("click", () => {
+      s = getSettings();
       s.customTrackUrl = null;
       s.customTrackName = null;
       saveSettings(s);
@@ -444,6 +459,7 @@ export function openSettings() {
   var volSlider = modal.querySelector("#volume-slider");
   var volValue = modal.querySelector("#volume-value");
   function _setVolume(v) {
+    s = getSettings();
     s.musicVolume = v;
     volValue.textContent = Math.round(v * 100) + "%";
     saveSettings(s);
@@ -455,6 +471,7 @@ export function openSettings() {
   });
 
   modal.querySelector("#sounds-toggle").addEventListener("click", () => {
+    s = getSettings();
     s.uiSounds = !s.uiSounds;
     modal.querySelector("#sounds-toggle").classList.toggle("active", s.uiSounds);
     saveSettings(s);
@@ -465,6 +482,7 @@ export function openSettings() {
   const soundsVolValue = modal.querySelector("#sounds-volume-value");
   soundsVolSlider.addEventListener("input", () => {
     const vol = Number(soundsVolSlider.value) / 100;
+    s = getSettings();
     s.uiSoundsVolume = vol;
     soundsVolValue.textContent = soundsVolSlider.value + "%";
     saveSettings(s);

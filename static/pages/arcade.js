@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=255";
+import { post, get } from "/static/api.js?v=264";
 
-import { playUISound } from "/static/pages/settings.js?v=255";
+import { playUISound } from "/static/pages/settings.js?v=264";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -745,7 +745,10 @@ function gameRoulette() {
     <button class="close" onclick="closeModal()">×</button>
     <h2>Рулетка <span class="arcade-new-inline">Новое</span></h2>
     <div class="game-balance">Баланс: <strong id="roulette-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
-    <div class="game-wheel-risk roulette-payout-wheel" id="roulette-wheel"></div>
+    <div class="roulette-reel" id="roulette-wheel">
+      <div class="roulette-reel-pointer" aria-hidden="true"></div>
+      <div class="roulette-reel-track"></div>
+    </div>
     <div class="game-bet-custom">
       <label>Ставка:</label>
       <input type="number" id="roulette-bet" value="10" min="10" max="${getMaxBet()}" class="input input-sm"/>
@@ -758,17 +761,36 @@ function gameRoulette() {
   const input = modal.querySelector("#roulette-bet");
   const button = modal.querySelector("#roulette-spin-btn");
   const result = modal.querySelector("#roulette-result");
-  let timer = null;
-  const renderAmounts = () => {
+  const track = wheel.querySelector(".roulette-reel-track");
+  let spinning = false;
+
+  const slotsHtml = (bet, cycles, selectedIndex = -1) => {
+    const slots = [];
+    for (let cycle = 0; cycle < cycles; cycle += 1) {
+      payoutPercents.forEach((percent, index) => {
+        const absoluteIndex = cycle * payoutPercents.length + index;
+        slots.push(
+          `<div class="roulette-reel-slot${absoluteIndex === selectedIndex ? " is-selected" : ""}" style="--slot-color:${sectorColor(percent)}" data-index="${absoluteIndex}">` +
+          `<img src="/static/img/ui/kovbaks.png" alt=""/><strong>${Math.floor(bet * percent / 100)}</strong></div>`
+        );
+      });
+    }
+    return slots.join("");
+  };
+
+  const normalizedBet = () => {
     const max = getMaxBet();
-    const bet = Math.max(10, Math.min(max, Math.floor(Number(input.value) || 10)));
-    wheel.innerHTML = payoutPercents.map((percent) =>
-      `<div class="risk-sector" style="background:${sectorColor(percent)}">${Math.floor(bet * percent / 100)} К</div>`
-    ).join("");
+    return Math.max(10, Math.min(max, Math.floor(Number(input.value) || 10)));
+  };
+  const renderAmounts = () => {
+    if (spinning) return;
+    const bet = normalizedBet();
+    track.style.transition = "none";
+    track.style.transform = "translate3d(0,0,0)";
+    track.innerHTML = slotsHtml(bet, 2);
   };
   input.addEventListener("input", renderAmounts);
   renderAmounts();
-  registerGameCleanup(() => { if (timer) clearInterval(timer); });
 
   button.addEventListener("click", async () => {
     if (button.disabled) return;
@@ -783,6 +805,7 @@ function gameRoulette() {
       return;
     }
     button.disabled = true;
+    spinning = true;
     setCasinoRoundLocked(true);
     playUISound("bet");
     let spin;
@@ -791,25 +814,21 @@ function gameRoulette() {
     } catch (error) {
       result.innerHTML = `<div class="game-lose">${escapeHtml(error.message || "Не удалось сделать ставку")}</div>`;
       button.disabled = false;
+      spinning = false;
       setCasinoRoundLocked(false);
       return;
     }
     balance = spin.balance;
     updateBalanceDisplay("roulette-balance", balance);
     const chosenIdx = spin.index;
-    let current = 0;
-    let steps = 33 + chosenIdx;
-    timer = setInterval(() => {
-      [...wheel.children].forEach((node) => node.classList.remove("highlight", "active"));
-      wheel.children[current].classList.add("highlight");
-      current = (current + 1) % payoutPercents.length;
-      steps -= 1;
-      if (steps % 2 === 0) playUISound("spin");
-      if (steps > 0) return;
-      clearInterval(timer);
-      timer = null;
-      [...wheel.children].forEach((node) => node.classList.remove("highlight"));
-      wheel.children[chosenIdx].classList.add("active");
+    const cycles = 7;
+    const selectedIndex = (cycles - 2) * payoutPercents.length + chosenIdx;
+    track.style.transition = "none";
+    track.style.transform = "translate3d(0,0,0)";
+    track.innerHTML = slotsHtml(bet, cycles, selectedIndex);
+    const selected = track.querySelector(`[data-index="${selectedIndex}"]`);
+    const finishSpin = () => {
+      selected.classList.add("is-winner");
       const cls = spin.payout > bet ? "game-win" : spin.payout === bet ? "game-neutral" : "game-lose";
       result.innerHTML = `<div class="${cls}">Получено: ${spin.payout} ковбаксов</div>`;
       playUISound(spin.payout > bet ? "win" : spin.payout === bet ? "cashout" : "lose");
@@ -818,10 +837,20 @@ function gameRoulette() {
       }
       input.max = String(getMaxBet());
       input.value = String(Math.min(Math.max(10, Number(input.value) || 10), getMaxBet()));
-      renderAmounts();
       button.disabled = false;
+      spinning = false;
       setCasinoRoundLocked(false);
-    }, 86);
+    };
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const target = wheel.clientWidth / 2 - (selected.offsetLeft + selected.offsetWidth / 2);
+      track.style.transition = "transform 3.8s cubic-bezier(.12,.68,.14,1)";
+      track.style.transform = `translate3d(${target}px,0,0)`;
+      playUISound("spin");
+      track.addEventListener("transitionend", finishSpin, { once: true });
+      setTimeout(() => {
+        if (spinning) finishSpin();
+      }, 4200);
+    }));
   });
 }
 
@@ -1988,7 +2017,7 @@ function gameClicker(hostRoot = null) {
   let passiveUntil = 0;      // ms-таймстамп конца буста пассива
   let lockedUntil = 0;       // ms-таймстамп конца блокировки анти-фрода
 
-  const COIN = "/static/img/ui/kovcoin.svg";
+  const COIN = "/static/img/ui/clicker_coin.png?v=264";
   const content = `
     <div class="clicker-screen-head">
       ${hostRoot ? '<button class="clicker-back" id="clicker-back" type="button" aria-label="Вернуться в Аркаду">←</button>' : '<button class="close" onclick="closeModal()">×</button>'}
@@ -2495,7 +2524,7 @@ function gameClicker(hostRoot = null) {
 // ============ RENDER ============
 
 function arcadeIcon(name) {
-  return `<div class="game-tile-icon arcade-icon-frame"><img class="arcade-icon-img" src="/static/img/ui/arcade/${name}.png?v=262" alt="" draggable="false" decoding="async"></div>`;
+  return `<div class="game-tile-icon arcade-icon-frame"><img class="arcade-icon-img" src="/static/img/ui/arcade/${name}.png?v=264" alt="" draggable="false" decoding="async"></div>`;
 }
 
 export async function renderArcade(root) {

@@ -55,7 +55,10 @@ def ensure_wallet(db: Session, user: models.User) -> models.Wallet:
     return user.wallet
 
 
-XP_MAX = 3000
+XP_PER_LEVEL = 100
+MAX_PLAYER_LEVEL = 100
+# XP is the progress inside the current level and therefore is always 0..99.
+XP_MAX = XP_PER_LEVEL - 1
 MAX_XP_AWARD = 1_000_000
 MAX_GAME_BALANCE = 2_000_000_000
 MAX_SHOP_PRICE = 1_000_000_000
@@ -149,13 +152,24 @@ def return_market_listing_to_seller(
 
 
 def award_xp(db: Session, user: models.User, amount: int) -> dict[str, int]:
-    """Начисляет XP с лимитом 3000; излишек -> ковбаксы 10:1. Возвращает {'xp_added', 'coins'}."""
+    """Award level progress and convert XP received at level 100 to Kovbucks."""
     if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0 or amount > MAX_XP_AWARD:
         raise HTTPException(status_code=503, detail="Награда опыта настроена некорректно")
-    cur = max(0, min(int(user.xp or 0), XP_MAX))
-    add = min(amount, max(0, XP_MAX - cur))
-    user.xp = cur + add
-    overflow = amount - add
+    level = max(1, min(int(getattr(user, "level", 1) or 1), MAX_PLAYER_LEVEL))
+    current_xp = max(0, min(int(user.xp or 0), XP_MAX))
+    if level >= MAX_PLAYER_LEVEL:
+        user.level = MAX_PLAYER_LEVEL
+        user.xp = 0
+        consumed = 0
+        levels_gained = 0
+    else:
+        xp_until_cap = (MAX_PLAYER_LEVEL - level) * XP_PER_LEVEL - current_xp
+        consumed = min(amount, max(0, xp_until_cap))
+        accumulated = current_xp + consumed
+        levels_gained = accumulated // XP_PER_LEVEL
+        user.level = min(MAX_PLAYER_LEVEL, level + levels_gained)
+        user.xp = 0 if user.level >= MAX_PLAYER_LEVEL else accumulated % XP_PER_LEVEL
+    overflow = amount - consumed
     coins = overflow // 10
     if coins > 0:
         w = ensure_wallet(db, user)
@@ -163,4 +177,4 @@ def award_xp(db: Session, user: models.User, amount: int) -> dict[str, int]:
             raise HTTPException(status_code=409, detail="Достигнут предел баланса")
         w.balance += coins
         db.add(models.Transaction(sender_id=None, recipient_id=user.id, amount=coins, note="xp_overflow"))
-    return {"xp_added": add, "coins": coins}
+    return {"xp_added": consumed, "levels_gained": levels_gained, "coins": coins}
