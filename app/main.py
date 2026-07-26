@@ -178,3 +178,21 @@ if STATIC_DIR.exists():
     @app.get("/manifest.json")
     def manifest() -> FileResponse:
         return FileResponse(str(STATIC_DIR / "manifest.json"))
+
+    @app.get("/download/android", include_in_schema=False)
+    def download_android() -> FileResponse:
+        apk_path = STATIC_DIR / "downloads" / "kovcheg.apk"
+        if not apk_path.is_file():
+            raise HTTPException(status_code=404, detail="APK is not available")
+        return FileResponse(
+            str(apk_path),
+            media_type="application/vnd.android.package-archive",
+            filename="Kovcheg.apk",
+        )
+
+    @app.get("/.well-known/assetlinks.json", include_in_schema=False)
+    def android_asset_links() -> FileResponse:
+        return FileResponse(
+            str(STATIC_DIR / ".well-known" / "assetlinks.json"),
+            media_type="application/json",
+        )

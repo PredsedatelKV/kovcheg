@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ковчег</string>
+    <string name="offline_title">Нет соединения</string>
+    <string name="offline_message">Проверьте интернет и попробуйте снова</string>
+    <string name="retry">Повторить</string>
+</resources>

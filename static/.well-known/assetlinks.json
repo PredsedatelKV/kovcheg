@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "tech.federationkovcheg.app",
+      "sha256_cert_fingerprints": [
+        "6E:FF:EA:AA:A4:A7:CB:A8:D0:B8:AC:4B:F0:06:12:73:F1:62:46:6D:AE:17:2E:DF:AA:BE:F1:3C:BF:EC:A4:80"
+      ]
+    }
+  }
+]

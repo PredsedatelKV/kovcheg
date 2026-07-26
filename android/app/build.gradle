@@ -1,0 +1,76 @@
+plugins {
+    id "com.android.application"
+}
+
+def signingPropertiesFile = rootProject.file("signing.properties")
+def signingProperties = new Properties()
+if (signingPropertiesFile.exists()) {
+    signingPropertiesFile.withInputStream { signingProperties.load(it) }
+}
+def releaseStoreFile = signingPropertiesFile.exists()
+    ? signingProperties["storeFile"]
+    : System.getenv("KOVCHEG_KEYSTORE_FILE")
+def releaseStorePassword = signingPropertiesFile.exists()
+    ? signingProperties["storePassword"]
+    : System.getenv("KOVCHEG_KEYSTORE_PASSWORD")
+def releaseKeyAlias = signingPropertiesFile.exists()
+    ? signingProperties["keyAlias"]
+    : System.getenv("KOVCHEG_KEY_ALIAS")
+def releaseKeyPassword = signingPropertiesFile.exists()
+    ? signingProperties["keyPassword"]
+    : System.getenv("KOVCHEG_KEY_PASSWORD")
+def hasReleaseSigning = releaseStoreFile
+    && releaseStorePassword
+    && releaseKeyAlias
+    && releaseKeyPassword
+
+android {
+    namespace "tech.federationkovcheg.app"
+    compileSdk 35
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    defaultConfig {
+        applicationId "tech.federationkovcheg.app"
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    if (hasReleaseSigning) {
+        signingConfigs {
+            release {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+                enableV4Signing true
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
