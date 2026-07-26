@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=264";
+import { post, get } from "/static/api.js?v=266";
 
-import { playUISound } from "/static/pages/settings.js?v=264";
+import { playUISound } from "/static/pages/settings.js?v=266";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -763,6 +763,11 @@ function gameRoulette() {
   const result = modal.querySelector("#roulette-result");
   const track = wheel.querySelector(".roulette-reel-track");
   let spinning = false;
+  let spinSoundTimer = null;
+  registerGameCleanup(() => {
+    if (spinSoundTimer) clearInterval(spinSoundTimer);
+    spinSoundTimer = null;
+  });
 
   const slotsHtml = (bet, cycles, selectedIndex = -1) => {
     const slots = [];
@@ -827,7 +832,14 @@ function gameRoulette() {
     track.style.transform = "translate3d(0,0,0)";
     track.innerHTML = slotsHtml(bet, cycles, selectedIndex);
     const selected = track.querySelector(`[data-index="${selectedIndex}"]`);
+    let spinFinished = false;
     const finishSpin = () => {
+      if (spinFinished) return;
+      spinFinished = true;
+      if (spinSoundTimer) {
+        clearInterval(spinSoundTimer);
+        spinSoundTimer = null;
+      }
       selected.classList.add("is-winner");
       const cls = spin.payout > bet ? "game-win" : spin.payout === bet ? "game-neutral" : "game-lose";
       result.innerHTML = `<div class="${cls}">Получено: ${spin.payout} ковбаксов</div>`;
@@ -846,6 +858,7 @@ function gameRoulette() {
       track.style.transition = "transform 3.8s cubic-bezier(.12,.68,.14,1)";
       track.style.transform = `translate3d(${target}px,0,0)`;
       playUISound("spin");
+      spinSoundTimer = setInterval(() => playUISound("spin"), 115);
       track.addEventListener("transitionend", finishSpin, { once: true });
       setTimeout(() => {
         if (spinning) finishSpin();
@@ -2052,7 +2065,6 @@ function gameClicker(hostRoot = null) {
     <div class="clicker-coin-wrapper">
       <button class="clicker-coin" id="clicker-coin">
         <img src="${COIN}" alt="tap" />
-        <div class="clicker-coin-power" id="clicker-power">+1</div>
       </button>
       <div class="clicker-floats" id="clicker-floats"></div>
       <div class="clicker-lock" id="clicker-lock" hidden>🚫<br><span id="clicker-lock-text"></span></div>
@@ -2080,7 +2092,6 @@ function gameClicker(hostRoot = null) {
   const elEnergyFill = modal.querySelector("#clicker-energy-fill");
   const elEnergyText = modal.querySelector("#clicker-energy-text");
   const elCoin = modal.querySelector("#clicker-coin");
-  const elPower = modal.querySelector("#clicker-power");
   const elFloats = modal.querySelector("#clicker-floats");
   const elUpgrades = modal.querySelector("#clicker-upgrades");
   const elPassiveInfo = modal.querySelector("#clicker-passive-info");
@@ -2246,11 +2257,6 @@ function gameClicker(hostRoot = null) {
     }
   }
 
-  function powText(p) {
-    const n = Number(p || 0);
-    return Number.isInteger(n) ? String(n) : n.toFixed(1);
-  }
-
   const UPGRADE_INFO = {
     click:   { name: "Сила клика", icon: "⚔️", desc: "+0.22 ковкойна за тап" },
     passive: { name: "Пассивный доход", icon: "💰", desc: "+0.2 ковкойна/мин" },
@@ -2305,7 +2311,6 @@ function gameClicker(hostRoot = null) {
           st.earned_today = resp.earned_today;
           st.cap_reached = (resp.earned_today || 0) >= (resp.daily_cap || 0);
           elBalance.textContent = fmt(st.kovcoins);
-          elPower.textContent = "+" + powText(st.click_power);
           elPassiveInfo.textContent = "💤 " + st.passive_per_min + "/мин" + (passiveActive() ? " ×2" : "");
           updateDaily();
           renderUpgrades();
@@ -2348,7 +2353,6 @@ function gameClicker(hostRoot = null) {
     if (s.energy != null) { lastSyncEnergy = s.energy; lastSyncTime = Date.now(); }
     const kc = st.kovcoins != null ? st.kovcoins : (st.balance || 0);
     elBalance.textContent = fmt(kc);
-    elPower.textContent = "+" + powText(st.click_power || 1);
     elPassiveInfo.textContent = "💤 " + (st.passive_per_min || 0) + "/мин" + (passiveActive() ? " ×2" : "");
     updateEnergyBar();
     updateDaily();
@@ -2420,7 +2424,6 @@ function gameClicker(hostRoot = null) {
         const resp = await post("/api/arcade/clicker/tap", { taps: batch });
         applyState(resp);
         const cx = (elCoinWrap.offsetWidth || 200) / 2;
-        if (resp.coins_earned > 0) showFloat("+" + fmt(resp.coins_earned), cx, 30, resp.crits > 0 || resp.turbo);
         if (resp.locked) {
           pendingTaps = 0;
           showFloat("Слишком быстро", cx, 30, true);
@@ -2463,12 +2466,6 @@ function gameClicker(hostRoot = null) {
     }
 
     // Visual feedback
-    const wrapperRect = elFloats.getBoundingClientRect();
-    const x = e.clientX - wrapperRect.left;
-    const y = e.clientY - wrapperRect.top - 20;
-    const mult = turbo ? (st.boosts && st.boosts.turbo ? st.boosts.turbo.mult : 2) : 1;
-    showFloat("+" + powText(st.click_power * mult), x, y, turbo);
-
     elCoin.style.transform = "scale(0.93)";
     setTimeout(() => { if (!destroyed) elCoin.style.transform = ""; }, 100);
     playUISound("click");

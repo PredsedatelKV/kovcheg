@@ -49,6 +49,7 @@ class User(Base):
     last_seen: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     xp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    casino_locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     wallet: Mapped[Wallet] = relationship("Wallet", back_populates="user", uselist=False, cascade="all, delete-orphan")
     inventory: Mapped[list[InventoryItem]] = relationship(
@@ -728,6 +729,7 @@ class CasinoRound(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     game: Mapped[str] = mapped_column(String(16), nullable=False)
     bet: Mapped[int] = mapped_column(Integer, nullable=False)
+    balance_before: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     outcome: Mapped[str] = mapped_column(Text, nullable=False)
     payout: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     settled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

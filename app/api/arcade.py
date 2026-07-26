@@ -223,9 +223,11 @@ CASINO_GAMES = {"riskwheel", "slots", "dice", "rocket"}
 # игру и какую стратегию выбирает игрок.
 CASINO_RTP_PERCENT = 90
 
-# Лимит раундов: три игры в час на КАЖДУЮ игру отдельно.
-CASINO_ROUNDS_PER_WINDOW = 3
-CASINO_WINDOW = timedelta(hours=1)
+# Ограничений по числу раундов нет. Защитная пауза включается только если
+# чистый убыток за скользящий час достиг половины стартового баланса.
+CASINO_LOSS_WINDOW = timedelta(hours=1)
+CASINO_LOCK_DURATION = timedelta(hours=6)
+CASINO_LOSS_THRESHOLD_PERCENT = 50
 
 # Все выплаты хранятся в процентах от ставки (целые числа), а не во float:
 # payout = ставка * процент // 100 считается точно и не даёт копеечных
@@ -240,16 +242,15 @@ RISKWHEEL_PAYOUTS = ((5, 15), (25, 13), (50, 15), (75, 16), (100, 15),
 ROULETTE_PAYOUTS = ((10, 8), (30, 8), (50, 10), (70, 12), (80, 2), (90, 14),
                     (100, 14), (120, 12), (140, 10), (160, 6), (180, 4))
 
-# Слоты: выплата зависит от комбинации, а вероятности задаются напрямую,
-# а не выводятся из случайных барабанов. Раньше барабаны крутились независимо
-# по 7 символам, что давало 95.9% и джекпот x29; теперь исход выбирается по
-# таблице, а барабаны лишь показывают уже выбранный результат.
+# Слоты: выплата зависит от комбинации, а вероятности задаются напрямую.
+# Максимум ограничен x5, чтобы даже редкий результат не создавал огромный
+# джекпот. Таблица по-прежнему даёт ровно 90% RTP.
 SLOTS_OUTCOMES = (
-    ("jackpot", 1000, 2),   # три одинаковых премиальных: x10
-    ("triple", 500, 4),     # три одинаковых обычных: x5
-    ("pair_high", 200, 14),  # две премиальные: x2
-    ("pair", 100, 22),      # две одинаковых: возврат ставки
-    ("miss", 0, 58),
+    ("jackpot", 500, 2),    # три одинаковых премиальных: x5
+    ("triple", 300, 5),     # три одинаковых обычных: x3
+    ("pair_high", 200, 15), # две премиальные: x2
+    ("pair", 100, 35),      # две одинаковых: возврат ставки
+    ("miss", 0, 43),
 )
 SLOTS_PREMIUM_SYMBOLS = ("7\ufe0f\u20e3", "\U0001f48e")
 SLOTS_COMMON_SYMBOLS = ("\U0001f352", "\U0001f34b", "\U0001f34a", "\U0001f347", "\u2b50")
@@ -298,11 +299,6 @@ def _rocket_crash_point() -> float:
     return round(min(ROCKET_MAX_MULTIPLIER, max(ROCKET_MIN_MULTIPLIER, crash_at)), 2)
 
 
-def _casino_round_games(game: str) -> tuple[str, ...]:
-    """Имена раундов одной игры. Рулетка пишется как roulette_v2 с прошлой версии."""
-    return ("roulette", "roulette_v2") if game == "roulette" else (game,)
-
-
 def _format_wait(seconds: int) -> str:
     minutes = max(1, math.ceil(seconds / 60))
     hours, minutes = divmod(minutes, 60)
@@ -313,33 +309,51 @@ def _format_wait(seconds: int) -> str:
     return f"{minutes} мин"
 
 
-def _require_casino_limit(db: Session, user_id: int, game: str) -> None:
-    """Не больше трёх раундов в час, лимит считается для каждой игры отдельно.
-
-    Окно скользящее: когда самый старый из трёх раундов выходит за час,
-    освобождается ровно один слот, а не все три сразу.
-    """
-    window_start = models.now_utc() - CASINO_WINDOW
-    recent = (
+def _casino_loss_snapshot(db: Session, user: models.User, now: datetime) -> tuple[int, int]:
+    rounds = (
         db.query(models.CasinoRound)
         .filter(
-            models.CasinoRound.user_id == user_id,
-            models.CasinoRound.game.in_(_casino_round_games(game)),
-            models.CasinoRound.created_at > window_start,
+            models.CasinoRound.user_id == user.id,
+            models.CasinoRound.created_at >= now - CASINO_LOSS_WINDOW,
         )
-        .order_by(models.CasinoRound.created_at.desc(), models.CasinoRound.id.desc())
-        .limit(CASINO_ROUNDS_PER_WINDOW)
         .all()
     )
-    if len(recent) < CASINO_ROUNDS_PER_WINDOW:
+    net_loss = max(0, sum(row.bet - row.payout for row in rounds))
+    known_balances = [row.balance_before for row in rounds if row.balance_before > 0]
+    wallet = ensure_wallet(db, user)
+    baseline = max(known_balances, default=max(0, wallet.balance + net_loss))
+    return net_loss, baseline
+
+
+def _apply_casino_loss_lock(db: Session, user: models.User, now: datetime | None = None) -> datetime | None:
+    current_time = now or models.now_utc()
+    net_loss, baseline = _casino_loss_snapshot(db, user, current_time)
+    if baseline > 0 and net_loss * 100 >= baseline * CASINO_LOSS_THRESHOLD_PERCENT:
+        locked_until = current_time + CASINO_LOCK_DURATION
+        if not user.casino_locked_until or user.casino_locked_until < locked_until:
+            user.casino_locked_until = locked_until
+        return user.casino_locked_until
+    return None
+
+
+def _require_casino_access(db: Session, user: models.User) -> None:
+    now = models.now_utc()
+    locked_until = user.casino_locked_until
+    if locked_until and locked_until <= now:
+        user.casino_locked_until = None
+        locked_until = None
+    if not locked_until:
+        locked_until = _apply_casino_loss_lock(db, user, now)
+        if locked_until:
+            db.commit()
+    if not locked_until:
         return
-    frees_at = recent[-1].created_at + CASINO_WINDOW
-    remaining_seconds = max(1, math.ceil((frees_at - models.now_utc()).total_seconds()))
+    remaining_seconds = max(1, math.ceil((locked_until - now).total_seconds()))
     raise HTTPException(
         status_code=429,
         detail=(
-            f"Лимит {CASINO_ROUNDS_PER_WINDOW} игр в час исчерпан. "
-            f"Следующая игра через {_format_wait(remaining_seconds)}"
+            "Казино временно недоступно после потери 50% баланса за час. "
+            f"Доступ через {_format_wait(remaining_seconds)}"
         ),
         headers={"Retry-After": str(remaining_seconds)},
     )
@@ -421,7 +435,7 @@ def casino_start(
     if game not in CASINO_GAMES or amount <= 0 or amount > 1_000_000:
         raise HTTPException(status_code=400, detail="Некорректный раунд")
     begin_game_write(db)
-    _require_casino_limit(db, user.id, game)
+    _require_casino_access(db, user)
     wallet = ensure_wallet(db, user)
     if wallet.balance < amount:
         raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
@@ -452,10 +466,15 @@ def casino_start(
         outcome = {"crash_at": _rocket_crash_point()}
 
     token = secrets.token_urlsafe(32)
+    balance_before = wallet.balance
     wallet.balance -= amount
-    db.add(models.CasinoRound(token=token, user_id=user.id, game=game, bet=amount,
-                              outcome=json.dumps(outcome), payout=payout))
+    db.add(models.CasinoRound(
+        token=token, user_id=user.id, game=game, bet=amount,
+        balance_before=balance_before, outcome=json.dumps(outcome), payout=payout,
+    ))
     db.add(models.Transaction(sender_id=user.id, amount=amount, note=f"casino:bet:{game}"))
+    db.flush()
+    _apply_casino_loss_lock(db, user)
     db.commit()
     public_outcome = outcome
     if game == "rocket":
@@ -503,7 +522,7 @@ def roulette_spin(
             "failure_fragment_count": fragment_count,
         }
 
-    _require_casino_limit(db, user.id, "roulette")
+    _require_casino_access(db, user)
     wallet = ensure_wallet(db, user)
     if body.amount < 10:
         raise HTTPException(400, "Минимальная ставка — 10 ковбаксов")
@@ -531,6 +550,7 @@ def roulette_spin(
             db.add(stack)
         fragment_count = stack.quantity
 
+    balance_before = wallet.balance
     wallet.balance = wallet.balance - body.amount + payout
     outcome = {
         "payout_percent": payout_percent,
@@ -539,11 +559,13 @@ def roulette_spin(
     }
     db.add(models.CasinoRound(
         token=body.request_id, user_id=user.id, game="roulette_v2", bet=body.amount,
-        outcome=json.dumps(outcome), payout=payout, settled=True,
+        balance_before=balance_before, outcome=json.dumps(outcome), payout=payout, settled=True,
     ))
     db.add(models.Transaction(sender_id=user.id, amount=body.amount, note="casino:bet:roulette"))
     if payout:
         db.add(models.Transaction(recipient_id=user.id, amount=payout, note="casino:payout:roulette"))
+    db.flush()
+    _apply_casino_loss_lock(db, user)
     db.commit()
     return {
         "ok": True, "replayed": False, "payout": payout,
@@ -613,6 +635,8 @@ def casino_settle(
             raise HTTPException(status_code=409, detail="Достигнут максимальный баланс ковбаксов")
         wallet.balance += payout
         db.add(models.Transaction(recipient_id=user.id, amount=payout, note=f"casino:win:{row.game}"))
+    db.flush()
+    _apply_casino_loss_lock(db, user)
     db.commit()
     response = {"ok": True, "payout": payout, "balance": wallet.balance}
     if rocket_result is not None:

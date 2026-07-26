@@ -229,17 +229,12 @@ def test_fragment_assembly_and_parallel_safety(game_api):
     assert client.post("/api/profile/inventory/assemble-fragments", headers=_headers()).status_code == 400
 
 
-def test_clicker_blocks_only_magomet_and_ibrahim(game_api):
+def test_clicker_is_open_for_all_players(game_api):
     client, sessions = game_api
-    assert client.get("/api/arcade/clicker/state", headers=_headers(1)).status_code == 200
-    assert client.get("/api/arcade/clicker/state", headers=_headers(2)).status_code == 200
-    # Аркада для Магомета и Ибрагима закрыта целиком, поэтому раздел отвечает 503
-    # раньше, чем кликер успевает отдать свой 403. Сам запрет кликера при этом жив.
-    assert client.get("/api/arcade/clicker/state", headers=_headers(3)).status_code == 503
-    assert client.get("/api/arcade/clicker/state", headers=_headers(4)).status_code == 503
-    with sessions() as db:
-        assert access.can_use_clicker(db.get(models.User, 3)) is False
-        assert access.can_use_clicker(db.get(models.User, 4)) is False
+    for user_id in (1, 2, 3, 4):
+        assert client.get("/api/arcade/clicker/state", headers=_headers(user_id)).status_code == 200
+        with sessions() as db:
+            assert access.can_use_clicker(db.get(models.User, user_id)) is True
     assert client.post("/api/arcade/round/start", json={"game": "clicker"}, headers=_headers(2)).status_code == 400
 
 
@@ -391,48 +386,51 @@ def test_roulette_enforces_minimum_but_allows_the_whole_balance(game_api):
     ).status_code == 200
 
 
-def test_casino_limit_is_three_rounds_per_game_per_hour(game_api, monkeypatch):
-    client, sessions = game_api
-    now = datetime(2026, 7, 24, 12, 0, 0)
-    monkeypatch.setattr(arcade.models, "now_utc", lambda: now)
-
-    for _ in range(3):
+def test_casino_has_no_round_count_limit(game_api, monkeypatch):
+    client, _ = game_api
+    # Рулетка x1.8: серия не достигает защитного лимита убытка.
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 99)
+    for index in range(8):
         response = client.post(
-            "/api/arcade/casino/start",
-            json={"game": "slots", "amount": 1},
+            "/api/arcade/roulette/spin",
+            json={"amount": 10, "request_id": f"unlimited_roulette_{index:02d}"},
             headers=_headers(),
         )
-        assert response.status_code == 200
-        # The SQLAlchemy column default captured the original clock.
+        assert response.status_code == 200, response.text
+
+
+def test_casino_locks_for_six_hours_after_half_balance_loss(game_api, monkeypatch):
+    client, sessions = game_api
+    now = datetime(2026, 7, 26, 12, 0, 0)
+    monkeypatch.setattr(arcade.models, "now_utc", lambda: now)
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 1)
+
+    # Каждый раунд возвращает 10%: после трёх ставок по 20 чистый убыток 54
+    # относительно стартовых 100. Раунд, который достиг порога, завершается.
+    for index in range(3):
+        response = client.post(
+            "/api/arcade/roulette/spin",
+            json={"amount": 20, "request_id": f"loss_lock_{index:02d}"},
+            headers=_headers(),
+        )
+        assert response.status_code == 200, response.text
         with sessions() as db:
-            for stored in db.query(models.CasinoRound).filter_by(game="slots").all():
+            for stored in db.query(models.CasinoRound).all():
                 stored.created_at = now
             db.commit()
 
     blocked = client.post(
         "/api/arcade/casino/start",
-        json={"game": "slots", "amount": 1},
-        headers=_headers(),
-    )
-    assert blocked.status_code == 429
-    assert blocked.headers["Retry-After"] == "3600"
-
-    # Лимиты разных игр не пересекаются.
-    other_game = client.post(
-        "/api/arcade/casino/start",
         json={"game": "dice", "amount": 1, "choice": "odd"},
         headers=_headers(),
     )
-    assert other_game.status_code == 200
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) == 6 * 60 * 60
 
-    monkeypatch.setattr(
-        arcade.models,
-        "now_utc",
-        lambda: now + arcade.CASINO_WINDOW,
-    )
+    monkeypatch.setattr(arcade.models, "now_utc", lambda: now + arcade.CASINO_LOCK_DURATION)
     allowed = client.post(
         "/api/arcade/casino/start",
-        json={"game": "slots", "amount": 1},
+        json={"game": "dice", "amount": 1, "choice": "odd"},
         headers=_headers(),
     )
     assert allowed.status_code == 200
@@ -452,28 +450,20 @@ def _koverna_client(game_api_client):
     return TestClient(app)
 
 
-def test_closed_sections_are_rejected_for_the_listed_players(game_api):
+def test_previously_maintenance_players_have_open_sections(game_api):
     client, sessions = game_api
     koverna = _koverna_client(client)
 
     for user_id in MAINTENANCE_USERS:
         headers = {"X-Test-User": user_id}
         with sessions() as db:
-            assert access.maintenance_sections(db.get(models.User, int(user_id))) == [
-                "koverna", "arcade", "battlepass",
-            ]
+            assert access.maintenance_sections(db.get(models.User, int(user_id))) == []
 
-        assert koverna.get("/api/shop/products", headers=headers).status_code == 503
-        assert koverna.get("/api/market/listings", headers=headers).status_code == 503
+        assert koverna.get("/api/shop/products", headers=headers).status_code == 200
+        assert koverna.get("/api/market/listings", headers=headers).status_code == 200
         assert client.post(
             "/api/arcade/casino/start", json={"game": "slots", "amount": 1}, headers=headers,
-        ).status_code == 503
-
-        blocked = client.post("/api/battlepass/claim", json={"level": 1}, headers=headers)
-        assert blocked.status_code == 503
-        assert blocked.json()["detail"] == access.MAINTENANCE_MESSAGE
-
-        # Чтение пропуска остаётся открытым: Главная берёт из него уровень.
+        ).status_code == 200
         assert client.get("/api/battlepass", headers=headers).status_code == 200
 
 

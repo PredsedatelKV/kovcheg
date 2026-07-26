@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=264";
+import { get, post, iconHtml } from "/static/api.js?v=266";
 
 import { openAssistantChat } from "/static/pages/assistant.js?v=264";
 
-import { playUISound } from "/static/pages/settings.js?v=264";
+import { playUISound } from "/static/pages/settings.js?v=266";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -168,7 +168,7 @@ export async function renderHome(root) {
         <h1>${welcome}</h1>
         <div class="subtitle" id="home-clock">${escapeHtml(data.server_time_msk)} мск</div>
       </div>
-      <div class="hero-art" title="Ковчег"><img src="/static/img/cube.svg" alt="Ковчег" class="hero-img"/></div>
+      <div class="hero-art" title="Ковчег"><img src="/static/img/ui/home_cube.png?v=266" alt="Ковчег" class="hero-img"/></div>
     </section>
 
 ${bannerCarousel(data.banners)}

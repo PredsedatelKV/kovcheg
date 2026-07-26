@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=264";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=266";
 
-import { playUISound, getSettings } from "/static/pages/settings.js?v=264";
+import { playUISound, getSettings, setManagedMediaVolume } from "/static/pages/settings.js?v=266";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -853,7 +853,7 @@ function showMegaLootboxChoices(result) {
       const settings = getSettings();
       if (!settings.uiSounds) return;
       allSounds.forEach((sound) => { if (sound !== audio) { sound.pause(); sound.currentTime = 0; } });
-      audio.volume = Math.max(0, Math.min(1, Number(settings.uiSoundsVolume) || 0));
+      setManagedMediaVolume(audio, settings.uiSoundsVolume);
       audio.currentTime = 0;
       audio.play().catch(() => {});
     } catch (_) {}
@@ -938,7 +938,7 @@ function showMegaLootboxChoices(result) {
       locked = false;
       renderGroup();
     };
-    setTimeout(startChoices, 1000);
+    setTimeout(startChoices, 2000);
   });
   done.addEventListener("click", () => {
     overlay.classList.add("is-closing");
@@ -1009,7 +1009,7 @@ function showLootboxChest(result) {
       const settings = getSettings();
       if (!settings.uiSounds) return;
       allSounds.forEach((sound) => { if (sound !== audio) { sound.pause(); sound.currentTime = 0; } });
-      audio.volume = Math.max(0, Math.min(1, Number(settings.uiSoundsVolume) || 0));
+      setManagedMediaVolume(audio, settings.uiSoundsVolume);
       audio.currentTime = 0;
       audio.play().catch(() => {});
     } catch (_) {}
@@ -1101,7 +1101,7 @@ function showLootboxChest(result) {
       chestButton.classList.add("is-bumping");
       playAudio(openSound);
       setTimeout(() => { chestImage.src = openImage; }, 160);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
     const card = rewardCard(reward);
     stage.replaceChildren(card);

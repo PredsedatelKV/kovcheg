@@ -259,6 +259,14 @@ def migrate_schema(db: Session) -> None:
                 END
         """))
         db.commit()
+    if "casino_locked_until" not in ucols:
+        db.execute(text("ALTER TABLE users ADD COLUMN casino_locked_until DATETIME"))
+        db.commit()
+
+    casino_cols = {row[1] for row in db.execute(text("PRAGMA table_info(casino_rounds)")).fetchall()}
+    if casino_cols and "balance_before" not in casino_cols:
+        db.execute(text("ALTER TABLE casino_rounds ADD COLUMN balance_before INTEGER NOT NULL DEFAULT 0"))
+        db.commit()
 
     # tasks.xp_reward — XP за выполнение задания
     tcols = {row[1] for row in db.execute(text("PRAGMA table_info(tasks)")).fetchall()}

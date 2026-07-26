@@ -17,12 +17,36 @@ const DEFAULT_SETTINGS = {
 
 let audio = null;
 let audioCtx = null;
+const managedMedia = new WeakMap();
 
 function getAudioCtx() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
   return audioCtx;
+}
+
+// iOS Safari и Telegram WebView игнорируют HTMLMediaElement.volume.
+// Пропускаем музыку и записанные эффекты через Web Audio GainNode.
+export function setManagedMediaVolume(media, volume) {
+  const value = Math.max(0, Math.min(1, Number(volume) || 0));
+  try {
+    const ctx = getAudioCtx();
+    let managed = managedMedia.get(media);
+    if (!managed) {
+      const source = ctx.createMediaElementSource(media);
+      const gain = ctx.createGain();
+      source.connect(gain);
+      gain.connect(ctx.destination);
+      managed = { gain };
+      managedMedia.set(media, managed);
+    }
+    managed.gain.gain.setValueAtTime(value, ctx.currentTime);
+    media.volume = 1;
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+  } catch (_) {
+    try { media.volume = value; } catch (_) {}
+  }
 }
 
 function getSettings() {
@@ -78,6 +102,7 @@ function stopMusic() {
 }
 
 function resumePlay() {
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
   if (audio && audio.paused) {
     audio.play().catch(() => {});
   }
@@ -88,7 +113,7 @@ function initAudio(src, loop, volume) {
   const a = new Audio();
   a.src = src;
   a.loop = loop;
-  a.volume = volume;
+  setManagedMediaVolume(a, volume);
   audio = a;
   a.play().catch(() => {
     // Autoplay blocked — wait for user gesture
@@ -139,6 +164,7 @@ function playUISound(type) {
   if (!s.uiSounds) return;
   try {
     const ctx = getAudioCtx();
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
@@ -463,7 +489,7 @@ export function openSettings() {
     s.musicVolume = v;
     volValue.textContent = Math.round(v * 100) + "%";
     saveSettings(s);
-    if (audio) audio.volume = v;
+    if (audio) setManagedMediaVolume(audio, v);
   }
   // Достаточно одного слушателя "input"; "change" дублировал бы _setVolume и лишние saveSettings.
   volSlider.addEventListener("input", function() {
