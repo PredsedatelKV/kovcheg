@@ -163,6 +163,14 @@ class Item(Base):
     can_gift: Mapped[bool] = mapped_column(Boolean, default=True)
     can_activate: Mapped[bool] = mapped_column(Boolean, default=False)
     lootbox_pool_code: Mapped[str | None] = mapped_column(String(64), nullable=True)  # bronze/silver/gold
+    # Global item pool used by chest_v2 Kovboxes. Individual items do not have
+    # per-box weights: the server first rolls a pool, then picks uniformly from
+    # the currently available shop assortment in that pool.
+    lootbox_reward_tier: Mapped[str] = mapped_column(String(24), default="normal", nullable=False)
+    # Скины: слот, в который надевается предмет (head/torso/legs/feet).
+    # У обычных предметов NULL. Слот хранится явно, а не выводится из code:
+    # опечатка в коде иначе давала бы молча неработающий скин.
+    skin_slot: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
 class ItemCategory(Base):
@@ -538,7 +546,11 @@ class LootboxPool(Base):
     image_url: Mapped[str] = mapped_column(String(512), default="/static/img/items/lootbox_common.svg", nullable=False)
     open_image_url: Mapped[str] = mapped_column(String(512), default="", nullable=False)
     opening_mode: Mapped[str] = mapped_column(String(16), default="legacy_v1", nullable=False)
+    # ``bonus_item_chance`` remains the normal-pool chance for backwards
+    # compatibility with older clients and databases.
     bonus_item_chance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    special_item_chance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    super_special_item_chance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), unique=True, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_droppable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -681,6 +693,27 @@ class ClickerState(Base):
     turbo_used: Mapped[int] = mapped_column(Integer, default=0)
     refill_used: Mapped[int] = mapped_column(Integer, default=0)
     passboost_used: Mapped[int] = mapped_column(Integer, default=0)
+
+    user: Mapped["User"] = relationship("User")
+
+
+class UserSkinLoadout(Base):
+    """Надетые скины игрока — по одному предмету на слот.
+
+    Отдельная таблица, а не флаг в inventory: там UNIQUE(user_id, item_id) даёт
+    одну строку на предмет, и при quantity == 0 строка удаляется вместе с флагом.
+    """
+    __tablename__ = "user_skin_loadouts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False)
+
+    head_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+    torso_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+    legs_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+    feet_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     user: Mapped["User"] = relationship("User")
 

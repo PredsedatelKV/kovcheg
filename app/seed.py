@@ -93,6 +93,7 @@ def _seed_catalog_snacks(db: Session, fragment: models.Item) -> None:
                 category=category.name,
                 can_gift=True,
                 can_activate=True,
+                lootbox_reward_tier="special",
             )
             db.add(item)
             db.flush()
@@ -279,6 +280,25 @@ def migrate_schema(db: Session) -> None:
     if "lootbox_pool_code" not in icols:
         db.execute(text("ALTER TABLE items ADD COLUMN lootbox_pool_code VARCHAR(64)"))
         db.commit()
+    reward_tier_added = "lootbox_reward_tier" not in icols
+    if reward_tier_added:
+        db.execute(text(
+            "ALTER TABLE items ADD COLUMN lootbox_reward_tier "
+            "VARCHAR(24) NOT NULL DEFAULT 'normal'"
+        ))
+        # Existing sweets and snacks become the initial special pool. The
+        # administrator can move any item between pools afterwards.
+        db.execute(text(
+            "UPDATE items SET lootbox_reward_tier = 'special' "
+            "WHERE category IN ('Сладости', 'Снеки', 'Арахис')"
+        ))
+        db.commit()
+    db.execute(text(
+        "UPDATE items SET lootbox_reward_tier = 'normal' "
+        "WHERE lootbox_reward_tier IS NULL "
+        "OR lootbox_reward_tier NOT IN ('normal', 'special', 'super_special')"
+    ))
+    db.commit()
 
     # Tests use fixed percentage grades and independent multi-reward sets.
     qcols = {row[1] for row in db.execute(text("PRAGMA table_info(quizzes)")).fetchall()}
@@ -394,8 +414,10 @@ def migrate_schema(db: Session) -> None:
     # configurations.  SQLite does not alter existing tables during
     # ``create_all``, so columns are added explicitly and old item entries are
     # rebuilt once to allow currency/XP rewards where item_id is nullable.
+    item_pool_chances_added = False
     lpcols = {row[1] for row in db.execute(text("PRAGMA table_info(lootbox_pools)")).fetchall()}
     if lpcols:
+        item_pool_chances_added = "special_item_chance" not in lpcols
         lootbox_pool_columns = [
             ("description", "TEXT NOT NULL DEFAULT ''"),
             ("rarity", "VARCHAR(32) NOT NULL DEFAULT 'Обычный'"),
@@ -403,6 +425,8 @@ def migrate_schema(db: Session) -> None:
             ("open_image_url", "VARCHAR(512) NOT NULL DEFAULT ''"),
             ("opening_mode", "VARCHAR(16) NOT NULL DEFAULT 'legacy_v1'"),
             ("bonus_item_chance", "INTEGER NOT NULL DEFAULT 0"),
+            ("special_item_chance", "INTEGER NOT NULL DEFAULT 0"),
+            ("super_special_item_chance", "INTEGER NOT NULL DEFAULT 0"),
             ("item_id", "INTEGER REFERENCES items(id)"),
             ("is_active", "BOOLEAN NOT NULL DEFAULT 1"),
             ("is_droppable", "BOOLEAN NOT NULL DEFAULT 1"),
@@ -428,6 +452,15 @@ def migrate_schema(db: Session) -> None:
                 added = True
         if added:
             db.execute(text("UPDATE lootbox_pools SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
+            db.commit()
+        if item_pool_chances_added:
+            # Preserve the previous effective item-drop chance, but route it
+            # through the new special pool where sweets and snacks live.
+            db.execute(text(
+                "UPDATE lootbox_pools "
+                "SET special_item_chance = bonus_item_chance, bonus_item_chance = 0 "
+                "WHERE opening_mode = 'chest_v2'"
+            ))
             db.commit()
         db.execute(text(
             "UPDATE lootbox_pools SET open_image_url = image_url "
@@ -470,6 +503,14 @@ def migrate_schema(db: Session) -> None:
         db.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_lootbox_pool_entries_pool_id ON lootbox_pool_entries(pool_id)"
         ))
+        if item_pool_chances_added:
+            # Legacy per-item rows are no longer used by chest_v2. Guaranteed
+            # fragments/XP/Kovbucks remain untouched.
+            db.execute(text(
+                "DELETE FROM lootbox_pool_entries "
+                "WHERE is_guaranteed = 0 AND pool_id IN "
+                "(SELECT id FROM lootbox_pools WHERE opening_mode = 'chest_v2')"
+            ))
         db.commit()
 
     # Preserve the exact reveal order and visuals selected by the server.  Old
@@ -650,6 +691,12 @@ def migrate_schema(db: Session) -> None:
                 if not exists:
                     db.add(models.BattlePassClaim(user_id=ubp.user_id, reward_id=reward.id))
         db.commit()
+
+        # items.skin_slot — слот скина (head/torso/legs/feet), NULL у обычных предметов.
+        itcols = {row[1] for row in db.execute(text("PRAGMA table_info(items)")).fetchall()}
+        if itcols and "skin_slot" not in itcols:
+            db.execute(text("ALTER TABLE items ADD COLUMN skin_slot VARCHAR(16)"))
+            db.commit()
 
         # ``create_all`` cannot retrofit CHECK constraints into an existing
         # SQLite table.  Production started before these model constraints were
@@ -955,14 +1002,6 @@ def seed(db: Session) -> None:
         "seasonal": ((2, 3), (30, 60), (8, 18), 50),
         "consolation": ((1, 2), (10, 25), (3, 7), 25),
     }
-    prize_codes = [row[0] for row in (*CATALOG_SNACKS, *CATALOG_SWEETS)]
-    prize_items = (
-        db.query(models.Item)
-        .filter(models.Item.code.in_(prize_codes))
-        .order_by(models.Item.id)
-        .all()
-    )
-
     def _migrate_chest_pool(code: str, pool: models.LootboxPool) -> None:
         if pool.opening_mode == "chest_v2":
             return
@@ -985,19 +1024,10 @@ def seed(db: Session) -> None:
                 weight=100, is_guaranteed=True, is_active=True, sort_order=2,
             ),
         ])
-        if prize_items:
-            base_weight, remainder = divmod(100, len(prize_items))
-            for index, prize_item in enumerate(prize_items):
-                pool.entries.append(models.LootboxPoolEntry(
-                    reward_kind="item", item_id=prize_item.id,
-                    amount_min=1, amount_max=1,
-                    weight=base_weight + (1 if index < remainder else 0),
-                    is_guaranteed=False, is_active=True, sort_order=100 + index,
-                ))
-        else:
-            bonus_chance = 0
         pool.opening_mode = "chest_v2"
-        pool.bonus_item_chance = bonus_chance
+        pool.bonus_item_chance = 0
+        pool.special_item_chance = bonus_chance
+        pool.super_special_item_chance = 0
         pool.guaranteed_slots = 3  # retained only for legacy-client display
         pool.allow_duplicates = False
         pool.open_image_url = pool.open_image_url or pool.image_url

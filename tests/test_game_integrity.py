@@ -521,3 +521,91 @@ def test_wheel_sector_icons_follow_kind_and_item(game_api):
     # Пул нужен клиенту, чтобы покрасить сектор в цвет ковбокса.
     assert by_kind[("item", "lootbox_common")]["lootbox_pool_code"] == "common"
     assert by_kind[("item", "box_fragment")]["lootbox_pool_code"] is None
+
+
+def _skin_client(game_api_client):
+    """Профиль живёт в своём роутере — собираем отдельное приложение."""
+    from app.api import profile as profile_api
+    app = FastAPI()
+    app.include_router(profile_api.router)
+    app.dependency_overrides = dict(game_api_client.app.dependency_overrides)
+    return TestClient(app)
+
+
+def _make_skin(db, code, slot, rarity="Обычный"):
+    item = models.Item(code=code, name=code, icon="", category="Скины",
+                       rarity=rarity, skin_slot=slot)
+    db.add(item)
+    db.flush()
+    return item
+
+
+def test_equipping_a_skin_does_not_consume_it(game_api):
+    client, sessions = game_api
+    skins = _skin_client(client)
+    with sessions() as db:
+        helmet = _make_skin(db, "skin_head_test", "head", "Эпический")
+        db.add(models.InventoryItem(user_id=1, item_id=helmet.id, quantity=1))
+        db.commit()
+        helmet_id = helmet.id
+
+    equipped = skins.post("/api/profile/skins/equip",
+                          json={"item_id": helmet_id, "slot": "head"}, headers=_headers())
+    assert equipped.status_code == 200
+    assert equipped.json()["skin_loadout"]["head"] == "skin_head_test"
+
+    # Ключевое отличие от активации: предмет остаётся в инвентаре.
+    with sessions() as db:
+        row = db.query(models.InventoryItem).filter_by(user_id=1, item_id=helmet_id).one()
+        assert row.quantity == 1
+
+    # Комплект виден и в обычном профиле.
+    assert skins.get("/api/profile/me", headers=_headers()).json()[
+        "skin_loadout"]["head"] == "skin_head_test"
+
+    unequipped = skins.post("/api/profile/skins/unequip",
+                            json={"slot": "head"}, headers=_headers())
+    assert unequipped.status_code == 200
+    assert unequipped.json()["skin_loadout"]["head"] is None
+
+
+def test_skin_cannot_be_equipped_into_a_foreign_slot(game_api):
+    client, sessions = game_api
+    skins = _skin_client(client)
+    with sessions() as db:
+        boots = _make_skin(db, "skin_feet_test", "feet")
+        db.add(models.InventoryItem(user_id=1, item_id=boots.id, quantity=1))
+        db.commit()
+        boots_id = boots.id
+
+    wrong_slot = skins.post("/api/profile/skins/equip",
+                            json={"item_id": boots_id, "slot": "torso"}, headers=_headers())
+    assert wrong_slot.status_code == 400
+
+
+def test_skin_not_owned_cannot_be_equipped(game_api):
+    client, sessions = game_api
+    skins = _skin_client(client)
+    with sessions() as db:
+        # Предмет существует в каталоге, но игроку не выдан.
+        crown = _make_skin(db, "skin_head_unowned", "head", "Легендарный")
+        db.commit()
+        crown_id = crown.id
+
+    assert skins.post("/api/profile/skins/equip",
+                      json={"item_id": crown_id, "slot": "head"},
+                      headers=_headers()).status_code == 400
+
+
+def test_non_skin_item_is_rejected(game_api):
+    client, sessions = game_api
+    skins = _skin_client(client)
+    with sessions() as db:
+        prize = db.query(models.Item).filter(models.Item.code == "prize").one()
+        db.add(models.InventoryItem(user_id=1, item_id=prize.id, quantity=1))
+        db.commit()
+        prize_id = prize.id
+
+    assert skins.post("/api/profile/skins/equip",
+                      json={"item_id": prize_id, "slot": "head"},
+                      headers=_headers()).status_code == 400

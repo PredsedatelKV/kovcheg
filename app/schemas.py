@@ -45,6 +45,8 @@ class ItemOut(BaseModel):
     can_gift: bool
     can_activate: bool
     lootbox_pool_code: str | None = None
+    lootbox_reward_tier: Literal["normal", "special", "super_special"] = "normal"
+    skin_slot: str | None = None
 
 
 class InventoryItemOut(BaseModel):
@@ -209,6 +211,22 @@ class LoginGiftClaimOut(BaseModel):
     gifts: list[LoginGiftOut] = Field(default_factory=list)
 
 
+class SkinLoadoutOut(BaseModel):
+    head: str | None = None
+    torso: str | None = None
+    legs: str | None = None
+    feet: str | None = None
+
+
+class SkinEquipRequest(BaseModel):
+    item_id: StrictInt = Field(ge=1)
+    slot: Literal["head", "torso", "legs", "feet"]
+
+
+class SkinUnequipRequest(BaseModel):
+    slot: Literal["head", "torso", "legs", "feet"]
+
+
 class ProfilePayload(BaseModel):
     user: UserOut
     bp_level: int = 0
@@ -218,6 +236,7 @@ class ProfilePayload(BaseModel):
     user_tasks: list[UserTaskOut]
     daily_plan: TaskOut | None = None
     login_gifts: list[LoginGiftOut] = Field(default_factory=list)
+    skin_loadout: SkinLoadoutOut = Field(default_factory=SkinLoadoutOut)
 
 
 class KovernaPayload(BaseModel):
@@ -293,6 +312,8 @@ class AdminItemBody(BaseModel):
     category: str = Field(default="Ресурсы", min_length=1, max_length=32)
     can_gift: bool = True
     can_activate: bool = False
+    lootbox_reward_tier: Literal["normal", "special", "super_special"] = "normal"
+    skin_slot: Literal["head", "torso", "legs", "feet"] | None = None
 
     @model_validator(mode="after")
     def validate_activation_effect(self):
@@ -789,6 +810,8 @@ class AdminLootboxBody(BaseModel):
     opening_mode: Literal["legacy_v1", "chest_v2", "choice_v2"] | None = None
     open_image_url: str | None = Field(default=None, max_length=512)
     bonus_item_chance: StrictInt | None = Field(default=None, ge=0, le=100)
+    special_item_chance: StrictInt | None = Field(default=None, ge=0, le=100)
+    super_special_item_chance: StrictInt | None = Field(default=None, ge=0, le=100)
     is_active: bool = True
     is_droppable: bool = True
     is_archived: bool = False
@@ -818,12 +841,15 @@ class AdminLootboxBody(BaseModel):
         if self.is_active and not active_entries:
             raise ValueError("Активный ковбокс не может иметь пустой список наград")
         random_total = sum(entry.weight for entry in active_entries if not entry.is_guaranteed)
-        chest_without_bonus = (
-            self.opening_mode == "chest_v2"
-            and (self.bonus_item_chance or 0) == 0
-            and random_total == 0
-        )
-        if self.is_active and random_total != 100 and not chest_without_bonus:
+        if self.opening_mode == "chest_v2":
+            pool_total = (
+                (self.bonus_item_chance or 0)
+                + (self.special_item_chance or 0)
+                + (self.super_special_item_chance or 0)
+            )
+            if pool_total > 100:
+                raise ValueError(f"Сумма шансов пулов не может превышать 100% (сейчас {pool_total}%)")
+        elif self.is_active and random_total != 100:
             raise ValueError(f"Сумма шансов обычных наград должна быть ровно 100% (сейчас {random_total}%)")
         if sum(1 for entry in active_entries if entry.is_guaranteed) > 10:
             raise ValueError("Гарантированных наград не может быть больше 10")
@@ -866,6 +892,8 @@ class AdminLootboxOut(BaseModel):
     opening_mode: str
     open_image_url: str
     bonus_item_chance: int
+    special_item_chance: int
+    super_special_item_chance: int
     is_active: bool
     is_droppable: bool
     is_archived: bool

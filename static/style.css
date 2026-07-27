@@ -4512,3 +4512,110 @@ html.dark [role="alert"] { color: #ff8a8a; }
 .maintenance-icon { font-size: 44px; line-height: 1; margin-bottom: 12px; }
 .maintenance-title { margin: 0 0 8px; font-size: 18px; }
 .maintenance-text { margin: 0; color: var(--muted); }
+
+
+/* ================= Персонаж и примерочная ================= */
+/* Пиксель-арт: сглаживание обязано быть выключено, иначе скин мылится. */
+.character-svg {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+  height: 100%;
+  width: auto;
+  margin: 0 auto;
+}
+
+.character-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .2s ease;
+}
+.character-card:active { transform: scale(0.99); }
+.character-figure {
+  flex: 0 0 62px;
+  height: 108px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #dcefff 0%, #f4f9ff 62%, #e7f3e2 100%);
+  padding: 8px 6px;
+}
+html.dark .character-figure {
+  background: linear-gradient(180deg, #1d2a3c 0%, #17202e 62%, #16241d 100%);
+}
+.character-body { min-width: 0; flex: 1; }
+.character-title { font-weight: 800; font-size: 15px; }
+.character-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.character-cta {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent, #2f7fe6);
+}
+
+.wardrobe-title { text-align: center; margin: 0 0 12px; }
+.wardrobe { display: flex; flex-direction: column; gap: 14px; }
+.wardrobe-figure {
+  height: 168px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  padding: 10px;
+  background: linear-gradient(180deg, #dcefff 0%, #f4f9ff 62%, #e7f3e2 100%);
+}
+html.dark .wardrobe-figure {
+  background: linear-gradient(180deg, #1d2a3c 0%, #17202e 62%, #16241d 100%);
+}
+.wardrobe-slots { display: flex; flex-direction: column; gap: 12px; }
+.wardrobe-slot-head { font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+/* Горизонтальная лента: слотов может быть много, а модалка узкая. */
+.wardrobe-skin-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.wardrobe-skin {
+  flex: 0 0 auto;
+  width: 74px;
+  padding: 6px 4px 8px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: var(--surface-2, #f2f4f8);
+  cursor: pointer;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transition: border-color .15s ease, transform .12s ease;
+}
+html.dark .wardrobe-skin { background: #1b2331; }
+.wardrobe-skin .character-svg { height: 62px; }
+.wardrobe-skin-name {
+  font-size: 10px;
+  line-height: 1.15;
+  text-align: center;
+  color: var(--muted);
+  /* Длинное название не должно растягивать плитку. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.wardrobe-skin:active { transform: scale(0.96); }
+.wardrobe-skin.is-on { border-color: #2fb028; background: rgba(47,176,40,0.12); }
+.wardrobe-skin.is-on .wardrobe-skin-name { color: #2fb028; font-weight: 700; }
+.wardrobe-skin:disabled { opacity: 0.6; cursor: default; }
+/* Редкость подсвечивается рамкой; надетый скин важнее и перебивает её. */
+.wardrobe-skin.rr-Редкий { border-color: rgba(76,175,80,0.55); }
+.wardrobe-skin.rr-Эпический { border-color: rgba(224,64,251,0.55); }
+.wardrobe-skin.rr-Легендарный { border-color: rgba(255,213,74,0.75); }
+.wardrobe-empty { color: var(--muted); font-size: 12px; padding: 10px 2px; }

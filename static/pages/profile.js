@@ -497,6 +497,10 @@ function openItemActionsDialog(row, options = {}) {
         <img src="/static/img/ui/spark.svg" alt="" class="icon icon-md"/>
         <span>${isFragment ? (activationLocked ? `Активировать · нужно ${activeFragmentCost}` : `Активировать · ×${activeFragmentCost}`) : "Активировать"}</span>
       </button>` : ""}
+      ${row.item.skin_slot ? `<button class="btn btn-outline" id="ia-equip">
+        <img src="/static/img/ui/spark.svg" alt="" class="icon icon-md"/>
+        <span>Надеть</span>
+      </button>` : ""}
       <button class="btn btn-outline" id="ia-sell" ${canGift ? "" : "disabled"}>
         <img src="/static/img/ui/kovbaks.png" alt="" class="icon icon-md"/>
         <span>Продать</span>
@@ -519,6 +523,23 @@ function openItemActionsDialog(row, options = {}) {
     window.closeModal();
     setTimeout(() => openSellDialog(item, row.quantity), 80);
   });
+  modal.querySelector("#ia-equip")?.addEventListener("click", async () => {
+    const button = modal.querySelector("#ia-equip");
+    if (button.disabled) return;
+    button.disabled = true;
+    try {
+      await post("/api/profile/skins/equip", {
+        item_id: row.item.id,
+        slot: row.item.skin_slot,
+      });
+      window.kov.toast(`«${row.item.name}» надет`);
+      closeModal();
+    } catch (error) {
+      button.disabled = false;
+      window.kov.toast(error.message || "Не удалось надеть скин");
+    }
+  });
+
   modal.querySelector("#ia-activate")?.addEventListener("click", async () => {
     const button = modal.querySelector("#ia-activate");
     if (button.disabled) return;

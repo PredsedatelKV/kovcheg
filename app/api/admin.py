@@ -79,6 +79,8 @@ def _item_out(i: models.Item) -> schemas.ItemOut:
         can_gift=i.can_gift,
         can_activate=i.can_activate,
         lootbox_pool_code=i.lootbox_pool_code,
+        lootbox_reward_tier=i.lootbox_reward_tier,
+        skin_slot=i.skin_slot,
     )
 
 
@@ -1510,6 +1512,8 @@ def _lootbox_out(db: Session, pool: models.LootboxPool) -> schemas.AdminLootboxO
         opening_mode=pool.opening_mode,
         open_image_url=pool.open_image_url or pool.image_url,
         bonus_item_chance=pool.bonus_item_chance,
+        special_item_chance=pool.special_item_chance,
+        super_special_item_chance=pool.super_special_item_chance,
         is_active=pool.is_active,
         is_droppable=pool.is_droppable,
         is_archived=pool.is_archived,
@@ -1525,7 +1529,13 @@ def _lootbox_out(db: Session, pool: models.LootboxPool) -> schemas.AdminLootboxO
         guaranteed_slots=pool.guaranteed_slots,
         allow_duplicates=pool.allow_duplicates,
         version=pool.version,
-        weight_total=total,
+        weight_total=(
+            pool.bonus_item_chance
+            + pool.special_item_chance
+            + pool.super_special_item_chance
+            if pool.opening_mode == "chest_v2"
+            else total
+        ),
         entries=entries,
     )
 
@@ -1536,6 +1546,8 @@ def _validate_lootbox_entries(
     *,
     opening_mode: str | None = None,
     bonus_item_chance: int = 0,
+    special_item_chance: int = 0,
+    super_special_item_chance: int = 0,
     is_active: bool = False,
     guaranteed_slots: int = 1,
     allow_duplicates: bool = True,
@@ -1585,10 +1597,37 @@ def _validate_lootbox_entries(
         item = item_map.get(entry.item_id) if entry.reward_kind == "item" else None
         if item is None or item.code == "box_fragment" or item.lootbox_pool_code:
             raise HTTPException(400, "Дополнительной наградой сундука может быть только обычный предмет")
-    if not 0 <= bonus_item_chance <= 100:
-        raise HTTPException(400, "Шанс дополнительного предмета должен быть от 0 до 100%")
-    if bonus_item_chance > 0 and not optional:
-        raise HTTPException(400, "Для заданного шанса добавьте хотя бы один обычный предмет")
+    pool_chances = {
+        "normal": bonus_item_chance,
+        "special": special_item_chance,
+        "super_special": super_special_item_chance,
+    }
+    if any(chance < 0 or chance > 100 for chance in pool_chances.values()):
+        raise HTTPException(400, "Каждый шанс предметного пула должен быть от 0 до 100%")
+    if sum(pool_chances.values()) > 100:
+        raise HTTPException(400, "Сумма шансов обычного, особого и сверхособого пулов не может превышать 100%")
+    for tier, chance in pool_chances.items():
+        if chance <= 0:
+            continue
+        available = (
+            db.query(models.ShopProduct)
+            .join(models.Item, models.Item.id == models.ShopProduct.item_id)
+            .filter(
+                models.ShopProduct.is_active.is_(True),
+                models.ShopProduct.stock != 0,
+                models.Item.lootbox_reward_tier == tier,
+                models.Item.lootbox_pool_code.is_(None),
+                ~models.Item.code.in_(["box_fragment", "failure_fragment"]),
+            )
+            .first()
+        )
+        if available is None:
+            labels = {
+                "normal": "обычном",
+                "special": "особом",
+                "super_special": "сверхособом",
+            }
+            raise HTTPException(400, f"В {labels[tier]} пуле нет доступных товаров магазина")
 
 
 def _replace_lootbox_entries(
@@ -1617,6 +1656,10 @@ def _apply_lootbox_body(pool: models.LootboxPool, body: schemas.AdminLootboxBody
         pool.open_image_url = body.image_url
     if body.bonus_item_chance is not None:
         pool.bonus_item_chance = body.bonus_item_chance
+    if body.special_item_chance is not None:
+        pool.special_item_chance = body.special_item_chance
+    if body.super_special_item_chance is not None:
+        pool.super_special_item_chance = body.super_special_item_chance
     pool.description = ""
     pool.starts_at = _naive_utc(body.starts_at)
     pool.ends_at = _naive_utc(body.ends_at)
@@ -1659,11 +1702,15 @@ def admin_create_lootbox(
         raise HTTPException(409, "Ковбокс с таким внутренним ID уже существует")
     effective_mode = body.opening_mode or "legacy_v1"
     effective_bonus_chance = body.bonus_item_chance or 0
+    effective_special_chance = body.special_item_chance or 0
+    effective_super_special_chance = body.super_special_item_chance or 0
     _validate_managed_lootbox_mode(body.code, effective_mode)
     _validate_lootbox_entries(
         db, body.entries,
         opening_mode=effective_mode,
         bonus_item_chance=effective_bonus_chance,
+        special_item_chance=effective_special_chance,
+        super_special_item_chance=effective_super_special_chance,
         is_active=body.is_active,
         guaranteed_slots=body.guaranteed_slots,
         allow_duplicates=body.allow_duplicates,
@@ -1714,11 +1761,23 @@ def admin_update_lootbox(
         if body.bonus_item_chance is not None
         else pool.bonus_item_chance
     )
+    effective_special_chance = (
+        body.special_item_chance
+        if body.special_item_chance is not None
+        else pool.special_item_chance
+    )
+    effective_super_special_chance = (
+        body.super_special_item_chance
+        if body.super_special_item_chance is not None
+        else pool.super_special_item_chance
+    )
     _validate_managed_lootbox_mode(pool.code, effective_mode)
     _validate_lootbox_entries(
         db, body.entries,
         opening_mode=effective_mode,
         bonus_item_chance=effective_bonus_chance,
+        special_item_chance=effective_special_chance,
+        super_special_item_chance=effective_super_special_chance,
         is_active=body.is_active,
         guaranteed_slots=body.guaranteed_slots,
         allow_duplicates=body.allow_duplicates,
@@ -1755,6 +1814,8 @@ def admin_duplicate_lootbox(
         opening_mode=source.opening_mode,
         open_image_url=source.open_image_url,
         bonus_item_chance=source.bonus_item_chance,
+        special_item_chance=source.special_item_chance,
+        super_special_item_chance=source.super_special_item_chance,
         is_active=False,
         is_droppable=False,
         assembly_weight=source.assembly_weight,

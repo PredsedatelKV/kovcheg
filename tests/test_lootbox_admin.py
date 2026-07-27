@@ -59,6 +59,7 @@ def lootbox_api(tmp_path):
         db.add_all([normal, administrator, fragment, prize])
         db.flush()
         db.add_all([models.Wallet(user_id=1, balance=100), models.Wallet(user_id=2, balance=100)])
+        db.add(models.ShopProduct(item_id=prize.id, price=10, stock=-1, is_active=True))
         db.add(models.BattlePassSeason(name="Тест", xp_per_level=100, total_levels=10, is_active=True))
         db.commit()
 
@@ -318,10 +319,8 @@ def test_sold_out_lootbox_prize_is_replaced_with_available_shop_item(lootbox_api
         fallback = models.Item(code="fallback_prize", name="Запасной приз", icon="fallback.svg")
         db.add(fallback)
         db.flush()
-        db.add_all([
-            models.ShopProduct(item_id=prize.id, price=10, stock=0, is_active=True),
-            models.ShopProduct(item_id=fallback.id, price=10, stock=2, is_active=True),
-        ])
+        db.query(models.ShopProduct).filter_by(item_id=prize.id).one().stock = 0
+        db.add(models.ShopProduct(item_id=fallback.id, price=10, stock=2, is_active=True))
         payload = _chest_payload(fragment.id, prize.id, code="fallback_chest")
         db.commit()
     created = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2)).json()
@@ -335,6 +334,60 @@ def test_sold_out_lootbox_prize_is_replaced_with_available_shop_item(lootbox_api
     item_codes = [reward["item"]["code"] for reward in opened.json()["rewards"] if reward["item"]]
     assert "fallback_prize" in item_codes
     assert "prize" not in item_codes
+
+
+def test_chest_global_special_pool_and_limited_player_stock(lootbox_api):
+    client, sessions = lootbox_api
+    with sessions() as db:
+        fragment = db.query(models.Item).filter_by(code="box_fragment").one()
+        prize = models.Item(
+            code="special_prize",
+            name="Особый приз",
+            icon="special.svg",
+            lootbox_reward_tier="special",
+        )
+        ibrahim = models.User(id=3, telegram_id=7_735_808_918, first_name="Ибрагим", xp=0)
+        db.add_all([prize, ibrahim])
+        db.flush()
+        db.add_all([
+            models.Wallet(user_id=3, balance=0),
+            models.ShopProduct(item_id=prize.id, price=50, stock=2, is_active=True),
+        ])
+        payload = _chest_payload(
+            fragment.id,
+            prize.id,
+            code="special_pool_chest",
+            bonus_item_chance=0,
+        )
+        payload["special_item_chance"] = 100
+        payload["entries"] = [entry for entry in payload["entries"] if entry["is_guaranteed"]]
+        db.commit()
+
+    created = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2))
+    assert created.status_code == 200, created.text
+    box = created.json()
+    with sessions() as db:
+        db.add(models.InventoryItem(user_id=3, item_id=box["item_id"], quantity=1))
+        db.commit()
+
+    opened = client.post(
+        "/api/profile/inventory/open-lootbox",
+        json={"item_id": box["item_id"], "request_id": "special_pool_0001"},
+        headers=_headers(3),
+    )
+    assert opened.status_code == 200, opened.text
+    assert any(
+        reward["item"] and reward["item"]["code"] == "special_prize"
+        for reward in opened.json()["rewards"]
+    )
+    with sessions() as db:
+        product = (
+            db.query(models.ShopProduct)
+            .join(models.Item)
+            .filter(models.Item.code == "special_prize")
+            .one()
+        )
+        assert product.stock == 1
 
 
 def test_chest_v2_returns_ordered_presentation_and_stable_replay(lootbox_api):

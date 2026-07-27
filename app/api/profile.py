@@ -93,6 +93,47 @@ def _item_to_out(item: models.Item) -> schemas.ItemOut:
         can_gift=item.can_gift,
         can_activate=item.can_activate,
         lootbox_pool_code=item.lootbox_pool_code,
+        lootbox_reward_tier=item.lootbox_reward_tier,
+        skin_slot=item.skin_slot,
+    )
+
+
+SKIN_SLOTS = ("head", "torso", "legs", "feet")
+
+
+def _get_or_create_loadout(db: Session, user_id: int) -> models.UserSkinLoadout:
+    """Комплект скинов игрока, создаётся при первом обращении."""
+    loadout = (
+        db.query(models.UserSkinLoadout)
+        .filter(models.UserSkinLoadout.user_id == user_id)
+        .one_or_none()
+    )
+    if loadout is None:
+        loadout = models.UserSkinLoadout(user_id=user_id)
+        db.add(loadout)
+        db.flush()
+    return loadout
+
+
+def _loadout_to_out(db: Session, loadout: models.UserSkinLoadout | None) -> schemas.SkinLoadoutOut:
+    """Комплект в виде кодов предметов: по ним клиент и рисует персонажа.
+
+    Предмет мог быть удалён из каталога после того, как его надели, поэтому
+    отсутствующий предмет отдаётся как пустой слот, а не ломает ответ.
+    """
+    if loadout is None:
+        return schemas.SkinLoadoutOut()
+    item_ids = {
+        slot: getattr(loadout, f"{slot}_item_id") for slot in SKIN_SLOTS
+    }
+    known = {
+        row.id: row.code
+        for row in db.query(models.Item).filter(
+            models.Item.id.in_([i for i in item_ids.values() if i])
+        ).all()
+    } if any(item_ids.values()) else {}
+    return schemas.SkinLoadoutOut(
+        **{slot: known.get(item_id) for slot, item_id in item_ids.items()}
     )
 
 
@@ -256,7 +297,68 @@ def me(user: models.User = Depends(current_user), db: Session = Depends(get_db))
             else None
         ),
         login_gifts=pending_gifts,
+        skin_loadout=_loadout_to_out(
+            db,
+            db.query(models.UserSkinLoadout)
+            .filter(models.UserSkinLoadout.user_id == user.id)
+            .one_or_none(),
+        ),
     )
+
+
+@router.get("/skins", response_model=schemas.SkinLoadoutOut)
+def get_skins(
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> schemas.SkinLoadoutOut:
+    """Только комплект — для карточки персонажа на Главной, без всего инвентаря."""
+    return _loadout_to_out(
+        db,
+        db.query(models.UserSkinLoadout)
+        .filter(models.UserSkinLoadout.user_id == user.id)
+        .one_or_none(),
+    )
+
+
+@router.post("/skins/equip", response_model=schemas.ProfilePayload)
+def equip_skin(
+    payload: schemas.SkinEquipRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Надеть скин. В отличие от активации предмет НЕ расходуется."""
+    begin_game_write(db)
+    inv = db.query(models.InventoryItem).filter(
+        models.InventoryItem.user_id == user.id,
+        models.InventoryItem.item_id == payload.item_id,
+    ).one_or_none()
+    if inv is None or inv.quantity < 1:
+        raise HTTPException(status_code=400, detail="Этого скина нет в инвентаре")
+    if not inv.item.skin_slot:
+        raise HTTPException(status_code=400, detail="Этот предмет не является скином")
+    if inv.item.skin_slot != payload.slot:
+        raise HTTPException(status_code=400, detail="Скин не подходит для этого слота")
+    loadout = _get_or_create_loadout(db, user.id)
+    setattr(loadout, f"{payload.slot}_item_id", inv.item_id)
+    loadout.updated_at = models.now_utc()
+    db.commit()
+    db.refresh(user)
+    return me(user=user, db=db)
+
+
+@router.post("/skins/unequip", response_model=schemas.ProfilePayload)
+def unequip_skin(
+    payload: schemas.SkinUnequipRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    begin_game_write(db)
+    loadout = _get_or_create_loadout(db, user.id)
+    setattr(loadout, f"{payload.slot}_item_id", None)
+    loadout.updated_at = models.now_utc()
+    db.commit()
+    db.refresh(user)
+    return me(user=user, db=db)
 
 
 @router.post("/login-gifts/claim", response_model=schemas.LoginGiftClaimOut)
@@ -551,8 +653,15 @@ def _validate_openable_pool(db: Session, pool: models.LootboxPool, user: models.
     random_entries = [entry for entry in entries if not entry.is_guaranteed]
     random_total = sum(entry.weight for entry in random_entries)
     if pool.opening_mode == "chest_v2":
-        if not 0 <= pool.bonus_item_chance <= 100:
-            raise HTTPException(409, "Шанс дополнительного предмета настроен некорректно")
+        pool_chances = (
+            pool.bonus_item_chance,
+            pool.special_item_chance,
+            pool.super_special_item_chance,
+        )
+        if any(chance < 0 or chance > 100 for chance in pool_chances):
+            raise HTTPException(409, "Шанс предметного пула настроен некорректно")
+        if sum(pool_chances) > 100:
+            raise HTTPException(409, "Сумма шансов предметных пулов превышает 100%")
         guaranteed = [entry for entry in entries if entry.is_guaranteed]
         fragment_entries = [
             entry for entry in guaranteed
@@ -562,16 +671,6 @@ def _validate_openable_pool(db: Session, pool: models.LootboxPool, user: models.
         kovbucks_entries = [entry for entry in guaranteed if entry.reward_kind == "kovbucks"]
         if len(guaranteed) != 3 or len(fragment_entries) != 1 or len(xp_entries) != 1 or len(kovbucks_entries) != 1:
             raise HTTPException(409, "Содержимое сундука настроено некорректно")
-        for entry in random_entries:
-            if (
-                entry.reward_kind != "item"
-                or entry.item is None
-                or entry.item.code == "box_fragment"
-                or entry.item.lootbox_pool_code
-            ):
-                raise HTTPException(409, "Дополнительной наградой сундука может быть только обычный предмет")
-        if pool.bonus_item_chance > 0 and not random_entries:
-            raise HTTPException(409, "Для сундука не настроены дополнительные предметы")
     elif pool.opening_mode == "choice_v2":
         if not 1 <= pool.guaranteed_slots <= 10:
             raise HTTPException(409, "Количество слотов ковбокса настроено некорректно")
@@ -584,7 +683,7 @@ def _validate_openable_pool(db: Session, pool: models.LootboxPool, user: models.
     else:
         if not 1 <= pool.guaranteed_slots <= 10:
             raise HTTPException(409, "Количество слотов ковбокса настроено некорректно")
-    if random_entries and random_total != 100:
+    if pool.opening_mode != "chest_v2" and random_entries and random_total != 100:
         raise HTTPException(409, f"Сумма шансов ковбокса должна быть ровно 100% (сейчас {random_total}%)")
     if pool.opening_mode != "chest_v2" and not random_entries:
         raise HTTPException(409, "У ковбокса отсутствует таблица случайных наград")
@@ -666,9 +765,10 @@ def _fallback_shop_item(
     user: models.User,
     *,
     exclude_ids: set[int] | None = None,
+    tier: str | None = None,
 ) -> models.Item:
     excluded = exclude_ids or set()
-    rows = (
+    query = (
         db.query(models.Item)
         .join(models.ShopProduct, models.ShopProduct.item_id == models.Item.id)
         .filter(
@@ -677,10 +777,19 @@ def _fallback_shop_item(
             models.Item.lootbox_pool_code.is_(None),
             ~models.Item.code.in_(["box_fragment", "failure_fragment"]),
         )
-        .all()
     )
+    if tier is not None:
+        query = query.filter(models.Item.lootbox_reward_tier == tier)
+    rows = query.all()
     available = [item for item in rows if item.id not in excluded]
     if not available:
+        labels = {
+            "normal": "обычном",
+            "special": "особом",
+            "super_special": "сверхособом",
+        }
+        if tier in labels:
+            raise HTTPException(409, f"В {labels[tier]} пуле не осталось доступных товаров")
         raise HTTPException(409, "В магазине не осталось доступных предметов для замены награды")
     return available[secrets.randbelow(len(available))]
 
@@ -700,7 +809,35 @@ def _resolved_reward_item(
     ).one_or_none()
     unavailable = product is not None and product.stock == 0
     unavailable = unavailable or (product is None and uses_limited_lootbox_stock(user))
-    return _fallback_shop_item(db, user, exclude_ids=exclude_ids) if unavailable else item
+    return (
+        _fallback_shop_item(
+            db,
+            user,
+            exclude_ids=exclude_ids,
+            tier=item.lootbox_reward_tier,
+        )
+        if unavailable
+        else item
+    )
+
+
+def _roll_chest_pool_item(
+    db: Session,
+    user: models.User,
+    pool: models.LootboxPool,
+) -> models.Item | None:
+    """Roll at most one global item pool, then pick uniformly from its stock."""
+    roll = secrets.randbelow(100)
+    cursor = pool.bonus_item_chance
+    if roll < cursor:
+        return _fallback_shop_item(db, user, tier="normal")
+    cursor += pool.special_item_chance
+    if roll < cursor:
+        return _fallback_shop_item(db, user, tier="special")
+    cursor += pool.super_special_item_chance
+    if roll < cursor:
+        return _fallback_shop_item(db, user, tier="super_special")
+    return None
 
 
 def _decrement_limited_stock(
@@ -977,14 +1114,9 @@ def open_lootbox_for_user(
     choice_plan: list[list[dict]] = []
     if pool.opening_mode == "chest_v2":
         selected.extend(sorted(guaranteed, key=lambda entry: (entry.sort_order, entry.id)))
-        if pool.bonus_item_chance == 100 or (
-            pool.bonus_item_chance > 0 and secrets.randbelow(100) < pool.bonus_item_chance
-        ):
-            available_random = [entry for entry in random_entries if _entry_available_for_user(db, user, entry)]
-            if not available_random:
-                direct_specs.append(("item", 1, _fallback_shop_item(db, user), len(selected)))
-            else:
-                selected.append(_weighted_pick(available_random))
+        pool_item = _roll_chest_pool_item(db, user, pool)
+        if pool_item is not None:
+            direct_specs.append(("item", 1, pool_item, len(selected)))
     elif pool.opening_mode == "choice_v2":
         choice_plan = _build_choice_plan(db, user, pool, entries)
     else:

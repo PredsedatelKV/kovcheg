@@ -4,6 +4,8 @@ import { openAssistantChat } from "/static/pages/assistant.js?v=264";
 
 import { playUISound } from "/static/pages/settings.js?v=267";
 
+import { mountCharacterCard } from "/static/pages/character.js?v=269";
+
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -180,6 +182,8 @@ ${bannerCarousel(data.banners)}
       ${bigSquareCard({ id: "news-card", type: "news", title: "Новости", slides: data.news || [], cssClass: "news-square" })}
     </div>
 
+    <div id="character-card"></div>
+
     <div class="card daily-reward-card" id="daily-reward-card" aria-busy="true">
       <div class="daily-reward-head">
         <img src="/static/img/ui/kovbaks.png" alt="" class="daily-reward-icon"/>
@@ -229,6 +233,10 @@ ${bannerCarousel(data.banners)}
 
   // The compact pass card is optional. Do not issue a request when the active
   // home layout does not contain its mount (the old legacy layout did).
+  // Персонаж грузится отдельно от /api/home: карточка рисуется сразу, а комплект
+  // скинов подъезжает своим лёгким запросом и не задерживает Главную.
+  mountCharacterCard(root);
+
   // A pass card that only leads to the "under maintenance" screen is worse than
   // no card, so it is skipped for the accounts the pass is closed for.
   var me = window.kov && window.kov.me;
