@@ -780,7 +780,7 @@ class LootboxOpenResult(BaseModel):
 
 
 class AdminLootboxEntryBody(BaseModel):
-    reward_kind: Literal["item", "kovbucks", "kovcoins", "xp"] = "item"
+    reward_kind: Literal["item", "kovbucks", "kovcoins", "xp", "special_pool", "super_special_pool"] = "item"
     item_id: StrictInt | None = Field(default=None, gt=0)
     amount_min: StrictInt = Field(default=1, ge=1, le=1_000_000)
     amount_max: StrictInt = Field(default=1, ge=1, le=1_000_000)
@@ -842,6 +842,8 @@ class AdminLootboxBody(BaseModel):
             raise ValueError("Активный ковбокс не может иметь пустой список наград")
         random_total = sum(entry.weight for entry in active_entries if not entry.is_guaranteed)
         if self.opening_mode == "chest_v2":
+            if random_total > 100:
+                raise ValueError(f"Сумма шансов случайных наград не может превышать 100% (сейчас {random_total}%)")
             pool_total = (
                 (self.bonus_item_chance or 0)
                 + (self.special_item_chance or 0)

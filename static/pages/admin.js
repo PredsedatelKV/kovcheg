@@ -1597,25 +1597,29 @@ function lootboxDateValue(value) {
 
 function lootboxEntryTemplate(entry = {}) {
   const kind = entry.reward_kind || "item";
-  const rewardLabels = kind === "kovcoins"
-    ? { ...LOOTBOX_REWARD_LABELS, kovcoins: "Ковкойны (старый тип)" }
-    : LOOTBOX_REWARD_LABELS;
+  const rewardLabels = {
+    item: "Фрагмент или скин",
+    xp: "XP",
+    kovbucks: "Ковбаксы",
+    special_pool: "Особая награда",
+    super_special_pool: "Сверхособая награда",
+  };
   const itemChoices = META.items
-    .filter((item) => !item.lootbox_pool_code)
-    .map((item) => `<option value="${item.id}" ${Number(entry.item_id) === item.id ? "selected" : ""}>${escapeHtml(item.name)}</option>`)
+    .filter((item) => item.code === "box_fragment" || item.skin_slot)
+    .map((item) => `<option value="${item.id}" ${Number(entry.item_id) === item.id ? "selected" : ""}>${item.code === "box_fragment" ? "Фрагменты ковбокса" : `Скин: ${escapeHtml(item.name)}`}</option>`)
     .join("");
   return `
     <div class="admin-card lootbox-entry" style="margin:8px 0;padding:10px">
       <div class="admin-form-grid">
         ${field("Тип", `<select class="input lb-entry-kind">${Object.entries(rewardLabels).map(([value, label]) => `<option value="${value}" ${kind === value ? "selected" : ""}>${label}</option>`).join("")}</select>`)}
-        ${field("Предмет", `<select class="input lb-entry-item"><option value="">—</option>${itemChoices}</select>`)}
-        ${field("Мин.", `<input class="input lb-entry-min" type="number" min="1" max="1000000" value="${entry.amount_min || 1}"/>`)}
-        ${field("Макс.", `<input class="input lb-entry-max" type="number" min="1" max="1000000" value="${entry.amount_max || 1}"/>`)}
-        ${field("Шанс, %", `<input class="input lb-entry-weight" type="number" min="1" max="100" value="${entry.weight || 10}"/>`)}
-        ${field("Порядок", `<input class="input lb-entry-order" type="number" value="${entry.sort_order || 0}"/>`)}
+        ${field("Фрагмент или скин", `<select class="input lb-entry-item"><option value="">—</option>${itemChoices}</select>`)}
+        ${field("Количество от", `<input class="input lb-entry-min" type="number" min="1" max="1000000" value="${entry.amount_min || 1}"/>`)}
+        ${field("Количество до", `<input class="input lb-entry-max" type="number" min="1" max="1000000" value="${entry.amount_max || 1}"/>`)}
         ${field("Гарантированно", `<select class="input lb-entry-guaranteed"><option value="false" ${!entry.is_guaranteed ? "selected" : ""}>Нет</option><option value="true" ${entry.is_guaranteed ? "selected" : ""}>Да</option></select>`)}
-        ${field("Активна", `<select class="input lb-entry-active"><option value="true" ${entry.is_active !== false ? "selected" : ""}>Да</option><option value="false" ${entry.is_active === false ? "selected" : ""}>Нет</option></select>`)}
+        ${field("Шанс, %", `<input class="input lb-entry-weight" type="number" min="1" max="100" value="${entry.weight || 10}"/>`)}
       </div>
+      <input class="lb-entry-order" type="hidden" value="${entry.sort_order || 0}"/>
+      <input class="lb-entry-active" type="hidden" value="true"/>
       <div class="row gap"><span class="admin-sub lb-entry-percent">—</span><button class="btn btn-sm btn-danger lb-entry-remove" type="button">Удалить строку</button></div>
     </div>`;
 }
@@ -1674,15 +1678,11 @@ function refreshLootboxProbabilities(overlay) {
   });
   const totalEl = overlay.querySelector("#lb-weight-total");
   const isChest = overlay.querySelector("#lb-opening-mode")?.value === "chest_v2";
-  if (totalEl && isChest) {
-    const poolTotal = ["#lb-bonus-chance", "#lb-special-chance", "#lb-super-special-chance"]
-      .reduce((sum, selector) => sum + (Number(overlay.querySelector(selector)?.value) || 0), 0);
-    totalEl.textContent = `Сумма шансов предмета: ${poolTotal}% · без предмета: ${Math.max(0, 100 - poolTotal)}%`;
-    totalEl.style.color = poolTotal > 100 ? "var(--danger)" : "";
-  } else if (totalEl) {
-    totalEl.textContent = total === 100
-      ? "Сумма шансов: 100% — готово."
-      : `Сумма шансов: ${total}% из 100%. Осталось: ${100 - total}%.`;
+  if (totalEl) {
+    totalEl.textContent = isChest
+      ? `Сумма шансов случайных наград: ${total}% из 100%.`
+      : (total === 100 ? "Сумма шансов: 100% — готово." : `Сумма шансов: ${total}% из 100%.`);
+    totalEl.style.color = total > 100 ? "var(--danger)" : "";
   }
   const countEl = overlay.querySelector("#lb-entry-count");
   if (countEl) countEl.textContent = `Настроенных наград сундука: ${rows.filter((row) => collectLootboxEntry(row).is_active).length}`;
@@ -1704,16 +1704,9 @@ function validateLootboxPayload(payload) {
   }
   const guaranteedCount = active.filter((entry) => entry.is_guaranteed).length;
   const randomChanceTotal = active.filter((entry) => !entry.is_guaranteed).reduce((sum, entry) => sum + entry.weight, 0);
-  if (payload.opening_mode !== "chest_v2" && payload.is_active && randomChanceTotal !== 100) return `Сумма шансов обычных наград должна быть ровно 100% (сейчас ${randomChanceTotal}%)`;
+  if (payload.opening_mode !== "chest_v2" && payload.is_active && randomChanceTotal !== 100) return `Сумма шансов наград должна быть ровно 100% (сейчас ${randomChanceTotal}%)`;
   if (payload.opening_mode === "chest_v2") {
-    const guaranteed = active.filter((entry) => entry.is_guaranteed);
-    const itemEntries = guaranteed.filter((entry) => entry.reward_kind === "item");
-    if (guaranteed.length !== 3 || itemEntries.length !== 1 || !guaranteed.some((entry) => entry.reward_kind === "xp") || !guaranteed.some((entry) => entry.reward_kind === "kovbucks")) {
-      return "Для сундука нужны ровно три гарантированные строки: фрагменты, XP и ковбаксы";
-    }
-    const poolChances = [payload.bonus_item_chance, payload.special_item_chance, payload.super_special_item_chance];
-    if (poolChances.some((chance) => !Number.isInteger(chance) || chance < 0 || chance > 100)) return "Каждый шанс предметного пула должен быть от 0 до 100%";
-    if (poolChances.reduce((sum, chance) => sum + chance, 0) > 100) return "Сумма шансов трёх предметных пулов не может превышать 100%";
+    if (randomChanceTotal > 100) return `Сумма шансов случайных наград не может превышать 100% (сейчас ${randomChanceTotal}%)`;
   }
   if (payload.opening_mode === "choice_v2") {
     if (guaranteedCount) return "В мегаковбоксе все строки должны участвовать в выборе";
@@ -1738,16 +1731,20 @@ function openLootboxEditor(body, existing = null) {
     bonus_item_chance: 0, special_item_chance: 0, super_special_item_chance: 0,
     entries: [],
   };
-  const editorEntries = box.opening_mode === "chest_v2"
-    ? (box.entries || []).filter((entry) => entry.is_guaranteed)
-    : (box.entries || []);
+  const editorEntries = [...(box.entries || [])];
+  // Pools saved by the previous editor are shown as ordinary reward rows and
+  // become part of the simple table after the next save.
+  if (box.opening_mode === "chest_v2") {
+    if (box.special_item_chance) editorEntries.push({ reward_kind: "special_pool", amount_min: 1, amount_max: 1, weight: box.special_item_chance, is_guaranteed: false, is_active: true, sort_order: 90 });
+    if (box.super_special_item_chance) editorEntries.push({ reward_kind: "super_special_pool", amount_min: 1, amount_max: 1, weight: box.super_special_item_chance, is_guaranteed: false, is_active: true, sort_order: 91 });
+  }
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
     <div class="modal" style="max-width:760px;max-height:92vh;overflow:auto">
       <button class="close" id="lb-editor-close" type="button">×</button>
-      <h3>${existing ? "Редактировать" : "Создать"} ковбокс</h3>
-      <div class="admin-form-grid">
+      <h3>${escapeHtml(box.name || "Ковбокс")}</h3>
+      <div class="admin-form-grid" style="display:none">
         ${field("Внутренний ID", `<input class="input" id="lb-code" value="${escapeHtml(box.code)}" ${existing ? "disabled" : ""} placeholder="winter_2026"/>`)}
         ${field("Название", `<input class="input" id="lb-name" value="${escapeHtml(box.name)}"/>`)}
         ${field("Редкость", `<select class="input" id="lb-rarity">${LOOTBOX_RARITIES.map((rarity) => `<option ${box.rarity === rarity ? "selected" : ""}>${rarity}</option>`).join("")}</select>`)}
@@ -1774,13 +1771,12 @@ function openLootboxEditor(body, existing = null) {
       <div style="display:flex;align-items:center;gap:12px;margin:10px 0">
         <img id="lb-image-preview" src="${escapeHtml(box.image_url)}" alt="Закрытый" title="Закрытый" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--border);border-radius:12px" onerror="this.src='/static/img/ui/box.svg'"/>
         <img id="lb-open-image-preview" src="${escapeHtml(box.open_image_url || box.image_url)}" alt="Открытый" title="Открытый" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--border);border-radius:12px" onerror="this.src='/static/img/ui/box.svg'"/>
-        <div class="admin-sub">Закрытый и открытый вид · выдача всегда серверная: фрагменты → XP → ковбаксы → возможный предмет</div>
+        <div class="admin-sub">Настройте только награды и их количество.</div>
       </div>
-      ${box.opening_mode === "chest_v2" ? '<div class="admin-sub">Предмет выбирается сервером случайно из назначенного пула. Индивидуальные шансы предметам больше не нужны.</div>' : ""}
-      <div class="row gap wrap"><h4 style="margin:0;flex:1">Содержимое</h4><button class="btn btn-sm btn-secondary" id="lb-add-entry" type="button" ${box.opening_mode === "chest_v2" ? 'style="display:none"' : ""}>+ Награда</button></div>
+      <div class="row gap wrap"><h4 style="margin:0;flex:1">Награды</h4><button class="btn btn-sm btn-secondary" id="lb-add-entry" type="button">+ Награда</button></div>
       <div id="lb-entry-count" class="admin-sub"></div>
       <div id="lb-weight-total" class="admin-sub"></div>
-      <div id="lb-entry-list">${editorEntries.map((entry) => box.opening_mode === "chest_v2" ? lootboxGuaranteedTemplate(entry) : lootboxEntryTemplate(entry)).join("")}</div>
+      <div id="lb-entry-list">${editorEntries.map(lootboxEntryTemplate).join("")}</div>
       <div class="row gap" style="margin-top:12px">
         <button class="btn btn-sm" id="lb-save" type="button">Сохранить</button>
         <button class="btn btn-sm btn-secondary" id="lb-cancel" type="button">Отмена</button>
@@ -1836,9 +1832,9 @@ function openLootboxEditor(body, existing = null) {
       image_url: overlay.querySelector("#lb-image").value.trim(),
       open_image_url: overlay.querySelector("#lb-open-image").value.trim(),
       opening_mode: overlay.querySelector("#lb-opening-mode").value,
-      bonus_item_chance: Number(overlay.querySelector("#lb-bonus-chance").value) || 0,
-      special_item_chance: Number(overlay.querySelector("#lb-special-chance").value) || 0,
-      super_special_item_chance: Number(overlay.querySelector("#lb-super-special-chance").value) || 0,
+      bonus_item_chance: 0,
+      special_item_chance: 0,
+      super_special_item_chance: 0,
       is_active: overlay.querySelector("#lb-active").value === "true",
       is_droppable: overlay.querySelector("#lb-droppable").value === "true",
       is_archived: Boolean(box.is_archived),
@@ -1910,8 +1906,8 @@ async function renderLootboxes(body) {
           <img src="${escapeHtml(row.image_url)}" alt="" style="width:64px;height:64px;object-fit:contain;flex:0 0 auto" onerror="this.src='/static/img/ui/box.svg'"/>
           <div style="min-width:0;flex:1">
             <h3 class="admin-card-title">${escapeHtml(row.name)} ${row.is_archived ? '<span class="admin-badge">архив</span>' : row.is_active ? '<span class="admin-badge">активен</span>' : ""}</h3>
-            <div class="admin-sub">${escapeHtml(row.code)} · ${escapeHtml(row.rarity)} · версия ${row.version} · сумма шансов ${row.weight_total}%</div>
-            <div class="admin-sub">${row.entries.length} наград · ${row.opening_mode === "chest_v2" ? `обычная ${row.bonus_item_chance}% · особая ${row.special_item_chance}% · сверхособая ${row.super_special_item_chance}%` : `${row.guaranteed_slots} этапов выбора 1 из 2`} · сборка вес ${row.assembly_weight}</div>
+            <div class="admin-sub">${escapeHtml(row.rarity)} · ${row.entries.length} наград</div>
+            <div class="admin-sub">${row.opening_mode === "chest_v2" ? "Сундук с наградами" : "Мегаковбокс: выбор одной из двух наград"}</div>
           </div>
         </div>
         <div class="row gap wrap" style="margin-top:10px">

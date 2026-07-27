@@ -642,7 +642,7 @@ def _validate_openable_pool(db: Session, pool: models.LootboxPool, user: models.
     entries = [entry for entry in pool.entries if entry.is_active]
     if not entries:
         raise HTTPException(409, "В ковбоксе не настроены награды")
-    supported = {"item", "kovbucks", "kovcoins", "xp"}
+    supported = {"item", "kovbucks", "kovcoins", "xp", "special_pool", "super_special_pool"}
     for entry in entries:
         if entry.reward_kind not in supported or entry.weight <= 0:
             raise HTTPException(409, "Конфигурация наград ковбокса некорректна")
@@ -662,15 +662,13 @@ def _validate_openable_pool(db: Session, pool: models.LootboxPool, user: models.
             raise HTTPException(409, "Шанс предметного пула настроен некорректно")
         if sum(pool_chances) > 100:
             raise HTTPException(409, "Сумма шансов предметных пулов превышает 100%")
-        guaranteed = [entry for entry in entries if entry.is_guaranteed]
-        fragment_entries = [
-            entry for entry in guaranteed
-            if entry.reward_kind == "item" and entry.item is not None and entry.item.code == "box_fragment"
-        ]
-        xp_entries = [entry for entry in guaranteed if entry.reward_kind == "xp"]
-        kovbucks_entries = [entry for entry in guaranteed if entry.reward_kind == "kovbucks"]
-        if len(guaranteed) != 3 or len(fragment_entries) != 1 or len(xp_entries) != 1 or len(kovbucks_entries) != 1:
-            raise HTTPException(409, "Содержимое сундука настроено некорректно")
+        for entry in entries:
+            if entry.reward_kind != "item":
+                continue
+            if entry.item is None or (entry.item.code != "box_fragment" and not entry.item.skin_slot):
+                raise HTTPException(409, "Конкретной наградой сундука может быть только фрагмент или скин")
+        if random_total > 100:
+            raise HTTPException(409, "Сумма шансов случайных наград превышает 100%")
     elif pool.opening_mode == "choice_v2":
         if not 1 <= pool.guaranteed_slots <= 10:
             raise HTTPException(409, "Количество слотов ковбокса настроено некорректно")
@@ -840,6 +838,17 @@ def _roll_chest_pool_item(
     return None
 
 
+def _roll_chest_random_entry(entries: list[models.LootboxPoolEntry]) -> models.LootboxPoolEntry | None:
+    """Each non-guaranteed row has a direct percentage; unused remainder is no reward."""
+    roll = secrets.randbelow(100)
+    cursor = 0
+    for entry in sorted(entries, key=lambda value: (value.sort_order, value.id)):
+        cursor += entry.weight
+        if roll < cursor:
+            return entry
+    return None
+
+
 def _decrement_limited_stock(
     db: Session,
     user: models.User,
@@ -867,17 +876,22 @@ def _choice_option(
     exclude_item_ids: set[int] | None = None,
 ) -> dict:
     amount = entry.amount_min + secrets.randbelow(entry.amount_max - entry.amount_min + 1)
+    kind = entry.reward_kind
     item = entry.item
-    if entry.reward_kind == "item" and item is not None:
+    if kind == "special_pool":
+        kind, item = "item", _fallback_shop_item(db, user, tier="special", exclude_ids=exclude_item_ids)
+    elif kind == "super_special_pool":
+        kind, item = "item", _fallback_shop_item(db, user, tier="super_special", exclude_ids=exclude_item_ids)
+    elif kind == "item" and item is not None:
         item = _resolved_reward_item(db, user, item, exclude_ids=exclude_item_ids)
     return {
-        "kind": entry.reward_kind,
+        "kind": kind,
         "item_id": item.id if item else None,
         "amount": amount,
-        "label": _reward_label(entry.reward_kind, amount, item),
-        "icon": _reward_icon(entry.reward_kind, item),
+        "label": _reward_label(kind, amount, item),
+        "icon": _reward_icon(kind, item),
         "rarity": item.rarity if item else "Обычный",
-        "presentation_kind": _reward_presentation_kind(entry.reward_kind, item),
+        "presentation_kind": _reward_presentation_kind(kind, item),
     }
 
 
@@ -1114,9 +1128,20 @@ def open_lootbox_for_user(
     choice_plan: list[list[dict]] = []
     if pool.opening_mode == "chest_v2":
         selected.extend(sorted(guaranteed, key=lambda entry: (entry.sort_order, entry.id)))
-        pool_item = _roll_chest_pool_item(db, user, pool)
-        if pool_item is not None:
-            direct_specs.append(("item", 1, pool_item, len(selected)))
+        random_entry = _roll_chest_random_entry(random_entries) if random_entries else None
+        if random_entry is not None:
+            amount = random_entry.amount_min + secrets.randbelow(random_entry.amount_max - random_entry.amount_min + 1)
+            if random_entry.reward_kind == "special_pool":
+                direct_specs.append(("item", amount, _fallback_shop_item(db, user, tier="special"), len(selected)))
+            elif random_entry.reward_kind == "super_special_pool":
+                direct_specs.append(("item", amount, _fallback_shop_item(db, user, tier="super_special"), len(selected)))
+            else:
+                selected.append(random_entry)
+        elif not random_entries:
+            # Compatibility with pools saved before the simplified editor.
+            pool_item = _roll_chest_pool_item(db, user, pool)
+            if pool_item is not None:
+                direct_specs.append(("item", 1, pool_item, len(selected)))
     elif pool.opening_mode == "choice_v2":
         choice_plan = _build_choice_plan(db, user, pool, entries)
     else:

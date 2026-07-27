@@ -1581,53 +1581,20 @@ def _validate_lootbox_entries(
         return
     if opening_mode != "chest_v2":
         return
-    fragment_entries = [
-        entry for entry in guaranteed
-        if entry.reward_kind == "item" and item_map.get(entry.item_id) is not None
-        and item_map[entry.item_id].code == "box_fragment"
-    ]
-    xp_entries = [entry for entry in guaranteed if entry.reward_kind == "xp"]
-    kovbucks_entries = [entry for entry in guaranteed if entry.reward_kind == "kovbucks"]
-    if len(guaranteed) != 3 or len(fragment_entries) != 1 or len(xp_entries) != 1 or len(kovbucks_entries) != 1:
-        raise HTTPException(
-            400,
-            "Сундук должен иметь ровно три гарантированные награды: фрагменты, XP и ковбаксы",
-        )
-    for entry in optional:
-        item = item_map.get(entry.item_id) if entry.reward_kind == "item" else None
-        if item is None or item.code == "box_fragment" or item.lootbox_pool_code:
-            raise HTTPException(400, "Дополнительной наградой сундука может быть только обычный предмет")
-    pool_chances = {
-        "normal": bonus_item_chance,
-        "special": special_item_chance,
-        "super_special": super_special_item_chance,
-    }
-    if any(chance < 0 or chance > 100 for chance in pool_chances.values()):
-        raise HTTPException(400, "Каждый шанс предметного пула должен быть от 0 до 100%")
-    if sum(pool_chances.values()) > 100:
-        raise HTTPException(400, "Сумма шансов обычного, особого и сверхособого пулов не может превышать 100%")
-    for tier, chance in pool_chances.items():
-        if chance <= 0:
+    if not guaranteed and not optional:
+        raise HTTPException(400, "Добавьте хотя бы одну награду")
+    if len(guaranteed) > 10:
+        raise HTTPException(400, "Гарантированных наград не может быть больше 10")
+    if sum(entry.weight for entry in optional) > 100:
+        raise HTTPException(400, "Сумма шансов случайных наград не может превышать 100%")
+    for entry in active:
+        if entry.reward_kind != "item":
             continue
-        available = (
-            db.query(models.ShopProduct)
-            .join(models.Item, models.Item.id == models.ShopProduct.item_id)
-            .filter(
-                models.ShopProduct.is_active.is_(True),
-                models.ShopProduct.stock != 0,
-                models.Item.lootbox_reward_tier == tier,
-                models.Item.lootbox_pool_code.is_(None),
-                ~models.Item.code.in_(["box_fragment", "failure_fragment"]),
-            )
-            .first()
-        )
-        if available is None:
-            labels = {
-                "normal": "обычном",
-                "special": "особом",
-                "super_special": "сверхособом",
-            }
-            raise HTTPException(400, f"В {labels[tier]} пуле нет доступных товаров магазина")
+        item = item_map.get(entry.item_id)
+        if item is None:
+            raise HTTPException(400, "Выберите предмет награды")
+        if item.code != "box_fragment" and not item.skin_slot:
+            raise HTTPException(400, "В сундуке конкретным предметом может быть только фрагмент или скин")
 
 
 def _replace_lootbox_entries(
