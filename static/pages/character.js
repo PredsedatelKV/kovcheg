@@ -10,8 +10,8 @@
 //   руки    (0,8)  и (12,8)  4×12
 //   торс    (4,8)  8×12
 //   ноги    (4,20) 8×12
-import { get, post } from "/static/api.js?v=269";
-import { playUISound } from "/static/pages/settings.js?v=269";
+import { get, post } from "/static/api.js?v=270";
+import { playUISound } from "/static/pages/settings.js?v=270";
 
 const escapeHtml = (s = "") =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -61,28 +61,29 @@ const SHAPES = {
     { x: 4, y: 0, w: 8, h: 1, fill: c.light },
   ],
   ushanka: (c) => [
-    { x: 4, y: 0, w: 8, h: 4, fill: c.main },
-    { x: 3, y: 2, w: 1, h: 4, fill: c.light },
-    { x: 12, y: 2, w: 1, h: 4, fill: c.light },
+    { x: 4, y: 0, w: 8, h: 3, fill: c.main },
+    { x: 3, y: 1, w: 1, h: 5, fill: c.light },
+    { x: 12, y: 1, w: 1, h: 5, fill: c.light },
     { x: 4, y: 0, w: 8, h: 1, fill: c.light },
-    { x: 7, y: 1, w: 2, h: 2, fill: c.accent },
+    { x: 7, y: 1, w: 2, h: 1, fill: c.accent },
   ],
   helmet: (c) => [
     { x: 4, y: 0, w: 8, h: 3, fill: c.main },
     { x: 3, y: 1, w: 1, h: 5, fill: c.main },
     { x: 12, y: 1, w: 1, h: 5, fill: c.main },
-    { x: 4, y: 3, w: 2, h: 2, fill: c.main },
-    { x: 10, y: 3, w: 2, h: 2, fill: c.main },
+    // Нащёчники прижаты к краям, иначе закрывают глаза.
+    { x: 4, y: 3, w: 1, h: 3, fill: c.main },
+    { x: 11, y: 3, w: 1, h: 3, fill: c.main },
     { x: 4, y: 0, w: 8, h: 1, fill: c.light },
     { x: 7, y: 0, w: 2, h: 3, fill: c.accent },
   ],
   crown: (c) => [
-    { x: 4, y: 2, w: 8, h: 2, fill: c.main },
+    { x: 4, y: 2, w: 8, h: 1, fill: c.main },
     { x: 4, y: 0, w: 2, h: 2, fill: c.main },
     { x: 7, y: 0, w: 2, h: 2, fill: c.main },
     { x: 10, y: 0, w: 2, h: 2, fill: c.main },
-    { x: 4, y: 2, w: 8, h: 1, fill: c.light },
-    { x: 7, y: 2, w: 2, h: 1, fill: c.accent },
+    { x: 4, y: 1, w: 8, h: 1, fill: c.light },
+    { x: 7, y: 1, w: 2, h: 1, fill: c.accent },
   ],
   shirt: (c) => [
     { x: 4, y: 8, w: 8, h: 9, fill: c.main },
@@ -116,26 +117,26 @@ const SHAPES = {
     { x: 4, y: 19, w: 8, h: 1, fill: c.accent },
   ],
   pants: (c) => [
-    { x: 4, y: 19, w: 8, h: 6, fill: c.main },
+    { x: 4, y: 17, w: 8, h: 8, fill: c.main },
     { x: 4, y: 25, w: 3, h: 4, fill: c.main },
     { x: 9, y: 25, w: 3, h: 4, fill: c.main },
-    { x: 4, y: 19, w: 8, h: 1, fill: c.light },
+    { x: 4, y: 17, w: 8, h: 1, fill: c.light },
   ],
   padded: (c) => [
-    { x: 4, y: 19, w: 8, h: 6, fill: c.main },
+    { x: 4, y: 17, w: 8, h: 8, fill: c.main },
     { x: 4, y: 25, w: 3, h: 5, fill: c.main },
     { x: 9, y: 25, w: 3, h: 5, fill: c.main },
-    { x: 4, y: 21, w: 8, h: 1, fill: c.accent },
-    { x: 4, y: 24, w: 8, h: 1, fill: c.accent },
-    { x: 4, y: 27, w: 8, h: 1, fill: c.accent },
+    { x: 4, y: 20, w: 8, h: 1, fill: c.accent },
+    { x: 4, y: 23, w: 8, h: 1, fill: c.accent },
+    { x: 4, y: 26, w: 8, h: 1, fill: c.accent },
   ],
   greaves: (c) => [
-    { x: 4, y: 19, w: 8, h: 6, fill: c.main },
+    { x: 4, y: 17, w: 8, h: 8, fill: c.main },
     { x: 4, y: 25, w: 3, h: 5, fill: c.main },
     { x: 9, y: 25, w: 3, h: 5, fill: c.main },
-    { x: 4, y: 19, w: 8, h: 1, fill: c.light },
-    { x: 5, y: 21, w: 2, h: 3, fill: c.accent },
-    { x: 9, y: 21, w: 2, h: 3, fill: c.accent },
+    { x: 4, y: 17, w: 8, h: 1, fill: c.light },
+    { x: 5, y: 20, w: 2, h: 3, fill: c.accent },
+    { x: 9, y: 20, w: 2, h: 3, fill: c.accent },
   ],
   shoes: (c) => [
     { x: 4, y: 29, w: 3, h: 3, fill: c.main },

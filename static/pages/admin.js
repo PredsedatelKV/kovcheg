@@ -1620,6 +1620,31 @@ function lootboxEntryTemplate(entry = {}) {
     </div>`;
 }
 
+function lootboxGuaranteedTemplate(entry = {}) {
+  const kind = entry.reward_kind || "item";
+  const labels = {
+    item: entry.item_name || "Фрагменты ковбокса",
+    xp: "XP",
+    kovbucks: "Ковбаксы",
+    kovcoins: "Ковкойны",
+  };
+  return `
+    <div class="admin-card lootbox-entry" style="margin:8px 0;padding:10px">
+      <h4 style="margin:0 0 8px">${escapeHtml(labels[kind] || "Гарантированная награда")}</h4>
+      <div class="admin-form-grid">
+        ${field("Количество от", `<input class="input lb-entry-min" type="number" min="1" max="1000000" value="${entry.amount_min || 1}"/>`)}
+        ${field("Количество до", `<input class="input lb-entry-max" type="number" min="1" max="1000000" value="${entry.amount_max || 1}"/>`)}
+      </div>
+      <input class="lb-entry-kind" type="hidden" value="${escapeHtml(kind)}"/>
+      <input class="lb-entry-item" type="hidden" value="${entry.item_id || ""}"/>
+      <input class="lb-entry-weight" type="hidden" value="100"/>
+      <input class="lb-entry-order" type="hidden" value="${entry.sort_order || 0}"/>
+      <input class="lb-entry-guaranteed" type="hidden" value="true"/>
+      <input class="lb-entry-active" type="hidden" value="true"/>
+      <span class="admin-sub lb-entry-percent">Гарантированная награда</span>
+    </div>`;
+}
+
 function collectLootboxEntry(row) {
   const kind = row.querySelector(".lb-entry-kind").value;
   return {
@@ -1641,8 +1666,8 @@ function refreshLootboxProbabilities(overlay) {
   const total = random.reduce((sum, value) => sum + value.entry.weight, 0);
   rows.forEach((row) => {
     const entry = collectLootboxEntry(row);
-    const itemField = row.querySelector(".lb-entry-item").closest(".admin-field");
-    itemField.style.display = entry.reward_kind === "item" ? "" : "none";
+    const itemField = row.querySelector(".lb-entry-item")?.closest(".admin-field");
+    if (itemField) itemField.style.display = entry.reward_kind === "item" ? "" : "none";
     row.querySelector(".lb-entry-percent").textContent = entry.is_active
       ? (entry.is_guaranteed ? "Гарантированная награда" : `Шанс: ${entry.weight}%`)
       : "Не участвует в розыгрыше";
@@ -1755,7 +1780,7 @@ function openLootboxEditor(body, existing = null) {
       <div class="row gap wrap"><h4 style="margin:0;flex:1">Содержимое</h4><button class="btn btn-sm btn-secondary" id="lb-add-entry" type="button" ${box.opening_mode === "chest_v2" ? 'style="display:none"' : ""}>+ Награда</button></div>
       <div id="lb-entry-count" class="admin-sub"></div>
       <div id="lb-weight-total" class="admin-sub"></div>
-      <div id="lb-entry-list">${editorEntries.map(lootboxEntryTemplate).join("")}</div>
+      <div id="lb-entry-list">${editorEntries.map((entry) => box.opening_mode === "chest_v2" ? lootboxGuaranteedTemplate(entry) : lootboxEntryTemplate(entry)).join("")}</div>
       <div class="row gap" style="margin-top:12px">
         <button class="btn btn-sm" id="lb-save" type="button">Сохранить</button>
         <button class="btn btn-sm btn-secondary" id="lb-cancel" type="button">Отмена</button>

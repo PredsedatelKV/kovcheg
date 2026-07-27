@@ -4,7 +4,7 @@ import { openAssistantChat } from "/static/pages/assistant.js?v=264";
 
 import { playUISound } from "/static/pages/settings.js?v=267";
 
-import { mountCharacterCard } from "/static/pages/character.js?v=269";
+import { mountCharacterCard } from "/static/pages/character.js?v=270";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
