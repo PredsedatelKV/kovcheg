@@ -65,6 +65,56 @@ def _ensure_item_category(db: Session, name: str, sort_order: int) -> models.Ite
     return category
 
 
+# Скины: код -> (слот, название, редкость). Персонаж рисуется на клиенте по
+# коду предмета (static/pages/character.js), поэтому картинки-ассеты не нужны —
+# в инвентаре показывается общая иконка слота.
+SKIN_SLOT_ICONS = {
+    "head": "/static/img/ui/skin_head.svg",
+    "torso": "/static/img/ui/skin_torso.svg",
+    "legs": "/static/img/ui/skin_legs.svg",
+    "feet": "/static/img/ui/skin_feet.svg",
+}
+
+SKIN_DEFINITIONS = (
+    ("skin_head_hair", "head", "Причёска", "Обычный"),
+    ("skin_head_ushanka", "head", "Ушанка", "Редкий"),
+    ("skin_head_iron_helm", "head", "Железный шлем", "Эпический"),
+    ("skin_head_crown", "head", "Корона Ковчега", "Легендарный"),
+    ("skin_torso_tshirt", "torso", "Футболка", "Обычный"),
+    ("skin_torso_telnyashka", "torso", "Тельняшка", "Редкий"),
+    ("skin_torso_chainmail", "torso", "Кольчуга", "Эпический"),
+    ("skin_torso_mantle", "torso", "Мантия председателя", "Легендарный"),
+    ("skin_legs_jeans", "legs", "Джинсы", "Обычный"),
+    ("skin_legs_vatniki", "legs", "Ватники", "Редкий"),
+    ("skin_legs_plates", "legs", "Латы", "Эпический"),
+    ("skin_legs_parade", "legs", "Парадные брюки", "Легендарный"),
+    ("skin_feet_sneakers", "feet", "Кроссовки", "Обычный"),
+    ("skin_feet_sapogi", "feet", "Сапоги", "Редкий"),
+    ("skin_feet_bercy", "feet", "Берцы", "Эпический"),
+    ("skin_feet_golden", "feet", "Золотые сапоги", "Легендарный"),
+)
+
+
+def _seed_skins(db: Session) -> None:
+    """Скины как обычные предметы категории «Скины».
+
+    Слот проставляется и существующим строкам: колонка skin_slot добавляется
+    миграцией уже после того, как предметы могли быть созданы.
+    """
+    _ensure_item_category(db, "Скины", 40)
+    for code, slot, name, rarity in SKIN_DEFINITIONS:
+        item = _get_or_create_item(
+            db, code,
+            name=name,
+            icon=SKIN_SLOT_ICONS[slot],
+            category="Скины",
+            rarity=rarity,
+            can_gift=True,
+        )
+        if item.skin_slot != slot:
+            item.skin_slot = slot
+
+
 def _seed_catalog_snacks(db: Session, fragment: models.Item) -> None:
     """Add the pre-launch snack catalogue once, without refilling sold stock."""
     snack_category = _ensure_item_category(db, "Снеки", 20)
@@ -909,6 +959,7 @@ def seed(db: Session) -> None:
     )
     failure_fragment.description = ""
     failure_fragment.image_url = "/static/img/items/failure_fragment.png"
+    _seed_skins(db)
     consolation_item = _get_or_create_item(
         db, "lootbox_consolation",
         name="Утешительный ковбокс",
@@ -1002,6 +1053,14 @@ def seed(db: Session) -> None:
         "seasonal": ((2, 3), (30, 60), (8, 18), 50),
         "consolation": ((1, 2), (10, 25), (3, 7), 25),
     }
+    prize_codes = [row[0] for row in (*CATALOG_SNACKS, *CATALOG_SWEETS)]
+    prize_items = (
+        db.query(models.Item)
+        .filter(models.Item.code.in_(prize_codes))
+        .order_by(models.Item.id)
+        .all()
+    )
+
     def _migrate_chest_pool(code: str, pool: models.LootboxPool) -> None:
         if pool.opening_mode == "chest_v2":
             return
