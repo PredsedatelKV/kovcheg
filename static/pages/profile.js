@@ -912,7 +912,8 @@ function showMegaLootboxChoices(result) {
     progress.hidden = true;
     chestButton.hidden = true;
     stage.className = "lootbox-reward-stage lootbox-reward-summary";
-    if (finalized.rewards.length === 3) stage.classList.add("is-three");
+    if (finalized.rewards.length === 1) stage.classList.add("is-one");
+    else if (finalized.rewards.length === 3) stage.classList.add("is-three");
     stage.replaceChildren(...finalized.rewards.map(rewardCard));
     hint.textContent = "Все награды выбраны";
     done.hidden = false;
@@ -1136,7 +1137,8 @@ function showLootboxChest(result) {
     counter.hidden = true;
     chestButton.hidden = true;
     stage.classList.add("lootbox-reward-summary");
-    if (rewards.length === 3) stage.classList.add("is-three");
+    if (rewards.length === 1) stage.classList.add("is-one");
+    else if (rewards.length === 3) stage.classList.add("is-three");
     stage.replaceChildren(...rewards.map((reward) => {
       const card = rewardCard(reward);
       card.classList.add("is-summary-visible");

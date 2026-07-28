@@ -856,6 +856,13 @@ class AdminLootboxBody(BaseModel):
             }
             if len(identities) < 2:
                 raise ValueError("Для выбора нужны минимум два разных типа призов")
+            ordinary_identities = {
+                (entry.reward_kind, entry.item_id if entry.reward_kind == "item" else None)
+                for entry in active_entries
+                if entry.reward_kind not in {"special_pool", "super_special_pool"}
+            }
+            if len(ordinary_identities) < 2:
+                raise ValueError("Добавьте минимум два разных обычных приза для первого выбора")
         return self
 
 

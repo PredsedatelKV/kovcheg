@@ -1725,6 +1725,12 @@ function validateLootboxPayload(payload) {
     if (guaranteedCount) return "В мегаковбоксе все строки должны участвовать в выборе";
     const identities = new Set(active.map((entry) => `${entry.reward_kind}:${entry.reward_kind === "item" ? entry.item_id : ""}`));
     if (identities.size < 2) return "Добавьте минимум два разных типа призов";
+    const ordinaryIdentities = new Set(
+      active
+        .filter((entry) => !["special_pool", "super_special_pool"].includes(entry.reward_kind))
+        .map((entry) => `${entry.reward_kind}:${entry.reward_kind === "item" ? entry.item_id : ""}`)
+    );
+    if (ordinaryIdentities.size < 2) return "Добавьте минимум два разных обычных приза для первого выбора";
     if (!Number.isInteger(payload.guaranteed_slots) || payload.guaranteed_slots < 1 || payload.guaranteed_slots > 10) return "Количество выборов должно быть от 1 до 10";
   }
   if (payload.min_user_level != null && payload.max_user_level != null && payload.max_user_level < payload.min_user_level) return "Максимальный уровень меньше минимального";
@@ -1792,7 +1798,7 @@ function openLootboxEditor(body, existing = null) {
           <div class="admin-form-grid">
             ${field("Количество этапов выбора", `<input class="input" id="lb-choice-slots" type="number" min="1" max="10" value="${box.guaranteed_slots || 1}"/>`)}
           </div>
-          <div class="admin-sub">На каждом этапе игрок увидит два случайных разных приза из списка ниже и заберёт один. Одинаковые варианты вроде «Ковбаксы — Ковбаксы» в одной паре не появятся.</div>
+          <div class="admin-sub">Первый этап — два разных обычных приза. На следующих этапах особая и сверхособая награды могут появиться максимум по одному разу каждая. Одинаковые варианты вроде «Ковбаксы — Ковбаксы» не появятся.</div>
         </div>` : ""}
       <div class="row gap wrap">
         <h4 style="margin:0;flex:1">Награды</h4>

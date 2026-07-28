@@ -683,6 +683,13 @@ def _validate_openable_pool(db: Session, pool: models.LootboxPool, user: models.
         }
         if len(identities) < 2:
             raise HTTPException(409, "Для Мегаковбокса нужны минимум два разных типа призов")
+        ordinary_identities = {
+            (entry.reward_kind, entry.item_id if entry.reward_kind == "item" else None)
+            for entry in random_entries
+            if entry.reward_kind not in {"special_pool", "super_special_pool"}
+        }
+        if len(ordinary_identities) < 2:
+            raise HTTPException(409, "Для первого выбора Мегаковбокса нужны два разных обычных приза")
     else:
         if not 1 <= pool.guaranteed_slots <= 10:
             raise HTTPException(409, "Количество слотов ковбокса настроено некорректно")
@@ -915,14 +922,35 @@ def _build_choice_plan(
     entries: list[models.LootboxPoolEntry],
 ) -> list[list[dict]]:
     available = [entry for entry in entries if not entry.is_guaranteed]
+    limited_kinds = {"special_pool", "super_special_pool"}
+    ordinary = [entry for entry in available if entry.reward_kind not in limited_kinds]
     plan: list[list[dict]] = []
-    for _ in range(pool.guaranteed_slots):
-        first = _weighted_pick(available)
+    used_limited_kinds: set[str] = set()
+    for stage_index in range(pool.guaranteed_slots):
+        candidates = [
+            entry for entry in available
+            if entry.reward_kind not in used_limited_kinds
+        ]
+        # The first stage is deliberately currency/XP/fragment/item only.
+        # Special pools remain rare highlights on later choices.
+        if stage_index == 0:
+            candidates = ordinary
+        first = _weighted_pick(candidates)
         first_identity = _choice_entry_identity(first)
         second_source = [
-            entry for entry in available
-            if _choice_entry_identity(entry) != first_identity
+            entry for entry in candidates
+            if (
+                _choice_entry_identity(entry) != first_identity
+                and entry.reward_kind not in used_limited_kinds
+            )
         ]
+        if first.reward_kind in limited_kinds:
+            ordinary_second = [
+                entry for entry in second_source
+                if entry.reward_kind not in limited_kinds
+            ]
+            if ordinary_second:
+                second_source = ordinary_second
         if not second_source:
             raise HTTPException(409, "Для Мегаковбокса нужны минимум два разных типа призов")
         second = _weighted_pick(second_source)
@@ -932,6 +960,9 @@ def _build_choice_plan(
             excluded.add(first_option["item_id"])
         second_option = _choice_option(db, user, second, exclude_item_ids=excluded)
         plan.append([first_option, second_option])
+        for entry in (first, second):
+            if entry.reward_kind in limited_kinds:
+                used_limited_kinds.add(entry.reward_kind)
     return plan
 
 

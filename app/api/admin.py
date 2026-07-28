@@ -1589,6 +1589,13 @@ def _validate_lootbox_entries(
         }
         if len(identities) < 2:
             raise HTTPException(400, "Для выбора нужны минимум два разных типа призов")
+        ordinary_identities = {
+            (entry.reward_kind, entry.item_id if entry.reward_kind == "item" else None)
+            for entry in optional
+            if entry.reward_kind not in {"special_pool", "super_special_pool"}
+        }
+        if len(ordinary_identities) < 2:
+            raise HTTPException(400, "Добавьте минимум два разных обычных приза для первого выбора")
         if not 1 <= guaranteed_slots <= 10:
             raise HTTPException(400, "Количество выборов должно быть от 1 до 10")
         if sum(entry.weight for entry in optional) != 100:

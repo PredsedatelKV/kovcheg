@@ -3888,6 +3888,20 @@ html.dark .lootbox-title { color:#e8f0ff; }
 .lootbox-reward-summary .lootbox-reward-card img { width:58px; height:58px; }
 .lootbox-reward-summary .lootbox-reward-card strong { font-size:12px; }
 .lootbox-reward-summary .lootbox-reward-card span { font-size:8px; }
+.lootbox-reward-summary.is-one {
+  grid-template-columns:minmax(0,1fr);
+  width:min(86vw,320px);
+  justify-items:center;
+}
+.lootbox-reward-summary.is-one .lootbox-reward-card {
+  width:100%;
+  min-height:210px;
+  padding:20px 16px;
+  gap:8px;
+}
+.lootbox-reward-summary.is-one .lootbox-reward-card img { width:118px; height:118px; }
+.lootbox-reward-summary.is-one .lootbox-reward-card strong { font-size:17px; }
+.lootbox-reward-summary.is-one .lootbox-reward-card span { font-size:10px; }
 .lootbox-reward-summary.is-three .lootbox-reward-card:nth-child(3) {
   grid-column:1 / -1;
   width:calc(50% - 5px);
