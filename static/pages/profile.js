@@ -1098,6 +1098,35 @@ function showLootboxChest(result) {
     return card;
   }
 
+  function startSpecialSpin(card) {
+    card.classList.add("is-special-spinning");
+    void card.offsetWidth;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        card.classList.add("is-visible");
+        if (typeof card.animate !== "function") {
+          card.classList.add("is-special-css-spin");
+          return;
+        }
+        try {
+          card._lootboxSpecialAnimation = card.animate([
+            { opacity:1, transform:"perspective(760px) translate3d(0,16px,0) rotate3d(.14,1,0,0deg) scale(.82)" },
+            { opacity:1, transform:"perspective(760px) translate3d(0,-5px,0) rotate3d(.14,1,0,360deg) scale(.94)", offset:.25 },
+            { opacity:1, transform:"perspective(760px) translate3d(0,2px,0) rotate3d(.14,1,0,720deg) scale(1.02)", offset:.5 },
+            { opacity:1, transform:"perspective(760px) translate3d(0,-2px,0) rotate3d(.14,1,0,1080deg) scale(1.05)", offset:.75 },
+            { opacity:1, transform:"perspective(760px) translate3d(0,0,0) rotate3d(.14,1,0,1440deg) scale(1)" },
+          ], {
+            duration:4000,
+            easing:"linear",
+            fill:"forwards",
+          });
+        } catch (_) {
+          card.classList.add("is-special-css-spin");
+        }
+      });
+    });
+  }
+
   function finishReveal() {
     if (finished) return;
     finished = true;
@@ -1141,12 +1170,8 @@ function showLootboxChest(result) {
     stage.replaceChildren(card);
     const specialFinal = index === rewards.length - 1 && reward.presentation_kind === "item";
     if (specialFinal) {
-      card.classList.add("is-special-spinning");
       playAudio(specialSound);
-      void card.offsetWidth;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => card.classList.add("is-visible"));
-      });
+      startSpecialSpin(card);
     } else {
       playAudio(bonusSounds[Math.min(index, bonusSounds.length - 1)]);
       requestAnimationFrame(() => card.classList.add("is-visible"));
@@ -1160,7 +1185,7 @@ function showLootboxChest(result) {
       if (specialFinal) card.classList.add("is-special-revealed");
       locked = false;
       chestButton.disabled = false;
-    }, specialFinal ? 4050 : (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 80 : 520));
+    }, specialFinal ? 4200 : (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 80 : 520));
   }
 
   function closeReveal() {

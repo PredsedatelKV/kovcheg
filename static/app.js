@@ -1,5 +1,5 @@
 import { renderHome } from "/static/pages/home.js?v=274";
-import { renderProfile } from "/static/pages/profile.js?v=274";
+import { renderProfile } from "/static/pages/profile.js?v=275";
 import { renderKoverna } from "/static/pages/koverna.js?v=274";
 import { renderArcade } from "/static/pages/arcade.js?v=274";
 import { renderAdmin } from "/static/pages/admin.js?v=274";

@@ -3830,15 +3830,23 @@ html.dark .lootbox-title { color:#e8f0ff; }
   border-color:#fff;
   background:linear-gradient(120deg,#fff 12%,#dce9ff 43%,#fff 68%,#eef5ff 88%);
   box-shadow:0 0 22px #fff, 0 0 70px rgba(255,255,255,.9);
-  animation:lootbox-special-spin 4s linear forwards;
-  -webkit-animation:lootbox-special-spin 4s linear forwards;
+  opacity:1;
+  animation:none;
+  -webkit-animation:none;
+  transform:perspective(760px) translate3d(0,16px,0) rotate3d(.14,1,0,0deg) scale(.82);
+  -webkit-transform:perspective(760px) translate3d(0,16px,0) rotate3d(.14,1,0,0deg) scale(.82);
   transform-origin:center center;
   transform-style:preserve-3d;
+  -webkit-transform-style:preserve-3d;
   will-change:transform,opacity;
-  backface-visibility:hidden;
-  -webkit-backface-visibility:hidden;
+  backface-visibility:visible;
+  -webkit-backface-visibility:visible;
   backdrop-filter:none;
   -webkit-backdrop-filter:none;
+}
+.lootbox-reward-card.is-special-spinning.is-special-css-spin.is-visible {
+  animation:lootbox-special-spin 4s linear forwards;
+  -webkit-animation:lootbox-special-spin 4s linear forwards;
 }
 .lootbox-reward-card.is-special-spinning:not(.is-special-revealed) > * { opacity:0; }
 .lootbox-reward-card.is-special-revealed {
@@ -3853,18 +3861,18 @@ html.dark .lootbox-title { color:#e8f0ff; }
 .lootbox-reward-card.is-special-revealed strong { color:#172033; }
 .lootbox-reward-card.is-special-revealed span { color:#36445e; }
 @keyframes lootbox-special-spin {
-  0% { opacity:1; transform:translate3d(0,16px,0) rotateX(-10deg) rotateY(0deg) scale(.82); }
-  25% { opacity:1; transform:translate3d(0,-5px,0) rotateX(8deg) rotateY(360deg) scale(.94); }
-  50% { opacity:1; transform:translate3d(0,2px,0) rotateX(-7deg) rotateY(720deg) scale(1.02); }
-  75% { opacity:1; transform:translate3d(0,-2px,0) rotateX(6deg) rotateY(1080deg) scale(1.05); }
-  100% { opacity:1; transform:translate3d(0,0,0) rotateX(0deg) rotateY(1440deg) scale(1); }
+  0% { opacity:1; transform:perspective(760px) translate3d(0,16px,0) rotate3d(.14,1,0,0deg) scale(.82); }
+  25% { opacity:1; transform:perspective(760px) translate3d(0,-5px,0) rotate3d(.14,1,0,360deg) scale(.94); }
+  50% { opacity:1; transform:perspective(760px) translate3d(0,2px,0) rotate3d(.14,1,0,720deg) scale(1.02); }
+  75% { opacity:1; transform:perspective(760px) translate3d(0,-2px,0) rotate3d(.14,1,0,1080deg) scale(1.05); }
+  100% { opacity:1; transform:perspective(760px) translate3d(0,0,0) rotate3d(.14,1,0,1440deg) scale(1); }
 }
 @-webkit-keyframes lootbox-special-spin {
-  0% { opacity:1; -webkit-transform:translate3d(0,16px,0) rotateX(-10deg) rotateY(0deg) scale(.82); }
-  25% { opacity:1; -webkit-transform:translate3d(0,-5px,0) rotateX(8deg) rotateY(360deg) scale(.94); }
-  50% { opacity:1; -webkit-transform:translate3d(0,2px,0) rotateX(-7deg) rotateY(720deg) scale(1.02); }
-  75% { opacity:1; -webkit-transform:translate3d(0,-2px,0) rotateX(6deg) rotateY(1080deg) scale(1.05); }
-  100% { opacity:1; -webkit-transform:translate3d(0,0,0) rotateX(0deg) rotateY(1440deg) scale(1); }
+  0% { opacity:1; -webkit-transform:perspective(760px) translate3d(0,16px,0) rotate3d(.14,1,0,0deg) scale(.82); }
+  25% { opacity:1; -webkit-transform:perspective(760px) translate3d(0,-5px,0) rotate3d(.14,1,0,360deg) scale(.94); }
+  50% { opacity:1; -webkit-transform:perspective(760px) translate3d(0,2px,0) rotate3d(.14,1,0,720deg) scale(1.02); }
+  75% { opacity:1; -webkit-transform:perspective(760px) translate3d(0,-2px,0) rotate3d(.14,1,0,1080deg) scale(1.05); }
+  100% { opacity:1; -webkit-transform:perspective(760px) translate3d(0,0,0) rotate3d(.14,1,0,1440deg) scale(1); }
 }
 .lootbox-reward-stage.lootbox-reward-summary {
   display:grid;
