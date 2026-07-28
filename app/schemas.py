@@ -849,13 +849,13 @@ class AdminLootboxBody(BaseModel):
             raise ValueError(f"Сумма шансов обычных наград должна быть ровно 100% (сейчас {random_total}%)")
         if sum(1 for entry in active_entries if entry.is_guaranteed) > 10:
             raise ValueError("Гарантированных наград не может быть больше 10")
-        # guaranteed_slots/allow_duplicates control pairs in the Mega box only.
-        # A regular chest reveals every guaranteed row and therefore must not
-        # be rejected when the admin leaves fewer than three guaranteed rows.
-        if self.opening_mode == "choice_v2" and not self.allow_duplicates:
-            guaranteed_count = sum(1 for entry in active_entries if entry.is_guaranteed)
-            if guaranteed_count and self.guaranteed_slots > guaranteed_count:
-                raise ValueError("Без дубликатов число гарантированных слотов превышает число гарантированных наград")
+        if self.opening_mode == "choice_v2":
+            identities = {
+                (entry.reward_kind, entry.item_id if entry.reward_kind == "item" else None)
+                for entry in active_entries
+            }
+            if len(identities) < 2:
+                raise ValueError("Для выбора нужны минимум два разных типа призов")
         return self
 
 

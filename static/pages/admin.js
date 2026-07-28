@@ -1598,28 +1598,35 @@ function lootboxDateValue(value) {
   return local.toISOString().slice(0, 16);
 }
 
-function lootboxEntryTemplate(entry = {}) {
+function lootboxEntryTemplate(entry = {}, options = {}) {
+  const isChoice = Boolean(options.isChoice);
   const kind = entry.reward_kind || "item";
   const rewardLabels = {
-    item: "Фрагмент или скин",
+    item: isChoice ? "Предмет" : "Фрагмент или скин",
     xp: "XP",
     kovbucks: "Ковбаксы",
     special_pool: "Особая награда",
     super_special_pool: "Сверхособая награда",
   };
   const itemChoices = META.items
-    .filter((item) => item.code === "box_fragment" || item.skin_slot)
-    .map((item) => `<option value="${item.id}" ${Number(entry.item_id) === item.id ? "selected" : ""}>${item.code === "box_fragment" ? "Фрагменты ковбокса" : `Скин: ${escapeHtml(item.name)}`}</option>`)
+    .filter((item) => (
+      item.code === "box_fragment"
+      || item.skin_slot
+      || (isChoice && !item.lootbox_pool_code && item.code !== "failure_fragment")
+    ))
+    .map((item) => `<option value="${item.id}" ${Number(entry.item_id) === item.id ? "selected" : ""}>${item.code === "box_fragment" ? "Фрагменты ковбокса" : escapeHtml(item.name)}</option>`)
     .join("");
   return `
     <div class="admin-card lootbox-entry" style="margin:8px 0;padding:10px">
       <div class="admin-form-grid">
-        ${field("Тип", `<select class="input lb-entry-kind">${Object.entries(rewardLabels).map(([value, label]) => `<option value="${value}" ${kind === value ? "selected" : ""}>${label}</option>`).join("")}</select>`)}
-        ${field("Фрагмент или скин", `<select class="input lb-entry-item"><option value="">—</option>${itemChoices}</select>`)}
+        ${field("Приз", `<select class="input lb-entry-kind">${Object.entries(rewardLabels).map(([value, label]) => `<option value="${value}" ${kind === value ? "selected" : ""}>${label}</option>`).join("")}</select>`)}
+        ${field(isChoice ? "Какой предмет" : "Фрагмент или скин", `<select class="input lb-entry-item"><option value="">—</option>${itemChoices}</select>`)}
         ${field("Количество от", `<input class="input lb-entry-min" type="number" min="1" max="1000000" value="${entry.amount_min || 1}"/>`)}
         ${field("Количество до", `<input class="input lb-entry-max" type="number" min="1" max="1000000" value="${entry.amount_max || 1}"/>`)}
-        ${field("Гарантированно", `<select class="input lb-entry-guaranteed"><option value="false" ${!entry.is_guaranteed ? "selected" : ""}>Нет</option><option value="true" ${entry.is_guaranteed ? "selected" : ""}>Да</option></select>`)}
-        ${field("Шанс, %", `<input class="input lb-entry-weight" type="number" min="1" max="100" value="${entry.weight || 10}"/>`)}
+        ${isChoice
+          ? `<input class="lb-entry-guaranteed" type="hidden" value="false"/>`
+          : field("Гарантированно", `<select class="input lb-entry-guaranteed"><option value="false" ${!entry.is_guaranteed ? "selected" : ""}>Нет</option><option value="true" ${entry.is_guaranteed ? "selected" : ""}>Да</option></select>`)}
+        ${field(isChoice ? "Вероятность появления, %" : "Шанс, %", `<input class="input lb-entry-weight" type="number" min="1" max="100" value="${entry.weight || 10}"/>`)}
       </div>
       <input class="lb-entry-order" type="hidden" value="${entry.sort_order || 0}"/>
       <input class="lb-entry-active" type="hidden" value="true"/>
@@ -1681,8 +1688,11 @@ function refreshLootboxProbabilities(overlay) {
   });
   const totalEl = overlay.querySelector("#lb-weight-total");
   const isChest = overlay.querySelector("#lb-opening-mode")?.value === "chest_v2";
+  const isChoice = overlay.querySelector("#lb-opening-mode")?.value === "choice_v2";
   if (totalEl) {
-    totalEl.textContent = isChest
+    totalEl.textContent = isChoice
+      ? (total === 100 ? "Общая вероятность: 100% — готово." : `Общая вероятность должна составлять 100% (сейчас ${total}%).`)
+      : isChest
       ? `Сумма шансов случайных наград: ${total}% из 100%.`
       : (total === 100 ? "Сумма шансов: 100% — готово." : `Сумма шансов: ${total}% из 100%.`);
     totalEl.style.color = total > 100 ? "var(--danger)" : "";
@@ -1713,9 +1723,9 @@ function validateLootboxPayload(payload) {
   }
   if (payload.opening_mode === "choice_v2") {
     if (guaranteedCount) return "В мегаковбоксе все строки должны участвовать в выборе";
-    if (active.length < 2) return "Для мегаковбокса нужны минимум две разные награды";
+    const identities = new Set(active.map((entry) => `${entry.reward_kind}:${entry.reward_kind === "item" ? entry.item_id : ""}`));
+    if (identities.size < 2) return "Добавьте минимум два разных типа призов";
     if (!Number.isInteger(payload.guaranteed_slots) || payload.guaranteed_slots < 1 || payload.guaranteed_slots > 10) return "Количество выборов должно быть от 1 до 10";
-    if (!payload.allow_duplicates && active.length < payload.guaranteed_slots * 2) return "Для выборов без повторов нужно по две разные награды на каждый выбор";
   }
   if (payload.min_user_level != null && payload.max_user_level != null && payload.max_user_level < payload.min_user_level) return "Максимальный уровень меньше минимального";
   if (payload.starts_at && payload.ends_at && new Date(payload.ends_at) <= new Date(payload.starts_at)) return "Дата окончания должна быть позже начала";
@@ -1734,6 +1744,7 @@ function openLootboxEditor(body, existing = null) {
     bonus_item_chance: 0, special_item_chance: 0, super_special_item_chance: 0,
     entries: [],
   };
+  const isChoice = box.opening_mode === "choice_v2";
   const editorEntries = [...(box.entries || [])];
   // Pools saved by the previous editor are shown as ordinary reward rows and
   // become part of the simple table after the next save.
@@ -1768,7 +1779,7 @@ function openLootboxEditor(body, existing = null) {
         ${field("Начало", `<input class="input" id="lb-start" type="datetime-local" value="${lootboxDateValue(box.starts_at)}"/>`)}
         ${field("Окончание", `<input class="input" id="lb-end" type="datetime-local" value="${lootboxDateValue(box.ends_at)}"/>`)}
         ${field("Лимит открытий в сутки (0 — нет)", `<input class="input" id="lb-daily-limit" type="number" min="0" max="1000" value="${box.daily_open_limit || 0}"/>`)}
-        ${field(box.opening_mode === "choice_v2" ? "Количество этапов выбора" : "Гарантированных слотов", `<input class="input" id="lb-slots" type="number" min="1" max="10" value="${box.opening_mode === "chest_v2" ? 3 : (box.guaranteed_slots || 1)}" ${box.opening_mode === "chest_v2" ? "disabled" : ""}/>`)}
+        ${isChoice ? "" : field("Гарантированных слотов", `<input class="input" id="lb-slots" type="number" min="1" max="10" value="3" disabled/>`)}
         ${field("Разрешить дубликаты", `<select class="input" id="lb-duplicates" ${box.opening_mode === "chest_v2" ? "disabled" : ""}><option value="true" ${box.allow_duplicates ? "selected" : ""}>Да</option><option value="false" ${!box.allow_duplicates ? "selected" : ""}>Нет</option></select>`)}
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin:10px 0">
@@ -1776,10 +1787,21 @@ function openLootboxEditor(body, existing = null) {
         <img id="lb-open-image-preview" src="${escapeHtml(box.open_image_url || box.image_url)}" alt="Открытый" title="Открытый" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--border);border-radius:12px" onerror="this.src='/static/img/ui/box.svg'"/>
         <div class="admin-sub">Настройте только награды и их количество.</div>
       </div>
-      <div class="row gap wrap"><h4 style="margin:0;flex:1">Награды</h4><button class="btn btn-sm btn-secondary" id="lb-add-entry" type="button">+ Награда</button></div>
+      ${isChoice ? `
+        <div class="admin-card" style="margin:10px 0;padding:12px">
+          <div class="admin-form-grid">
+            ${field("Количество этапов выбора", `<input class="input" id="lb-choice-slots" type="number" min="1" max="10" value="${box.guaranteed_slots || 1}"/>`)}
+          </div>
+          <div class="admin-sub">На каждом этапе игрок увидит два случайных разных приза из списка ниже и заберёт один. Одинаковые варианты вроде «Ковбаксы — Ковбаксы» в одной паре не появятся.</div>
+        </div>` : ""}
+      <div class="row gap wrap">
+        <h4 style="margin:0;flex:1">Награды</h4>
+        ${isChoice ? `<button class="btn btn-sm btn-secondary" id="lb-equalize" type="button">Распределить поровну</button>` : ""}
+        <button class="btn btn-sm btn-secondary" id="lb-add-entry" type="button">+ Награда</button>
+      </div>
       <div id="lb-entry-count" class="admin-sub"></div>
       <div id="lb-weight-total" class="admin-sub"></div>
-      <div id="lb-entry-list">${editorEntries.map(lootboxEntryTemplate).join("")}</div>
+      <div id="lb-entry-list">${editorEntries.map((entry) => lootboxEntryTemplate(entry, { isChoice })).join("")}</div>
       <div class="row gap" style="margin-top:12px">
         <button class="btn btn-sm" id="lb-save" type="button">Сохранить</button>
         <button class="btn btn-sm btn-secondary" id="lb-cancel" type="button">Отмена</button>
@@ -1805,7 +1827,6 @@ function openLootboxEditor(body, existing = null) {
   });
 
   function bindEntryButtons() {
-    const isChoice = box.opening_mode === "choice_v2";
     overlay.querySelectorAll(".lb-entry-guaranteed").forEach((select) => {
       if (isChoice) select.value = "false";
       select.disabled = isChoice;
@@ -1816,9 +1837,20 @@ function openLootboxEditor(body, existing = null) {
   }
   bindEntryButtons();
   overlay.querySelector("#lb-add-entry").addEventListener("click", () => {
-    overlay.querySelector("#lb-entry-list").insertAdjacentHTML("beforeend", lootboxEntryTemplate());
+    overlay.querySelector("#lb-entry-list").insertAdjacentHTML("beforeend", lootboxEntryTemplate({}, { isChoice }));
     dirty = true;
     bindEntryButtons();
+    refreshLootboxProbabilities(overlay);
+  });
+  overlay.querySelector("#lb-equalize")?.addEventListener("click", () => {
+    const rows = Array.from(overlay.querySelectorAll(".lootbox-entry"));
+    if (!rows.length) return window.kov.toast("Сначала добавьте награды");
+    const base = Math.floor(100 / rows.length);
+    let remainder = 100 - base * rows.length;
+    rows.forEach((row) => {
+      row.querySelector(".lb-entry-weight").value = String(base + (remainder-- > 0 ? 1 : 0));
+    });
+    dirty = true;
     refreshLootboxProbabilities(overlay);
   });
   refreshLootboxProbabilities(overlay);
@@ -1850,8 +1882,8 @@ function openLootboxEditor(body, existing = null) {
       starts_at: overlay.querySelector("#lb-start").value ? new Date(overlay.querySelector("#lb-start").value).toISOString() : null,
       ends_at: overlay.querySelector("#lb-end").value ? new Date(overlay.querySelector("#lb-end").value).toISOString() : null,
       daily_open_limit: Number(overlay.querySelector("#lb-daily-limit").value) || 0,
-      guaranteed_slots: box.opening_mode === "chest_v2" ? 3 : Number(overlay.querySelector("#lb-slots").value),
-      allow_duplicates: box.opening_mode === "chest_v2" ? false : overlay.querySelector("#lb-duplicates").value === "true",
+      guaranteed_slots: isChoice ? Number(overlay.querySelector("#lb-choice-slots").value) : 3,
+      allow_duplicates: isChoice,
       entries: Array.from(overlay.querySelectorAll(".lootbox-entry")).map(collectLootboxEntry),
     };
     const error = validateLootboxPayload(payload);

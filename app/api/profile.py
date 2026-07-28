@@ -677,10 +677,12 @@ def _validate_openable_pool(db: Session, pool: models.LootboxPool, user: models.
             raise HTTPException(409, "Количество слотов ковбокса настроено некорректно")
         if any(entry.is_guaranteed for entry in entries):
             raise HTTPException(409, "В мегаковбоксе все награды должны участвовать в выборе")
-        if len(random_entries) < 2:
-            raise HTTPException(409, "Для мегаковбокса нужны минимум две разные награды")
-        if not pool.allow_duplicates and len(random_entries) < pool.guaranteed_slots * 2:
-            raise HTTPException(409, "Для выбора без повторов недостаточно разных наград")
+        identities = {
+            (entry.reward_kind, entry.item_id if entry.reward_kind == "item" else None)
+            for entry in random_entries
+        }
+        if len(identities) < 2:
+            raise HTTPException(409, "Для Мегаковбокса нужны минимум два разных типа призов")
     else:
         if not 1 <= pool.guaranteed_slots <= 10:
             raise HTTPException(409, "Количество слотов ковбокса настроено некорректно")
@@ -898,6 +900,14 @@ def _choice_option(
     }
 
 
+def _choice_entry_identity(entry: models.LootboxPoolEntry) -> tuple[str, int | None]:
+    """Identity used to keep both cards of a Mega choice meaningfully different."""
+    return (
+        entry.reward_kind,
+        entry.item_id if entry.reward_kind == "item" else None,
+    )
+
+
 def _build_choice_plan(
     db: Session,
     user: models.User,
@@ -906,26 +916,22 @@ def _build_choice_plan(
 ) -> list[list[dict]]:
     available = [entry for entry in entries if not entry.is_guaranteed]
     plan: list[list[dict]] = []
-    source = list(available)
-    used_item_ids: set[int] = set()
     for _ in range(pool.guaranteed_slots):
-        first = _weighted_pick(source)
-        second_source = [entry for entry in source if entry.id != first.id]
+        first = _weighted_pick(available)
+        first_identity = _choice_entry_identity(first)
+        second_source = [
+            entry for entry in available
+            if _choice_entry_identity(entry) != first_identity
+        ]
         if not second_source:
-            second_source = [entry for entry in available if entry.id != first.id]
+            raise HTTPException(409, "Для Мегаковбокса нужны минимум два разных типа призов")
         second = _weighted_pick(second_source)
-        excluded = used_item_ids if not pool.allow_duplicates else set()
-        first_option = _choice_option(db, user, first, exclude_item_ids=excluded)
-        excluded = set(excluded)
+        first_option = _choice_option(db, user, first)
+        excluded: set[int] = set()
         if first_option.get("item_id"):
             excluded.add(first_option["item_id"])
         second_option = _choice_option(db, user, second, exclude_item_ids=excluded)
         plan.append([first_option, second_option])
-        if not pool.allow_duplicates:
-            used_item_ids.update(
-                option["item_id"] for option in (first_option, second_option) if option.get("item_id")
-            )
-            source = [entry for entry in source if entry.id not in {first.id, second.id}]
     return plan
 
 
@@ -1183,15 +1189,16 @@ def open_lootbox_for_user(
     db.flush()
 
     if selected or direct_specs:
-        specs = [
-            (
-                entry.reward_kind,
-                entry.amount_min + secrets.randbelow(entry.amount_max - entry.amount_min + 1),
-                entry.item,
-                selected_index,
-            )
-            for selected_index, entry in enumerate(selected)
-        ]
+        specs = []
+        for selected_index, entry in enumerate(selected):
+            amount = entry.amount_min + secrets.randbelow(entry.amount_max - entry.amount_min + 1)
+            kind = entry.reward_kind
+            reward_item = entry.item
+            if kind == "special_pool":
+                kind, reward_item = "item", _fallback_shop_item(db, user, tier="special")
+            elif kind == "super_special_pool":
+                kind, reward_item = "item", _fallback_shop_item(db, user, tier="super_special")
+            specs.append((kind, amount, reward_item, selected_index))
         specs.extend(direct_specs)
         _grant_reward_specs(db, user, pool, opening, specs)
     db.commit()

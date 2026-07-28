@@ -1583,12 +1583,14 @@ def _validate_lootbox_entries(
     if opening_mode == "choice_v2":
         if guaranteed:
             raise HTTPException(400, "В мегаковбоксе все варианты должны участвовать в выборе")
-        if len(optional) < 2:
-            raise HTTPException(400, "Для выбора нужны минимум две разные награды")
+        identities = {
+            (entry.reward_kind, entry.item_id if entry.reward_kind == "item" else None)
+            for entry in optional
+        }
+        if len(identities) < 2:
+            raise HTTPException(400, "Для выбора нужны минимум два разных типа призов")
         if not 1 <= guaranteed_slots <= 10:
             raise HTTPException(400, "Количество выборов должно быть от 1 до 10")
-        if not allow_duplicates and len(optional) < guaranteed_slots * 2:
-            raise HTTPException(400, "Для выборов без повторов нужно по две разные награды на каждый выбор")
         if sum(entry.weight for entry in optional) != 100:
             raise HTTPException(400, "Сумма шансов вариантов должна быть ровно 100%")
         return
