@@ -264,9 +264,11 @@ def _pending_login_gifts(db: Session, user: models.User) -> list[schemas.LoginGi
 @router.get("/me", response_model=schemas.ProfilePayload)
 def me(user: models.User = Depends(current_user), db: Session = Depends(get_db)) -> schemas.ProfilePayload:
     pending_gifts = _pending_login_gifts(db, user)
-    inventory = (
+    owned_items = (
         db.query(models.InventoryItem).filter(models.InventoryItem.user_id == user.id, models.InventoryItem.quantity > 0).all()
     )
+    inventory = [row for row in owned_items if not row.item.skin_slot]
+    skin_inventory = [row for row in owned_items if row.item.skin_slot]
     user_tasks = (
         db.query(models.UserTask).filter(models.UserTask.user_id == user.id, models.UserTask.status == "in_progress").all()
     )
@@ -277,6 +279,7 @@ def me(user: models.User = Depends(current_user), db: Session = Depends(get_db))
         fragment_assembly_cost=models.LOOTBOX_FRAGMENT_COST,
         failure_fragment_cost=models.FAILURE_FRAGMENT_COST,
         inventory=_inventory_to_out(inventory),
+        skin_inventory=_inventory_to_out(skin_inventory),
         user_tasks=[_user_task_to_out(ut) for ut in user_tasks],
         daily_plan=(
             schemas.TaskOut(

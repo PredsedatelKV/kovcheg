@@ -233,6 +233,7 @@ class ProfilePayload(BaseModel):
     fragment_assembly_cost: int = 10
     failure_fragment_cost: int = 10
     inventory: list[InventoryItemOut]
+    skin_inventory: list[InventoryItemOut] = Field(default_factory=list)
     user_tasks: list[UserTaskOut]
     daily_plan: TaskOut | None = None
     login_gifts: list[LoginGiftOut] = Field(default_factory=list)
@@ -314,13 +315,6 @@ class AdminItemBody(BaseModel):
     can_activate: bool = False
     lootbox_reward_tier: Literal["normal", "special", "super_special"] = "normal"
     skin_slot: Literal["head", "torso", "legs", "feet"] | None = None
-
-    @model_validator(mode="after")
-    def validate_activation_effect(self):
-        if self.can_activate and self.code not in {"exp_scroll", "scroll_of_wisdom", "failure_fragment"}:
-            raise ValueError("Для этого предмета не настроен серверный эффект активации")
-        return self
-
 
 class ItemCategoryOut(BaseModel):
     id: int

@@ -1,6 +1,7 @@
 import { get, post, iconHtml, productImg } from "/static/api.js?v=266";
 
-import { playUISound, getSettings, playManagedMedia } from "/static/pages/settings.js?v=267";
+import { playUISound, getSettings, playManagedMedia } from "/static/pages/settings.js?v=274";
+import { mountCharacterCard } from "/static/pages/character.js?v=274";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -66,6 +67,7 @@ export async function renderProfile(root) {
   _profileData = null;
   root.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
   const data = await get("/api/profile/me");
+  data.inventory = (data.inventory || []).filter((row) => !row.item?.skin_slot);
   _profileData = data;
   const user = data.user;
   const photoOrEmoji = user.photo_url
@@ -93,34 +95,37 @@ export async function renderProfile(root) {
       </div>
     </div>
 
-    <div class="card wallet-card" data-section="balance">
-      <div class="inv-row-title">
-        <h3 class="card-title">Баланс</h3>
-      </div>
-      <div class="wallet-row">
+    <div class="profile-overview-grid">
+      <div class="card wallet-card profile-overview-card" data-section="balance">
+        <div class="inv-row-title profile-compact-title">
+          <h3 class="card-title">Баланс</h3>
+          <div class="wallet-actions">
+            <button class="btn btn-transfer-compact" data-action="transfer-history" aria-label="История переводов">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+            </button>
+            <button class="btn btn-transfer-compact" data-action="transfer" aria-label="Перевести">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="19" x2="12" y2="5"/>
+                <polyline points="5 12 12 5 19 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
         <div class="wallet-balance-big">
           <img src="/static/img/ui/kovbaks.png" alt="" class="wallet-coin"/>
           <div class="wallet-balance-num">
             <div class="wallet-balance-value"><strong>${user.balance}</strong></div>
           </div>
         </div>
-        <button class="btn btn-transfer-compact" data-action="transfer-history">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <polyline points="12 6 12 12 16 14"/>
-          </svg>
-        </button>
-        <button class="btn btn-transfer-compact" data-action="transfer">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="19" x2="12" y2="5"/>
-            <polyline points="5 12 12 5 19 12"/>
-          </svg>
-        </button>
+        <div class="wallet-xp-row">
+          <img src="/static/img/ui/xp.png" alt="" class="wallet-xp-icon"/>
+          <div class="wallet-xp-text wallet-level-value"><strong>${data.bp_level || 0}</strong></div>
+        </div>
       </div>
-      <div class="wallet-xp-row">
-        <img src="/static/img/ui/xp.png" alt="" class="wallet-xp-icon"/>
-        <div class="wallet-xp-text">Пропуск: ур. ${data.bp_level || 0} · ${user.xp} XP</div>
-      </div>
+      <div id="character-card" class="character-card-mount"></div>
     </div>
 
     <div class="card chat-card">
@@ -169,6 +174,10 @@ export async function renderProfile(root) {
     </div>
   `;
 
+  mountCharacterCard(root, {
+    onGift: (row) => openGiftDialog(row.item, row.quantity),
+    onSell: (row) => openSellDialog(row.item, row.quantity),
+  });
   loadChat(root);
   loadOnlineAvatars(root);
 
@@ -421,6 +430,7 @@ async function _updateSections(sectionNames) {
   if (!root) return;
   try {
     var data = await get("/api/profile/me");
+    data.inventory = (data.inventory || []).filter(function(row) { return !row.item || !row.item.skin_slot; });
     _profileData = data;
     var user = data.user;
     if (window.kov.me) Object.assign(window.kov.me, user);
@@ -428,8 +438,8 @@ async function _updateSections(sectionNames) {
     if (sectionNames.indexOf("balance") !== -1) {
       var el = root.querySelector('[data-section="balance"] .wallet-balance-value');
       if (el) el.innerHTML = "<strong>" + user.balance + "</strong>";
-      var xpEl = root.querySelector('[data-section="balance"] .wallet-xp-text');
-      if (xpEl) xpEl.textContent = "Пропуск: ур. " + (data.bp_level ?? 0) + " · " + user.xp + " XP";
+      var xpEl = root.querySelector('[data-section="balance"] .wallet-level-value strong');
+      if (xpEl) xpEl.textContent = String(data.bp_level ?? 0);
     }
 
     if (sectionNames.indexOf("inventory") !== -1) {
@@ -441,6 +451,13 @@ async function _updateSections(sectionNames) {
           : '<div class="inv-grid">' + data.inventory.slice(0, 8).map(invCell).join("") + "</div>";
         section.innerHTML = '<div class="inv-row-title"><h3 class="card-title">Инвентарь</h3>' + seeAll + "</div>" + grid;
       }
+    }
+
+    if (sectionNames.indexOf("character") !== -1) {
+      mountCharacterCard(root, {
+        onGift: (row) => openGiftDialog(row.item, row.quantity),
+        onSell: (row) => openSellDialog(row.item, row.quantity),
+      });
     }
 
     if (sectionNames.indexOf("tasks") !== -1) {
@@ -555,7 +572,7 @@ function openItemActionsDialog(row, options = {}) {
         window.kov.toast(`✨ «${item.name}» активирован`);
       }
       window.closeModal();
-      _updateSections(["inventory", "balance"]);
+      _updateSections(["inventory", "balance", "character"]);
     } catch (err) {
       button.disabled = false;
       window.kov.toast(err.message);
@@ -574,7 +591,7 @@ function openItemActionsDialog(row, options = {}) {
         request_id: openRequestId,
       });
       window.closeModal();
-      _updateSections(["inventory", "balance"]);
+      _updateSections(["inventory", "balance", "character"]);
       try { sessionStorage.setItem("kovcheg.pendingLootboxReveal", JSON.stringify(result)); } catch (_) {}
       showLootboxExperience(result);
     } catch (err) {
@@ -742,7 +759,7 @@ async function openGiftDialog(item, maxQty) {
     try {
       await post("/api/profile/inventory/gift", { recipient, item_id: item.id, quantity });
       window.closeModal();
-      _updateSections(["inventory", "balance"]);
+      _updateSections(["inventory", "balance", "character"]);
       window.kov.toast(`🎁 Подарено: «${item.name}» ×${quantity}`);
     } catch (err) {
       button.disabled = false;
@@ -775,7 +792,7 @@ async function openSellDialog(item, maxQty) {
     try {
       await post("/api/market/list", { item_id: item.id, quantity, price });
       window.closeModal();
-      _updateSections(["inventory", "balance"]);
+      _updateSections(["inventory", "balance", "character"]);
       window.kov.toast(`🏷️ Выставлено: «${item.name}» ×${quantity} за ${price} K`);
     } catch (err) {
       button.disabled = false;
@@ -1068,6 +1085,8 @@ function showLootboxChest(result) {
   function rewardCard(reward) {
     const card = document.createElement("article");
     card.className = `lootbox-reward-card reward-${reward.presentation_kind || "item"}`;
+    const tier = reward.item?.lootbox_reward_tier;
+    if (tier === "special" || tier === "super_special") card.classList.add(`reward-tier-${tier}`);
     const image = document.createElement("img");
     image.src = reward.icon || "/static/img/ui/box.svg";
     image.alt = "";
@@ -1126,7 +1145,7 @@ function showLootboxChest(result) {
       playAudio(specialSound);
       void card.offsetWidth;
       requestAnimationFrame(() => {
-        card.classList.add("is-visible");
+        requestAnimationFrame(() => card.classList.add("is-visible"));
       });
     } else {
       playAudio(bonusSounds[Math.min(index, bonusSounds.length - 1)]);

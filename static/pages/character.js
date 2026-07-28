@@ -11,7 +11,7 @@
 //   торс    (4,8)  8×12
 //   ноги    (4,20) 8×12
 import { get, post } from "/static/api.js?v=270";
-import { playUISound } from "/static/pages/settings.js?v=270";
+import { playUISound } from "/static/pages/settings.js?v=274";
 
 const escapeHtml = (s = "") =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -219,8 +219,8 @@ function rarityClass(rarity) {
   return `rr-${String(rarity || "Обычный")}`;
 }
 
-/** Примерочная: персонаж слева, скины по слотам справа. */
-export async function openWardrobe() {
+/** Примерочная: персонаж и принадлежащие игроку вещи по слотам. */
+export async function openWardrobe(options = {}) {
   let profile;
   try {
     profile = await get("/api/profile/me", { force: true });
@@ -241,7 +241,7 @@ export async function openWardrobe() {
   const figureEl = modal.querySelector("#wardrobe-figure");
   const slotsEl = modal.querySelector("#wardrobe-slots");
   let loadout = profile.skin_loadout || {};
-  let inventory = profile.inventory || [];
+  let inventory = profile.skin_inventory || (profile.inventory || []).filter((row) => row.item?.skin_slot);
 
   function ownedFor(slot) {
     return inventory.filter((row) => row.item && row.item.skin_slot === slot && row.quantity > 0);
@@ -256,12 +256,18 @@ export async function openWardrobe() {
             .map((row) => {
               const active = loadout[slot] === row.item.code;
               return `
-                <button class="wardrobe-skin ${rarityClass(row.item.rarity)}${active ? " is-on" : ""}"
-                        type="button" data-slot="${slot}" data-item-id="${row.item.id}"
-                        data-active="${active ? "1" : "0"}" title="${escapeHtml(row.item.name)}">
-                  ${skinPreviewSVG(row.item.code)}
-                  <span class="wardrobe-skin-name">${escapeHtml(row.item.name)}</span>
-                </button>`;
+                <div class="wardrobe-skin-card">
+                  <button class="wardrobe-skin ${rarityClass(row.item.rarity)}${active ? " is-on" : ""}"
+                          type="button" data-slot="${slot}" data-item-id="${row.item.id}"
+                          data-active="${active ? "1" : "0"}" title="${escapeHtml(row.item.name)}">
+                    ${skinPreviewSVG(row.item.code)}
+                    <span class="wardrobe-skin-name">${escapeHtml(row.item.name)}</span>
+                  </button>
+                  <div class="wardrobe-skin-actions">
+                    <button type="button" class="wardrobe-item-action" data-skin-action="gift" data-item-id="${row.item.id}">Подарить</button>
+                    <button type="button" class="wardrobe-item-action" data-skin-action="sell" data-item-id="${row.item.id}">Продать</button>
+                  </div>
+                </div>`;
             })
             .join("")
         : `<div class="wardrobe-empty">Скинов пока нет</div>`;
@@ -284,7 +290,7 @@ export async function openWardrobe() {
         ? await post("/api/profile/skins/unequip", { slot })
         : await post("/api/profile/skins/equip", { slot, item_id: Number(button.dataset.itemId) });
       loadout = fresh.skin_loadout || {};
-      inventory = fresh.inventory || inventory;
+      inventory = fresh.skin_inventory || inventory;
       playUISound("click");
       draw();
       window.kov.emit && window.kov.emit("skins:update", { loadout });
@@ -295,6 +301,16 @@ export async function openWardrobe() {
   }
 
   slotsEl.addEventListener("click", (event) => {
+    const action = event.target.closest(".wardrobe-item-action");
+    if (action) {
+      const row = inventory.find((entry) => entry.item.id === Number(action.dataset.itemId));
+      const callback = action.dataset.skinAction === "gift" ? options.onGift : options.onSell;
+      if (row && typeof callback === "function") {
+        window.closeModal();
+        setTimeout(() => callback(row), 80);
+      }
+      return;
+    }
     const button = event.target.closest(".wardrobe-skin");
     if (button) apply(button);
   });
@@ -303,8 +319,8 @@ export async function openWardrobe() {
   return modal;
 }
 
-/** Карточка персонажа на Главной. */
-export async function mountCharacterCard(root) {
+/** Компактная карточка персонажа в Профиле. */
+export async function mountCharacterCard(root, options = {}) {
   const mount = root.querySelector("#character-card");
   if (!mount) return;
 
@@ -320,14 +336,13 @@ export async function mountCharacterCard(root) {
     <div class="card character-card" role="button" tabindex="0">
       <div class="character-figure">${renderCharacterSVG(loadout)}</div>
       <div class="character-body">
-        <div class="character-title">Твой персонаж</div>
-        <div class="character-sub">${worn ? `Надето ${worn} из 4` : "Пока без снаряжения"}</div>
-        <span class="character-cta">Примерочная →</span>
+        <div class="character-title">Персонаж</div>
+        <div class="character-sub">${worn ? `Надето ${worn} из 4` : "Без скинов"}</div>
       </div>
     </div>`;
 
   const card = mount.querySelector(".character-card");
-  const open = () => { playUISound("click"); openWardrobe(); };
+  const open = () => { playUISound("click"); openWardrobe(options); };
   card.addEventListener("click", open);
   card.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -338,13 +353,14 @@ export async function mountCharacterCard(root) {
 
   // Комплект мог смениться в примерочной — перерисовываем фигуру на месте.
   if (window.kov && window.kov.on) {
-    window.kov.on("skins:update", (data) => {
+    if (typeof mount._skinUnsubscribe === "function") mount._skinUnsubscribe();
+    mount._skinUnsubscribe = window.kov.on("skins:update", (data) => {
       const figure = mount.querySelector(".character-figure");
       if (!figure || !data) return;
       figure.innerHTML = renderCharacterSVG(data.loadout || {});
       const sub = mount.querySelector(".character-sub");
       const count = SKIN_SLOTS.filter((slot) => (data.loadout || {})[slot]).length;
-      if (sub) sub.textContent = count ? `Надето ${count} из 4` : "Пока без снаряжения";
+      if (sub) sub.textContent = count ? `Надето ${count} из 4` : "Без скинов";
     });
   }
 }

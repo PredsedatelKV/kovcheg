@@ -15,14 +15,16 @@ const DEFAULT_SETTINGS = {
   audioSettingsVersion: 2,
 };
 
-let audio = null;
-let audioCtx = null;
+let audio = window.__kovchegBackgroundAudio || null;
+let audioCtx = window.__kovchegAudioContext || null;
 let audioUnlockInstalled = false;
+let settingsInitialized = false;
 const managedMedia = new WeakMap();
 
 function getAudioCtx() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    window.__kovchegAudioContext = audioCtx;
   }
   return audioCtx;
 }
@@ -33,7 +35,7 @@ export function setManagedMediaVolume(media, volume) {
   const value = Math.max(0, Math.min(1, Number(volume) || 0));
   try {
     const ctx = getAudioCtx();
-    let managed = managedMedia.get(media);
+    let managed = managedMedia.get(media) || media.__kovchegManagedMedia;
     if (!managed) {
       const source = ctx.createMediaElementSource(media);
       const gain = ctx.createGain();
@@ -41,6 +43,7 @@ export function setManagedMediaVolume(media, volume) {
       gain.connect(ctx.destination);
       managed = { gain };
       managedMedia.set(media, managed);
+      media.__kovchegManagedMedia = managed;
     }
     managed.gain.gain.setValueAtTime(value, ctx.currentTime);
     media.volume = 1;
@@ -139,8 +142,8 @@ const TRACKS = [
 function stopMusic() {
   if (audio) {
     audio.pause();
-    audio.src = "";
-    audio = null;
+    audio.removeAttribute("src");
+    try { audio.load(); } catch (_) {}
   }
   // Clean up old resume listeners to prevent multiple tracks
   document.removeEventListener("pointerdown", resumePlay);
@@ -155,12 +158,16 @@ async function resumePlay() {
 }
 
 function initAudio(src, loop, volume) {
-  stopMusic();
-  const a = new Audio();
-  a.src = src;
+  if (!audio) {
+    audio = new Audio();
+    window.__kovchegBackgroundAudio = audio;
+  }
+  const a = audio;
+  a.pause();
+  if (a.src !== new URL(src, window.location.href).href) a.src = src;
   a.loop = loop;
   a.preload = "auto";
-  audio = a;
+  setManagedMediaVolume(a, volume);
   playManagedMedia(a, volume, false).then((started) => {
     if (started) return;
     // Autoplay blocked — wait for user gesture
@@ -337,13 +344,22 @@ function applyTheme(dark) {
 export function initSettings() {
   const s = getSettings();
   applyTheme(s.darkMode);
+  if (settingsInitialized) {
+    if (audio) setManagedMediaVolume(audio, s.musicVolume);
+    return;
+  }
+  settingsInitialized = true;
+  // На каждом новом входе музыка включается заново. Громкость и выбранная
+  // дорожка сохраняются, но состояние «пауза» между запусками не переносится.
+  s.musicPaused = false;
+  if (!s.customTrackUrl && !s.musicTrack) s.musicTrack = "golden-deck";
+  saveSettings(s);
   if (!audioUnlockInstalled) {
     audioUnlockInstalled = true;
     const unlock = () => { resumeManagedAudio(); };
     document.addEventListener("pointerdown", unlock, { once: true, capture: true, passive: true });
     document.addEventListener("touchstart", unlock, { once: true, capture: true, passive: true });
   }
-  if (s.musicPaused) return;
   if (s.customTrackUrl) {
     playCustomMusic(s.customTrackUrl, s.musicVolume);
   } else if (s.musicTrack) {
@@ -546,6 +562,10 @@ export function openSettings() {
   }
   // Достаточно одного слушателя "input"; "change" дублировал бы _setVolume и лишние saveSettings.
   volSlider.addEventListener("input", function() {
+    _setVolume(Number(this.value) / 100);
+  });
+  // Некоторые версии iOS WebView обновляют range только событием change.
+  volSlider.addEventListener("change", function() {
     _setVolume(Number(this.value) / 100);
   });
 

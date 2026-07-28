@@ -1033,6 +1033,7 @@ function readItemForm(card, fallback = {}) {
     })(),
     category: get("category") || "Ресурсы",
     lootbox_reward_tier: get("lootbox_reward_tier") || "normal",
+    skin_slot: fallback.skin_slot || null,
   };
 }
 
@@ -1154,6 +1155,7 @@ async function renderItems(body) {
       can_gift: true,
       can_activate: false,
       lootbox_reward_tier: body.querySelector("#i-reward-tier").value,
+      skin_slot: null,
     };
     if (!payload.name) return window.kov.toast("Название обязательно");
     try {
@@ -1180,6 +1182,7 @@ async function renderItems(body) {
         can_gift: orig.can_gift,
         can_activate: orig.can_activate,
         lootbox_reward_tier: form.lootbox_reward_tier,
+        skin_slot: form.skin_slot,
       };
       try {
         await patch(`/api/admin/items/${id}`, payload);

@@ -184,6 +184,19 @@ body {
   object-fit: contain;
   display: block;
 }
+.page-header .hero-art.home-cube-art {
+  flex-basis: 74px;
+  width: 74px;
+  height: 74px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+.page-header .hero-art.home-cube-art .hero-img {
+  width: 74px;
+  height: 74px;
+}
 /* Cards */
 .card {
   background: var(--surface);
@@ -1392,6 +1405,9 @@ html.dark .admin-tab.active {
   padding:4%;
   object-fit:contain;
   image-rendering:auto;
+}
+.inv-cell[class*="item-lootbox_"] .img-frame-lg {
+  margin: 18px auto 0;
 }
 
 /* Subtle motion / press affordance */
@@ -3815,6 +3831,7 @@ html.dark .lootbox-title { color:#e8f0ff; }
   background:linear-gradient(120deg,#fff 12%,#dce9ff 43%,#fff 68%,#eef5ff 88%);
   box-shadow:0 0 22px #fff, 0 0 70px rgba(255,255,255,.9);
   animation:lootbox-special-spin 4s linear forwards;
+  -webkit-animation:lootbox-special-spin 4s linear forwards;
   transform-origin:center center;
   transform-style:preserve-3d;
   will-change:transform,opacity;
@@ -3828,17 +3845,26 @@ html.dark .lootbox-title { color:#e8f0ff; }
   opacity:1;
   transform:none;
   border-color:transparent;
-  background:linear-gradient(rgba(22,24,42,.9),rgba(22,24,42,.9)) padding-box,
+  background:linear-gradient(rgba(250,252,255,.96),rgba(235,242,255,.96)) padding-box,
     linear-gradient(100deg,#ff3b30,#ffcc00,#34c759,#32ade6,#af52de,#ff2d8d) border-box;
   box-shadow:0 0 42px rgba(255,255,255,.62), 0 20px 50px rgba(0,0,0,.3);
 }
 .lootbox-reward-card.is-special-revealed > * { opacity:1; transition:opacity .25s ease; }
+.lootbox-reward-card.is-special-revealed strong { color:#172033; }
+.lootbox-reward-card.is-special-revealed span { color:#36445e; }
 @keyframes lootbox-special-spin {
-  0% { opacity:1; transform:translateY(16px) rotateX(-8deg) rotateY(0deg) scale(.82); }
-  25% { opacity:1; transform:translateY(-5px) rotateX(7deg) rotateY(360deg) scale(.94); }
-  50% { opacity:1; transform:translateY(2px) rotateX(-6deg) rotateY(720deg) scale(1.02); }
-  75% { opacity:1; transform:translateY(-2px) rotateX(5deg) rotateY(1080deg) scale(1.05); }
-  100% { opacity:1; transform:translateY(0) rotateX(0deg) rotateY(1440deg) scale(1); }
+  0% { opacity:1; transform:translate3d(0,16px,0) rotateX(-10deg) rotateY(0deg) scale(.82); }
+  25% { opacity:1; transform:translate3d(0,-5px,0) rotateX(8deg) rotateY(360deg) scale(.94); }
+  50% { opacity:1; transform:translate3d(0,2px,0) rotateX(-7deg) rotateY(720deg) scale(1.02); }
+  75% { opacity:1; transform:translate3d(0,-2px,0) rotateX(6deg) rotateY(1080deg) scale(1.05); }
+  100% { opacity:1; transform:translate3d(0,0,0) rotateX(0deg) rotateY(1440deg) scale(1); }
+}
+@-webkit-keyframes lootbox-special-spin {
+  0% { opacity:1; -webkit-transform:translate3d(0,16px,0) rotateX(-10deg) rotateY(0deg) scale(.82); }
+  25% { opacity:1; -webkit-transform:translate3d(0,-5px,0) rotateX(8deg) rotateY(360deg) scale(.94); }
+  50% { opacity:1; -webkit-transform:translate3d(0,2px,0) rotateX(-7deg) rotateY(720deg) scale(1.02); }
+  75% { opacity:1; -webkit-transform:translate3d(0,-2px,0) rotateX(6deg) rotateY(1080deg) scale(1.05); }
+  100% { opacity:1; -webkit-transform:translate3d(0,0,0) rotateX(0deg) rotateY(1440deg) scale(1); }
 }
 .lootbox-reward-stage.lootbox-reward-summary {
   display:grid;
@@ -4515,6 +4541,34 @@ html.dark [role="alert"] { color: #ff8a8a; }
 
 
 /* ================= Персонаж и примерочная ================= */
+.profile-overview-grid {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  align-items:stretch;
+  gap:10px;
+  margin-bottom:14px;
+}
+.profile-overview-grid > .card,
+.profile-overview-grid .character-card { margin-bottom:0; }
+.profile-overview-card {
+  min-height:164px;
+  padding:10px;
+}
+.profile-compact-title { margin-bottom:6px; }
+.profile-compact-title .card-title { font-size:15px; }
+.wallet-actions { display:flex; align-items:center; gap:2px; }
+.profile-overview-card .btn-transfer-compact { width:28px; height:28px; }
+.profile-overview-card .wallet-balance-big { gap:7px; }
+.profile-overview-card .wallet-balance-big .wallet-coin { width:38px; height:38px; }
+.profile-overview-card .wallet-balance-value strong,
+.profile-overview-card .wallet-level-value strong { font-size:26px; font-weight:800; line-height:1; }
+.profile-overview-card .wallet-xp-row {
+  gap:7px;
+  margin-top:9px;
+  padding-top:9px;
+}
+.profile-overview-card .wallet-xp-icon { width:36px; height:36px; }
+.character-card-mount { min-width:0; }
 /* Пиксель-арт: сглаживание обязано быть выключено, иначе скин мылится. */
 .character-svg {
   image-rendering: pixelated;
@@ -4528,28 +4582,30 @@ html.dark [role="alert"] { color: #ff8a8a; }
 .character-card {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
+  gap: 8px;
+  min-height:164px;
+  height:100%;
+  padding: 10px;
   cursor: pointer;
   transition: transform .15s ease, box-shadow .2s ease;
 }
 .character-card:active { transform: scale(0.99); }
 .character-figure {
-  flex: 0 0 62px;
-  height: 108px;
+  flex: 0 0 54px;
+  height: 116px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 12px;
   background: linear-gradient(180deg, #dcefff 0%, #f4f9ff 62%, #e7f3e2 100%);
-  padding: 8px 6px;
+  padding: 7px 5px;
 }
 html.dark .character-figure {
   background: linear-gradient(180deg, #1d2a3c 0%, #17202e 62%, #16241d 100%);
 }
 .character-body { min-width: 0; flex: 1; }
-.character-title { font-weight: 800; font-size: 15px; }
-.character-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.character-title { font-weight: 800; font-size: 14px; }
+.character-sub { color: var(--muted); font-size: 11px; line-height:1.2; margin-top: 4px; }
 .character-cta {
   display: inline-block;
   margin-top: 8px;
@@ -4582,9 +4638,14 @@ html.dark .wardrobe-figure {
   padding-bottom: 4px;
   -webkit-overflow-scrolling: touch;
 }
+.wardrobe-skin-card {
+  flex:0 0 92px;
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+}
 .wardrobe-skin {
-  flex: 0 0 auto;
-  width: 74px;
+  width: 92px;
   padding: 6px 4px 8px;
   border: 2px solid transparent;
   border-radius: 12px;
@@ -4597,6 +4658,17 @@ html.dark .wardrobe-figure {
   gap: 4px;
   transition: border-color .15s ease, transform .12s ease;
 }
+.wardrobe-skin-actions { display:grid; grid-template-columns:1fr 1fr; gap:3px; }
+.wardrobe-item-action {
+  min-width:0;
+  border:0;
+  border-radius:7px;
+  padding:5px 2px;
+  background:var(--surface-2);
+  color:var(--text);
+  font:700 9px/1 system-ui,sans-serif;
+}
+html.dark .wardrobe-item-action { background:#222c3d; }
 html.dark .wardrobe-skin { background: #1b2331; }
 .wardrobe-skin .character-svg { height: 62px; }
 .wardrobe-skin-name {

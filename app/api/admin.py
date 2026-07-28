@@ -474,13 +474,26 @@ def update_item(item_id: int, body: schemas.AdminItemBody, db: Session = Depends
     item = db.query(models.Item).filter(models.Item.id == item_id).one_or_none()
     if item is None:
         raise HTTPException(status_code=404, detail="Предмет не найден")
-    if item.lootbox_pool_code:
-        raise HTTPException(409, "Ковбоксы изменяются только через редактор ковбоксов")
-    category = _require_item_category(db, body.category)
-    for k, v in body.model_dump(exclude={"category"}).items():
+    linked_pool = (
+        db.query(models.LootboxPool)
+        .filter(models.LootboxPool.code == item.lootbox_pool_code)
+        .one_or_none()
+        if item.lootbox_pool_code
+        else None
+    )
+    category = _require_item_category(db, "Ковбоксы" if linked_pool else body.category)
+    for k, v in body.model_dump(exclude={"category", "code"}).items():
         setattr(item, k, v)
     item.category = category.name
     item.description = ""
+    if linked_pool is not None:
+        # Название и изображения редактируются в общем каталоге, но должны
+        # оставаться теми же в конфигурации и в карточке открытия ковбокса.
+        linked_pool.name = item.name
+        linked_pool.image_url = item.image_url or item.icon
+        if not linked_pool.open_image_url:
+            linked_pool.open_image_url = linked_pool.image_url
+        linked_pool.version += 1
     db.commit()
     db.refresh(item)
     return _item_out(item)

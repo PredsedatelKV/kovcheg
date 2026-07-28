@@ -2,9 +2,8 @@ import { get, post, iconHtml } from "/static/api.js?v=266";
 
 import { openAssistantChat } from "/static/pages/assistant.js?v=264";
 
-import { playUISound } from "/static/pages/settings.js?v=267";
+import { playUISound } from "/static/pages/settings.js?v=274";
 
-import { mountCharacterCard } from "/static/pages/character.js?v=270";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -170,7 +169,7 @@ export async function renderHome(root) {
         <h1>${welcome}</h1>
         <div class="subtitle" id="home-clock">${escapeHtml(data.server_time_msk)} мск</div>
       </div>
-      <div class="hero-art" title="Ковчег"><img src="/static/img/ui/home_cube.png?v=266" alt="Ковчег" class="hero-img"/></div>
+      <div class="hero-art home-cube-art" title="Ковчег"><img src="/static/img/ui/home_cube.png?v=266" alt="Ковчег" class="hero-img"/></div>
     </section>
 
 ${bannerCarousel(data.banners)}
@@ -181,8 +180,6 @@ ${bannerCarousel(data.banners)}
       ${bigSquareCard({ id: "wheel-card", type: "wheel", title: "Колесо фортуны", cssClass: "wheel-square" })}
       ${bigSquareCard({ id: "news-card", type: "news", title: "Новости", slides: data.news || [], cssClass: "news-square" })}
     </div>
-
-    <div id="character-card"></div>
 
     <div class="card daily-reward-card" id="daily-reward-card" aria-busy="true">
       <div class="daily-reward-head">
@@ -233,10 +230,6 @@ ${bannerCarousel(data.banners)}
 
   // The compact pass card is optional. Do not issue a request when the active
   // home layout does not contain its mount (the old legacy layout did).
-  // Персонаж грузится отдельно от /api/home: карточка рисуется сразу, а комплект
-  // скинов подъезжает своим лёгким запросом и не задерживает Главную.
-  mountCharacterCard(root);
-
   // A pass card that only leads to the "under maintenance" screen is worse than
   // no card, so it is skipped for the accounts the pass is closed for.
   var me = window.kov && window.kov.me;
@@ -477,7 +470,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=255").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=274").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {
