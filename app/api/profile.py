@@ -783,15 +783,25 @@ def _fallback_shop_item(
         .join(models.ShopProduct, models.ShopProduct.item_id == models.Item.id)
         .filter(
             models.ShopProduct.is_active.is_(True),
-            models.ShopProduct.stock != 0,
             models.Item.lootbox_pool_code.is_(None),
             ~models.Item.code.in_(["box_fragment", "failure_fragment"]),
         )
     )
     if tier is not None:
         query = query.filter(models.Item.lootbox_reward_tier == tier)
-    rows = query.all()
-    available = [item for item in rows if item.id not in excluded]
+    rows = [item for item in query.all() if item.id not in excluded]
+    stocked_ids = {
+        item_id for (item_id,) in db.query(models.ShopProduct.item_id).filter(
+            models.ShopProduct.is_active.is_(True),
+            models.ShopProduct.stock != 0,
+        ).all()
+    }
+    available = [item for item in rows if item.id in stocked_ids]
+    # Ibrahim and Magomet are tied to real warehouse stock. For everyone else
+    # an entirely empty tier remains drawable, but a stocked replacement is
+    # always preferred over a sold-out card.
+    if not available and not uses_limited_lootbox_stock(user):
+        available = rows
     if not available:
         labels = {
             "normal": "обычном",
@@ -861,12 +871,15 @@ def _roll_chest_random_entry(entries: list[models.LootboxPoolEntry]) -> models.L
     return None
 
 
-LOOTBOX_STARTING_STARS = {
-    "common": 1, "consolation": 1, "rare": 2, "epic": 3,
-    "seasonal": 3, "legendary": 4, "mega": 5,
-}
+LOOTBOX_STARTING_STARS = {"common": 1, "rare": 2, "epic": 3, "seasonal": 4}
 LOOTBOX_TAPS = 3
-LOOTBOX_STAR_UPGRADE_PERCENT = {1: 44, 2: 34, 3: 18, 4: 4, 5: 0}
+# Direct per-tap probabilities. After three taps, Bronze finishes at
+# 1/2/3/4 stars with about 12.50/82.58/4.90/0.02 percent respectively.
+LOOTBOX_STAR_UPGRADE_PERCENT = {1: 50, 2: 4, 3: 1, 4: 0}
+LOOTBOX_LOW_STAR_REWARDS = {
+    1: {"xp": (8, 12, 70), "fragment": (1, 1, 30)},
+    2: {"xp": (18, 25, 70), "fragment": (2, 2, 30)},
+}
 
 
 def _lootbox_starting_stars(pool: models.LootboxPool) -> int:
@@ -887,7 +900,7 @@ def _roll_lootbox_stars(pool: models.LootboxPool) -> tuple[int, list[int]]:
     stars = starting
     sequence: list[int] = []
     for _ in range(LOOTBOX_TAPS):
-        if stars < 5 and secrets.randbelow(100) < LOOTBOX_STAR_UPGRADE_PERCENT[stars]:
+        if stars < 4 and secrets.randbelow(100) < LOOTBOX_STAR_UPGRADE_PERCENT[stars]:
             stars += 1
         sequence.append(stars)
     return starting, sequence
@@ -901,6 +914,23 @@ def _roll_single_chest_reward(
     final_stars: int,
 ) -> tuple[str, int, models.Item | None, int]:
     """Choose exactly one immutable reward after the star sequence."""
+    if pool.code in LOOTBOX_STARTING_STARS:
+        if final_stars <= 2:
+            fragment = db.query(models.Item).filter(models.Item.code == "box_fragment").one_or_none()
+            if fragment is None:
+                raise HTTPException(409, "Фрагмент ковбокса не настроен")
+            config = LOOTBOX_LOW_STAR_REWARDS[final_stars]
+            roll = secrets.randbelow(100)
+            xp_low, xp_high, xp_weight = config["xp"]
+            if roll < xp_weight:
+                return "xp", xp_low + secrets.randbelow(xp_high - xp_low + 1), None, 0
+            low, high, _ = config["fragment"]
+            return "item", low + secrets.randbelow(high - low + 1), fragment, 0
+        tier = "special" if final_stars == 3 else "super_special"
+        return "item", 1, _fallback_shop_item(db, user, tier=tier), 0
+
+    # Compatibility for custom historical pools. They are no longer sold or
+    # shown as current Kovboxes, but previous immutable openings still replay.
     active = [entry for entry in entries if entry.is_active]
     normal = [
         entry for entry in active
@@ -909,21 +939,21 @@ def _roll_single_chest_reward(
     special_entries = [entry for entry in active if entry.reward_kind == "special_pool"]
     super_entries = [entry for entry in active if entry.reward_kind == "super_special_pool"]
     tier_roll = secrets.randbelow(100)
-    if final_stars >= 5 and pool.super_special_item_chance:
+    if final_stars >= 4 and pool.super_special_item_chance:
         if tier_roll < pool.super_special_item_chance:
             return "item", 1, _fallback_shop_item(db, user, tier="super_special"), 0
         tier_roll -= pool.super_special_item_chance
-    if final_stars >= 4 and pool.special_item_chance:
+    if final_stars >= 3 and pool.special_item_chance:
         if tier_roll < pool.special_item_chance:
             return "item", 1, _fallback_shop_item(db, user, tier="special"), 0
         tier_roll -= pool.special_item_chance
-    if final_stars >= 3 and pool.bonus_item_chance and tier_roll < pool.bonus_item_chance:
+    if final_stars >= 2 and pool.bonus_item_chance and tier_roll < pool.bonus_item_chance:
         return "item", 1, _fallback_shop_item(db, user, tier="normal"), 0
 
     candidates = list(normal)
-    if final_stars >= 4:
+    if final_stars >= 3:
         candidates.extend(special_entries)
-    if final_stars >= 5:
+    if final_stars >= 4:
         candidates.extend(super_entries)
     if not candidates:
         raise HTTPException(409, "У ковбокса нет награды для достигнутой редкости")
@@ -1187,9 +1217,9 @@ def _opening_result(
         replayed=replayed,
         balance=user.wallet.balance if user.wallet else 0,
         xp=user.xp,
-        starting_stars=max(1, min(5, int(star_meta.get("starting_stars") or 1))),
+        starting_stars=max(1, min(4, int(star_meta.get("starting_stars") or 1))),
         star_sequence=[
-            max(1, min(5, value))
+            max(1, min(4, value))
             for value in (star_meta.get("star_sequence") or [])
             if type(value) is int
         ][:LOOTBOX_TAPS],

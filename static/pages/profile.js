@@ -996,7 +996,7 @@ function showLootboxChestLegacy(result) {
     return;
   }
   document.querySelector(".lootbox-chest-overlay")?.remove();
-  const themes = new Set(["common", "rare", "epic", "legendary", "seasonal", "mega", "consolation"]);
+  const themes = new Set(["common", "rare", "epic", "seasonal"]);
   const theme = themes.has(result.pool.code) ? result.pool.code : "common";
   const rewards = [...result.rewards].sort((a, b) => (a.reveal_order || 0) - (b.reveal_order || 0));
   const closedImage = result.pool.image_url || "/static/img/ui/box.svg";
@@ -1217,7 +1217,7 @@ function showLootboxChest(result) {
   const sequence = Array.isArray(result.star_sequence) && result.star_sequence.length
     ? result.star_sequence.slice(0, 3)
     : [result.starting_stars || 1, result.starting_stars || 1, result.starting_stars || 1];
-  let stars = Math.max(1, Math.min(5, Number(result.starting_stars) || 1));
+  let stars = Math.max(1, Math.min(4, Number(result.starting_stars) || 1));
   let tapIndex = 0;
   let locked = false;
   let finished = false;
@@ -1237,7 +1237,7 @@ function showLootboxChest(result) {
     <header class="lootbox-chest-head">
       <div class="lootbox-chest-kicker">Открытие</div>
       <h2>${escapeHtml(result.pool.name || "Ковбокс")}</h2>
-      <div class="lootbox-stars" id="lootbox-stars" aria-label="${stars} из 5 звёзд"></div>
+      <div class="lootbox-stars" id="lootbox-stars" aria-label="${stars} из 4 звёзд"></div>
     </header>
     <div class="lootbox-reward-stage" id="lootbox-reward-stage" aria-live="polite"></div>
     <div class="lootbox-chest-floor">
@@ -1295,12 +1295,12 @@ function showLootboxChest(result) {
   }
 
   function renderStars(animateFrom = stars) {
-    starsEl.innerHTML = Array.from({ length:5 }, (_, index) => {
+    starsEl.innerHTML = Array.from({ length:4 }, (_, index) => {
       const active = index < stars;
       const fresh = active && index >= animateFrom;
       return `<span class="lootbox-star${active ? " is-active" : ""}${fresh ? " is-new" : ""}" aria-hidden="true">★</span>`;
     }).join("");
-    starsEl.setAttribute("aria-label", `${stars} из 5 звёзд`);
+    starsEl.setAttribute("aria-label", `${stars} из 4 звёзд`);
   }
 
   function makeRewardCard() {
@@ -1338,7 +1338,7 @@ function showLootboxChest(result) {
     locked = true;
     chestButton.disabled = true;
     const previousStars = stars;
-    stars = Math.max(stars, Math.min(5, Number(sequence[tapIndex]) || stars));
+    stars = Math.max(stars, Math.min(4, Number(sequence[tapIndex]) || stars));
     chestButton.classList.remove("is-star-tap");
     void chestButton.offsetWidth;
     chestButton.classList.add("is-star-tap");

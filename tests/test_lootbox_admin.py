@@ -489,7 +489,7 @@ def test_chest_v2_reports_actual_xp_and_overflow_kovbucks(lootbox_api):
     assert _quantity(sessions, "prize") == 0
 
 
-def test_seed_migrates_canonical_chests_once_and_preserves_admin_edits(lootbox_api):
+def test_seed_migrates_to_four_canonical_chests_once_and_preserves_admin_edits(lootbox_api):
     client, sessions = lootbox_api
     with sessions() as db:
         seed(db)
@@ -497,21 +497,31 @@ def test_seed_migrates_canonical_chests_once_and_preserves_admin_edits(lootbox_a
             pool.code: pool
             for pool in db.query(models.LootboxPool).filter(
                 models.LootboxPool.code.in_((
-                    "common", "rare", "epic", "legendary", "seasonal", "mega",
+                    "common", "rare", "epic", "legendary", "seasonal", "mega", "consolation",
                 ))
             )
         }
-        assert set(canonical) == {"common", "rare", "epic", "legendary", "seasonal", "mega"}
-        for code in ("common", "rare", "epic", "legendary", "seasonal"):
+        assert set(canonical) == {
+            "common", "rare", "epic", "legendary", "seasonal", "mega", "consolation",
+        }
+        expected = {
+            "common": ("Бронзовый ковбокс", 100),
+            "rare": ("Серебряный ковбокс", 150),
+            "epic": ("Золотой ковбокс", 250),
+            "seasonal": ("Сезонный ковбокс", 450),
+        }
+        for code, (name, price) in expected.items():
             pool = canonical[code]
+            assert pool.name == name
+            assert pool.sale_price == price
             assert pool.opening_mode == "chest_v2"
-            assert pool.open_image_url == f"/static/img/items/lootbox_{code}_open.png"
-            guaranteed = [entry for entry in pool.entries if entry.is_guaranteed]
-            assert len(guaranteed) == 3
-            assert {entry.reward_kind for entry in guaranteed} == {"item", "xp", "kovbucks"}
-            assert next(entry for entry in guaranteed if entry.reward_kind == "item").item.code == "box_fragment"
-        assert canonical["mega"].opening_mode == "chest_v2"
-        assert canonical["mega"].is_droppable is False
+            assert pool.open_image_url == f"/static/img/items/lootbox_{code}.png"
+            assert {entry.reward_kind for entry in pool.entries} == {"item", "xp"}
+            assert next(entry for entry in pool.entries if entry.reward_kind == "item").item.code == "box_fragment"
+        for code in ("legendary", "mega", "consolation"):
+            assert canonical[code].is_active is False
+            assert canonical[code].is_archived is True
+            assert canonical[code].sale_price is None
 
         common = canonical["common"]
         common.name = "Настроенный администратором"
@@ -759,7 +769,7 @@ def test_item_open_is_idempotent_and_one_box_is_consumed(lootbox_api):
     assert first.json()["opening_mode"] == "chest_v2"
     assert first.json()["starting_stars"] == 1
     assert len(first.json()["star_sequence"]) == 3
-    assert all(1 <= value <= 5 for value in first.json()["star_sequence"])
+    assert all(1 <= value <= 4 for value in first.json()["star_sequence"])
     assert first.json()["rewards"][0]["kind"] == "item"
     second = client.post("/api/profile/inventory/open-lootbox", json=request, headers=_headers())
     assert second.status_code == 200
@@ -826,42 +836,16 @@ def test_disabled_box_does_not_consume_inventory(lootbox_api):
     assert _quantity(sessions, "lootbox_disabled") == 1
 
 
-def test_mega_box_uses_five_star_single_reward_opening(lootbox_api):
-    client, sessions = lootbox_api
-    with sessions() as db:
-        prize_id = db.query(models.Item).filter_by(code="prize").one().id
-    payload = _box_payload(prize_id, code="mega")
-    payload.update({
-        "opening_mode": "chest_v2",
-        "open_image_url": "/static/img/items/lootbox_mega_open.png",
-        "bonus_item_chance": 0,
-        "guaranteed_slots": 1,
-        "allow_duplicates": False,
-    })
-    created = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2))
-    assert created.status_code == 200, created.text
-    box = created.json()
-    _grant_box(sessions, box["item_id"])
-    opened = client.post(
-        "/api/profile/inventory/open-lootbox",
-        json={"item_id": box["item_id"], "request_id": "mega_pending_0001"},
-        headers=_headers(),
-    )
-    assert opened.status_code == 200, opened.text
-    plan = opened.json()
-    assert plan["opening_mode"] == "chest_v2"
-    assert plan["finalized"] is True
-    assert plan["starting_stars"] == 5
-    assert plan["star_sequence"] == [5, 5, 5]
-    assert plan["choice_groups"] == []
-    assert len(plan["rewards"]) == 1
-    assert _quantity(sessions, "lootbox_mega") == 0
-    with sessions() as db:
-            assert db.query(models.LootboxOpen).count() == 1
-            assert db.query(models.InventoryItem).filter(
-                models.InventoryItem.user_id == 1,
-                models.InventoryItem.item_id == prize_id,
-            ).count() == 1
+@pytest.mark.parametrize(
+    ("code", "stars"),
+    [("common", 1), ("rare", 2), ("epic", 3), ("seasonal", 4)],
+)
+def test_four_canonical_boxes_have_expected_starting_stars(code, stars):
+    pool = models.LootboxPool(code=code, name=code, rarity=code)
+    starting, sequence = profile._roll_lootbox_stars(pool)
+    assert starting == stars
+    assert len(sequence) == 3
+    assert all(stars <= value <= 4 for value in sequence)
 
 
 def test_fragment_assembly_cost_insufficient_and_parallel(lootbox_api):

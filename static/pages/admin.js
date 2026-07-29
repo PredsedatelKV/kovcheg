@@ -1579,8 +1579,8 @@ function openQuestionEditor(body, quizId, existing) {
 }
 
 // ---------- KOVBOX EDITOR ----------
-const LOOTBOX_RARITIES = ["Обычный", "Редкий", "Эпический", "Легендарный", "Сезонный", "Мега", "Секретный"];
-const EDITABLE_LOOTBOX_CODES = ["common", "rare", "epic", "legendary", "seasonal", "mega", "consolation"];
+const LOOTBOX_RARITIES = ["Бронзовый", "Серебряный", "Золотой", "Сезонный"];
+const EDITABLE_LOOTBOX_CODES = ["common", "rare", "epic", "seasonal"];
 const LOOTBOX_REWARD_LABELS = {
   item: "Предмет",
   kovbucks: "Ковбаксы",
@@ -1746,7 +1746,7 @@ function openLootboxEditor(body, existing = null) {
     sale_price: null, sale_currency: "kovbucks", min_user_level: null,
     max_user_level: null, sort_order: 0, starts_at: null, ends_at: null,
     daily_open_limit: 0, guaranteed_slots: 1, allow_duplicates: true,
-    opening_mode: "chest_v2", open_image_url: "/static/img/items/lootbox_common_open.png",
+    opening_mode: "chest_v2", open_image_url: "/static/img/items/lootbox_common.png",
     bonus_item_chance: 0, special_item_chance: 0, super_special_item_chance: 0,
     entries: [],
   };
@@ -1924,7 +1924,7 @@ async function renderLootboxes(body) {
         <select class="input input-sm" id="lb-active-filter"><option value="">Все статусы</option><option value="active">Активные</option><option value="inactive">Отключённые</option><option value="archived">Архив</option></select>
         <select class="input input-sm" id="lb-rarity-filter"><option value="">Все редкости</option>${rarities.map((rarity) => `<option>${escapeHtml(rarity)}</option>`).join("")}</select>
       </div>
-      <div class="admin-sub" style="margin-top:8px">Каждый ковбокс открывается за три нажатия, улучшает редкость до пяти звёзд и выдаёт ровно одну награду.</div>
+      <div class="admin-sub" style="margin-top:8px">Три нажатия, максимум четыре звезды. 1–2 ★ дают XP или фрагменты, 3 ★ — особую награду, 4 ★ — сверхособую.</div>
     </div>
     <div id="lb-list"></div>`;
 

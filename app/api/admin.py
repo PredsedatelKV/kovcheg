@@ -1450,7 +1450,7 @@ def _lootbox_item_code(code: str) -> str:
 
 
 CANONICAL_CHEST_CODES = {
-    "common", "rare", "epic", "legendary", "seasonal", "mega", "consolation",
+    "common", "rare", "epic", "seasonal",
 }
 
 
@@ -1642,6 +1642,8 @@ def _apply_lootbox_body(pool: models.LootboxPool, body: schemas.AdminLootboxBody
     if body.open_image_url is not None:
         pool.open_image_url = body.open_image_url or body.image_url
     elif not pool.open_image_url:
+        pool.open_image_url = body.image_url
+    if pool.code in CANONICAL_CHEST_CODES:
         pool.open_image_url = body.image_url
     if body.bonus_item_chance is not None:
         pool.bonus_item_chance = body.bonus_item_chance

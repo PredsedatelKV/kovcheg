@@ -768,7 +768,7 @@ class LootboxOpenResult(BaseModel):
     replayed: bool = False
     balance: int = 0
     xp: int = 0
-    starting_stars: int = Field(default=1, ge=1, le=5)
+    starting_stars: int = Field(default=1, ge=1, le=4)
     star_sequence: list[int] = Field(default_factory=list, max_length=4)
     # Compatibility fields for the pre-editor client.
     item: ItemOut | None = None

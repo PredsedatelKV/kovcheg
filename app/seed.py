@@ -950,26 +950,26 @@ def seed(db: Session) -> None:
     }
     lootbox_common = _get_or_create_item(
         db, "lootbox_common",
-        name="Обычный ковбокс",
+        name="Бронзовый ковбокс",
         icon="/static/img/items/lootbox_common.png",
         category="Ковбоксы",
-        rarity="Обычный",
+        rarity="Бронзовый",
         lootbox_pool_code="common",
     )
     lootbox_rare = _get_or_create_item(
         db, "lootbox_rare",
-        name="Редкий ковбокс",
+        name="Серебряный ковбокс",
         icon="/static/img/items/lootbox_rare.png",
         category="Ковбоксы",
-        rarity="Редкий",
+        rarity="Серебряный",
         lootbox_pool_code="rare",
     )
     lootbox_epic = _get_or_create_item(
         db, "lootbox_epic",
-        name="Эпический ковбокс",
+        name="Золотой ковбокс",
         icon="/static/img/items/lootbox_epic.png",
         category="Ковбоксы",
-        rarity="Эпический",
+        rarity="Золотой",
         lootbox_pool_code="epic",
     )
     lootbox_legendary = _get_or_create_item(
@@ -1029,9 +1029,9 @@ def seed(db: Session) -> None:
     consolation_item.description = ""
     consolation_item.image_url = "/static/img/items/lootbox_consolation.png"
     canonical_lootbox_items = {
-        "common": (lootbox_common, "Обычный ковбокс", "Обычный", "/static/img/items/lootbox_common.png"),
-        "rare": (lootbox_rare, "Редкий ковбокс", "Редкий", "/static/img/items/lootbox_rare.png"),
-        "epic": (lootbox_epic, "Эпический ковбокс", "Эпический", "/static/img/items/lootbox_epic.png"),
+        "common": (lootbox_common, "Бронзовый ковбокс", "Бронзовый", "/static/img/items/lootbox_common.png"),
+        "rare": (lootbox_rare, "Серебряный ковбокс", "Серебряный", "/static/img/items/lootbox_rare.png"),
+        "epic": (lootbox_epic, "Золотой ковбокс", "Золотой", "/static/img/items/lootbox_epic.png"),
         "legendary": (lootbox_legendary, "Легендарный ковбокс", "Легендарный", "/static/img/items/lootbox_legendary.png"),
         "seasonal": (lootbox_seasonal, "Сезонный ковбокс", "Сезонный", "/static/img/items/lootbox_seasonal.png"),
         "mega": (lootbox_mega, "Мегаковбокс с выбором предметов", "Мега", "/static/img/items/lootbox_mega.png"),
@@ -1086,11 +1086,11 @@ def seed(db: Session) -> None:
     # Canonical pre-launch prices. These managed products are synced to
     # the real shop below, so purchase price never comes from the client.
     default_sale_prices = {
-        "common": 380,
-        "rare": 580,
-        "epic": 780,
+        "common": 100,
+        "rare": 150,
+        "epic": 250,
         "legendary": 1_180,
-        "seasonal": 900,
+        "seasonal": 450,
         "mega": 1_580,
         "consolation": None,
     }
@@ -1232,7 +1232,11 @@ def seed(db: Session) -> None:
     visual_paths = {
         code: (
             f"/static/img/items/lootbox_{code}.png",
-            f"/static/img/items/lootbox_{code}_open.png",
+            (
+                f"/static/img/items/lootbox_{code}.png"
+                if code in {"common", "rare", "epic", "seasonal"}
+                else f"/static/img/items/lootbox_{code}_open.png"
+            ),
         )
         for code in ("common", "rare", "epic", "legendary", "seasonal", "mega", "consolation")
     }
@@ -1242,6 +1246,151 @@ def seed(db: Session) -> None:
             pool.image_url = closed_path
         if not pool.open_image_url or str(pool.open_image_url).startswith("/static/img/items/lootbox_"):
             pool.open_image_url = open_path
+
+    # Replace the pre-launch catalogue with exactly four user-facing Kovboxes.
+    # Stable internal codes preserve opening history and external references;
+    # retired inventory is merged into the closest current box instead of
+    # deleting value from players.
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS maintenance_migrations (
+            key VARCHAR(128) PRIMARY KEY,
+            applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    four_boxes_key = "2026-07-29-four-star-kovboxes-v1"
+    four_boxes_done = db.execute(
+        text("SELECT 1 FROM maintenance_migrations WHERE key = :key"),
+        {"key": four_boxes_key},
+    ).first()
+    if four_boxes_done is None:
+        active_specs = {
+            "common": ("Бронзовый ковбокс", "Бронзовый", 100, 0, 55, 8, 12, 1),
+            "rare": ("Серебряный ковбокс", "Серебряный", 150, 1, 28, 18, 25, 2),
+            "epic": ("Золотой ковбокс", "Золотой", 250, 2, 12, 18, 25, 2),
+            "seasonal": ("Сезонный ковбокс", "Сезонный", 450, 3, 5, 18, 25, 2),
+        }
+        for code, (name, rarity, price, order, assembly_weight, xp_low, xp_high, fragments) in active_specs.items():
+            pool = pools[code]
+            item = seeded_lootbox_items[code]
+            image = f"/static/img/items/lootbox_{code}.png"
+            item.name = name
+            item.rarity = rarity
+            item.icon = image
+            item.image_url = image
+            item.category = "Ковбоксы"
+            item.description = ""
+            item.can_gift = True
+            item.can_activate = False
+            item.lootbox_pool_code = code
+            pool.name = name
+            pool.rarity = rarity
+            pool.description = ""
+            pool.image_url = image
+            pool.open_image_url = image
+            pool.opening_mode = "chest_v2"
+            pool.is_active = True
+            pool.is_droppable = True
+            pool.is_archived = False
+            pool.sale_price = price
+            pool.sale_currency = "kovbucks"
+            pool.sort_order = order
+            pool.assembly_weight = assembly_weight
+            pool.guaranteed_slots = 1
+            pool.allow_duplicates = False
+            pool.bonus_item_chance = 0
+            pool.special_item_chance = 0
+            pool.super_special_item_chance = 0
+            pool.entries.clear()
+            pool.entries.extend([
+                models.LootboxPoolEntry(
+                    reward_kind="xp", amount_min=xp_low, amount_max=xp_high,
+                    weight=70, is_guaranteed=False, is_active=True, sort_order=0,
+                ),
+                models.LootboxPoolEntry(
+                    reward_kind="item", item_id=fragment.id,
+                    amount_min=fragments, amount_max=fragments,
+                    weight=30, is_guaranteed=False, is_active=True, sort_order=1,
+                ),
+            ])
+            pool.version += 1
+
+        retired_map = {
+            "legendary": "epic",
+            "mega": "seasonal",
+            "consolation": "common",
+        }
+
+        def _merge_inventory(source: models.Item, target: models.Item) -> None:
+            for row in db.query(models.InventoryItem).filter(
+                models.InventoryItem.item_id == source.id
+            ).all():
+                current = db.query(models.InventoryItem).filter(
+                    models.InventoryItem.user_id == row.user_id,
+                    models.InventoryItem.item_id == target.id,
+                ).one_or_none()
+                if current is None:
+                    row.item_id = target.id
+                else:
+                    current.quantity += row.quantity
+                    db.delete(row)
+
+        for old_code, target_code in retired_map.items():
+            old_pool = pools[old_code]
+            old_item = old_pool.item
+            target_item = seeded_lootbox_items[target_code]
+            if old_item is not None:
+                _merge_inventory(old_item, target_item)
+                for listing in db.query(models.MarketListing).filter(
+                    models.MarketListing.item_id == old_item.id
+                ).all():
+                    listing.item_id = target_item.id
+                for gift in db.query(models.PendingLoginGift).filter(
+                    models.PendingLoginGift.item_id == old_item.id
+                ).all():
+                    gift.item_id = target_item.id
+                for task in db.query(models.Task).filter(
+                    models.Task.reward_item_id == old_item.id
+                ).all():
+                    task.reward_item_id = target_item.id
+            old_pool.is_active = False
+            old_pool.is_droppable = False
+            old_pool.is_archived = True
+            old_pool.sale_price = None
+            old_pool.assembly_weight = 0
+            old_pool.version += 1
+
+            old_item_code = f"lootbox_{old_code}"
+            target_item_code = f"lootbox_{target_code}"
+            for prize in db.query(models.WheelPrize).filter(
+                models.WheelPrize.item_code == old_item_code
+            ).all():
+                prize.item_code = target_item_code
+                prize.label = target_item.name
+            for reward in db.query(models.BattlePassReward).filter(
+                models.BattlePassReward.item_code == old_item_code
+            ).all():
+                reward.item_code = target_item_code
+                reward.label = target_item.name
+                reward.icon = target_item.icon
+
+        for code, item in seeded_lootbox_items.items():
+            if code not in active_specs:
+                continue
+            for reward in db.query(models.BattlePassReward).filter(
+                models.BattlePassReward.item_code == item.code
+            ).all():
+                reward.label = item.name
+                reward.icon = item.icon
+            for prize in db.query(models.WheelPrize).filter(
+                models.WheelPrize.item_code == item.code
+            ).all():
+                prize.label = item.name
+
+        db.execute(
+            text("INSERT INTO maintenance_migrations(key) VALUES (:key)"),
+            {"key": four_boxes_key},
+        )
+        db.flush()
 
     # Remove obsolete editor-created duplicates. The live data is checked
     # before this migration: these pools/items have no inventory, listings,
