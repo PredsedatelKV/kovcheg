@@ -1,5 +1,12 @@
 const tg = window.Telegram && window.Telegram.WebApp;
 const DEFAULT_ITEM_ICON = "/static/img/ui/box.svg";
+const LOOTBOX_ASSET_VERSION = "282";
+
+export function versionedAssetUrl(value) {
+  const src = String(value ?? "").trim();
+  if (!src.startsWith("/static/img/items/lootbox_")) return src;
+  return `${src.split("?", 1)[0]}?v=${LOOTBOX_ASSET_VERSION}`;
+}
 
 // Image load errors do not bubble, therefore one capture listener handles all
 // current and future item images. The marker makes the fallback strictly
@@ -349,7 +356,7 @@ export async function uploadImage(file) {
  * size: "sm" (24px), "md" (32px), "lg" (48px), "xl" (64px).
  */
 export function iconHtml(icon, size = "md", alt = "") {
-  const safe = String(icon ?? "").trim();
+  const safe = versionedAssetUrl(icon);
   const cls = `pixel-icon pixel-icon-${size}`;
   if (safe.startsWith("/") || safe.startsWith("http")) {
     return `<img src="${safe}" alt="${alt}" class="${cls}" data-kov-fallback="${DEFAULT_ITEM_ICON}"/>`;
@@ -370,7 +377,7 @@ export function iconHtml(icon, size = "md", alt = "") {
 export function productImg(item, size = "xl") {
   if (!item) return `<div class="img-frame img-frame-${size}"></div>`;
   const src = item.image_url || item.icon || "/static/img/ui/box.svg";
-  const safe = String(src).trim();
+  const safe = versionedAssetUrl(src);
   const alt = (item.name || "").replace(/"/g, "");
   if (safe.startsWith("/") || safe.startsWith("http")) {
   const mode = (item.lootbox_pool_code || String(item.code || "").includes("fragment"))

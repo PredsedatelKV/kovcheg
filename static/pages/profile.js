@@ -1,4 +1,4 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=279";
+import { get, post, iconHtml, productImg, versionedAssetUrl } from "/static/api.js?v=282";
 
 import { playUISound, getSettings, playManagedMedia } from "/static/pages/settings.js?v=274";
 import { mountCharacterCard } from "/static/pages/character.js?v=274";
@@ -999,8 +999,8 @@ function showLootboxChestLegacy(result) {
   const themes = new Set(["common", "rare", "epic", "seasonal"]);
   const theme = themes.has(result.pool.code) ? result.pool.code : "common";
   const rewards = [...result.rewards].sort((a, b) => (a.reveal_order || 0) - (b.reveal_order || 0));
-  const closedImage = result.pool.image_url || "/static/img/ui/box.svg";
-  const openImage = result.pool.open_image_url || closedImage;
+  const closedImage = versionedAssetUrl(result.pool.image_url || "/static/img/ui/box.svg");
+  const openImage = versionedAssetUrl(result.pool.open_image_url || closedImage);
   [closedImage, openImage, ...rewards.map((reward) => reward.icon)].forEach((src) => {
     if (!src) return;
     const preload = new Image();
@@ -1212,8 +1212,7 @@ function showLootboxChest(result) {
   const themes = new Set(["common", "rare", "epic", "legendary", "seasonal", "mega", "consolation"]);
   const theme = themes.has(result.pool.code) ? result.pool.code : "common";
   const reward = result.rewards[0];
-  const closedImage = result.pool.image_url || "/static/img/ui/box.svg";
-  const openImage = result.pool.open_image_url || closedImage;
+  const closedImage = versionedAssetUrl(result.pool.image_url || "/static/img/ui/box.svg");
   const sequence = Array.isArray(result.star_sequence) && result.star_sequence.length
     ? result.star_sequence.slice(0, 3)
     : [result.starting_stars || 1, result.starting_stars || 1, result.starting_stars || 1];
@@ -1222,7 +1221,7 @@ function showLootboxChest(result) {
   let locked = false;
   let finished = false;
 
-  [closedImage, openImage, reward.icon].forEach((src) => {
+  [closedImage, reward.icon].forEach((src) => {
     if (!src) return;
     const preload = new Image();
     preload.src = src;
@@ -1255,10 +1254,9 @@ function showLootboxChest(result) {
   const chestImage = overlay.querySelector("#lootbox-chest-image");
   const hint = overlay.querySelector("#lootbox-chest-hint");
   const done = overlay.querySelector("#lootbox-chest-done");
-  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=280");
-  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=280");
-  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=280`));
-  const allSounds = [openSound, specialSound, ...bonusSounds];
+  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=282");
+  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=282`));
+  const allSounds = [specialSound, ...bonusSounds];
   allSounds.forEach((audio) => {
     audio.preload = "auto";
     try { audio.load(); } catch (_) {}
@@ -1289,7 +1287,9 @@ function showLootboxChest(result) {
         resolve();
       };
       audio.addEventListener("ended", finish, { once:true });
-      playAudio(audio);
+      playAudio(audio).then((started) => {
+        if (!started) finish();
+      });
       setTimeout(finish, maxWait);
     });
   }
@@ -1315,15 +1315,16 @@ function showLootboxChest(result) {
   }
 
   async function revealReward() {
-    chestImage.src = openImage;
     chestButton.classList.remove("is-star-tap");
+    void chestButton.offsetWidth;
     chestButton.classList.add("is-opening");
-    hint.textContent = "Ковбокс открывается…";
-    await playAudioAndWait(openSound, 2600);
+    hint.textContent = "Награда открывается…";
+    await new Promise((resolve) => setTimeout(resolve, 720));
     if (!document.body.contains(overlay)) return;
     chestButton.hidden = true;
+    overlay.classList.add("is-reward-revealed");
     const tier = reward.item?.lootbox_reward_tier || "normal";
-    if (tier === "special" || tier === "super_special") await playAudio(specialSound);
+    if (tier === "special" || tier === "super_special") playAudio(specialSound);
     const card = makeRewardCard();
     stage.replaceChildren(card);
     hint.textContent = "Награда получена";
@@ -1342,7 +1343,7 @@ function showLootboxChest(result) {
     chestButton.classList.remove("is-star-tap");
     void chestButton.offsetWidth;
     chestButton.classList.add("is-star-tap");
-    await playAudioAndWait(bonusSounds[Math.min(tapIndex, 2)], 850);
+    await playAudioAndWait(bonusSounds[Math.min(tapIndex, 2)], 3200);
     renderStars(previousStars);
     tapIndex += 1;
     try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(stars > previousStars ? "heavy" : "medium"); } catch (_) {}

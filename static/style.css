@@ -3701,9 +3701,9 @@ html.dark .lootbox-title { color:#e8f0ff; }
   transition:opacity .18s ease, transform .18s ease;
 }
 .lootbox-chest-overlay.is-closing { opacity:0; transform:scale(1.03); }
-.lootbox-theme-common { --lb-accent:#c7d2e5; --lb-deep:#222b3a; --lb-light:#f2f5fb; }
-.lootbox-theme-rare { --lb-accent:#6af079; --lb-deep:#0b4928; --lb-light:#e0ffd8; }
-.lootbox-theme-epic { --lb-accent:#cc63ff; --lb-deep:#35116d; --lb-light:#f7d8ff; }
+.lootbox-theme-common { --lb-accent:#e49344; --lb-deep:#32170c; --lb-light:#ffe2b7; }
+.lootbox-theme-rare { --lb-accent:#dce6f5; --lb-deep:#27303d; --lb-light:#ffffff; }
+.lootbox-theme-epic { --lb-accent:#ffd64f; --lb-deep:#573400; --lb-light:#fff3aa; }
 .lootbox-theme-legendary { --lb-accent:#ffd54a; --lb-deep:#7f360c; --lb-light:#fff5b6; }
 .lootbox-theme-seasonal { --lb-accent:#45e6f1; --lb-deep:#075a7d; --lb-light:#fff099; }
 .lootbox-theme-consolation { --lb-accent:#8993a9; --lb-deep:#111522; --lb-light:#e2e7f2; }
@@ -3711,6 +3711,11 @@ html.dark .lootbox-title { color:#e8f0ff; }
   background:
     radial-gradient(circle at 50% 35%, rgba(255,255,255,.42), transparent 34%),
     linear-gradient(140deg,#e2456f,#f8a72e,#58bd72,#37a8e8,#9657d8,#e2459c);
+}
+.lootbox-chest-overlay.lootbox-theme-seasonal {
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255,255,255,.44), transparent 34%),
+    linear-gradient(145deg,#ee653f,#f5b92d 22%,#46c678 46%,#35aade 67%,#8b58de 84%,#e74f9d);
 }
 .lootbox-chest-overlay.lootbox-theme-mega {
   --lb-accent:#ffd650; --lb-deep:#6c3b03; --lb-light:#fff2a8;
@@ -3948,7 +3953,39 @@ html.dark .lootbox-title { color:#e8f0ff; }
 .lootbox-chest-hint { min-height:20px; margin-top:-4px; font-size:12px; font-weight:800; opacity:.78; }
 .lootbox-chest-done { width:min(100%, 300px); margin-top:8px; background:linear-gradient(135deg, var(--lb-accent), var(--lb-light)); color:#152031; border:0; font-weight:900; }
 .lootbox-chest-done[hidden] { display:none; }
-.lootbox-star-opening { grid-template-rows:auto minmax(190px,1fr) auto; }
+.lootbox-star-opening {
+  grid-template-columns:minmax(0,1fr);
+  grid-template-rows:auto minmax(0,1fr) auto;
+}
+.lootbox-star-opening .lootbox-reward-stage {
+  grid-column:1;
+  grid-row:2;
+  position:relative;
+  z-index:3;
+  pointer-events:none;
+}
+.lootbox-star-opening .lootbox-reward-stage:empty { visibility:hidden; }
+.lootbox-star-opening .lootbox-chest-floor {
+  grid-column:1;
+  grid-row:2;
+  align-self:center;
+  position:relative;
+  z-index:2;
+}
+.lootbox-star-opening.is-reward-revealed .lootbox-chest-floor {
+  grid-row:3;
+  align-self:center;
+}
+.lootbox-star-opening .lootbox-chest-button {
+  width:min(88vw,420px);
+  height:auto;
+  aspect-ratio:3 / 2;
+  align-items:center;
+}
+.lootbox-star-opening .lootbox-chest-button img {
+  object-fit:contain;
+  transform:translateZ(0);
+}
 .lootbox-stars {
   min-height:38px;
   margin-top:8px;
@@ -4028,6 +4065,10 @@ html.dark .lootbox-title { color:#e8f0ff; }
   .lootbox-reward-card { min-height:130px; padding:10px; }
   .lootbox-reward-card img { width:70px; height:70px; }
   .lootbox-chest-button { height:145px; }
+  .lootbox-star-opening .lootbox-chest-button {
+    width:min(72vw,330px);
+    height:auto;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .lootbox-chest-rays, .lootbox-remaining.is-rainbow { animation:none; }

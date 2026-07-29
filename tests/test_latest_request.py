@@ -40,13 +40,13 @@ def test_xp_rolls_over_into_levels_and_caps_at_100(tmp_path):
         assert result["coins"] == 20
 
 
-def test_all_sections_and_clicker_are_unlocked(tmp_path):
+def test_non_admin_sections_are_closed_while_clicker_rule_stays_independent(tmp_path):
     with _session(tmp_path) as db:
         user = models.User(telegram_id=837611803, first_name="Игрок")
         db.add(user)
         db.flush()
         assert can_use_clicker(user) is True
-        assert maintenance_sections(user) == []
+        assert set(maintenance_sections(user)) == {"profile", "koverna", "arcade", "battlepass"}
 
 
 def test_quiz_reward_json_supports_each_grade(tmp_path):

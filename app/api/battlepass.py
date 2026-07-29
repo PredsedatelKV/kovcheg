@@ -77,6 +77,8 @@ def get_battlepass(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    if is_section_closed(user, "battlepass"):
+        raise HTTPException(503, MAINTENANCE_MESSAGE)
     season = _get_active_season(db)
     if not season:
         return None

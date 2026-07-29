@@ -444,7 +444,7 @@ def test_casino_locks_for_six_hours_after_half_balance_loss(game_api, monkeypatc
 
 
 MAINTENANCE_USERS = ("3", "4")  # Магомет и Ибрагим
-OPEN_USERS = ("1", "2")  # обычный игрок и Омар
+OPEN_USERS = ("1", "2")  # тестовый пользователь вне боевого allowlist и Омар
 
 
 def _koverna_client(game_api_client):
@@ -457,21 +457,23 @@ def _koverna_client(game_api_client):
     return TestClient(app)
 
 
-def test_previously_maintenance_players_have_open_sections(game_api):
+def test_non_admin_players_see_maintenance_in_closed_sections(game_api):
     client, sessions = game_api
     koverna = _koverna_client(client)
 
     for user_id in MAINTENANCE_USERS:
         headers = {"X-Test-User": user_id}
         with sessions() as db:
-            assert access.maintenance_sections(db.get(models.User, int(user_id))) == []
+            assert set(access.maintenance_sections(db.get(models.User, int(user_id)))) == {
+                "profile", "koverna", "arcade", "battlepass",
+            }
 
-        assert koverna.get("/api/shop/products", headers=headers).status_code == 200
-        assert koverna.get("/api/market/listings", headers=headers).status_code == 200
+        assert koverna.get("/api/shop/products", headers=headers).status_code == 503
+        assert koverna.get("/api/market/listings", headers=headers).status_code == 503
         assert client.post(
             "/api/arcade/casino/start", json={"game": "slots", "amount": 100}, headers=headers,
-        ).status_code == 200
-        assert client.get("/api/battlepass", headers=headers).status_code == 200
+        ).status_code == 503
+        assert client.get("/api/battlepass", headers=headers).status_code == 503
 
 
 def test_open_sections_stay_open_for_everyone_else(game_api):

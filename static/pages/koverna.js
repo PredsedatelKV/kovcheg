@@ -1,4 +1,4 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=279";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=282";
 
 import { playUISound } from "/static/pages/settings.js?v=274";
 const escapeHtml = (s = "") =>
@@ -14,10 +14,10 @@ let state = {
 const shopLoadVersions = new WeakMap();
 const marketLoadVersions = new WeakMap();
 const KOVBOX_SHOWCASE = [
-  { code: "lootbox_common", name: "Бронзовый ковбокс", icon: "/static/img/items/lootbox_common.png?v=281" },
-  { code: "lootbox_rare", name: "Серебряный ковбокс", icon: "/static/img/items/lootbox_rare.png?v=281" },
-  { code: "lootbox_epic", name: "Золотой ковбокс", icon: "/static/img/items/lootbox_epic.png?v=281" },
-  { code: "lootbox_seasonal", name: "Сезонный ковбокс", icon: "/static/img/items/lootbox_seasonal.png?v=281" },
+  { code: "lootbox_common", name: "Бронзовый ковбокс", icon: "/static/img/items/lootbox_common.png?v=282" },
+  { code: "lootbox_rare", name: "Серебряный ковбокс", icon: "/static/img/items/lootbox_rare.png?v=282" },
+  { code: "lootbox_epic", name: "Золотой ковбокс", icon: "/static/img/items/lootbox_epic.png?v=282" },
+  { code: "lootbox_seasonal", name: "Сезонный ковбокс", icon: "/static/img/items/lootbox_seasonal.png?v=282" },
 ];
 
 function renderKovboxShowcase(products = []) {

@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=279";
-import { renderProfile } from "/static/pages/profile.js?v=281";
-import { renderKoverna } from "/static/pages/koverna.js?v=281";
+import { renderHome } from "/static/pages/home.js?v=282";
+import { renderProfile } from "/static/pages/profile.js?v=282";
+import { renderKoverna } from "/static/pages/koverna.js?v=282";
 import { renderArcade } from "/static/pages/arcade.js?v=280";
-import { renderAdmin } from "/static/pages/admin.js?v=281";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=279";
+import { renderAdmin } from "/static/pages/admin.js?v=282";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=282";
 import { initSettings, playUISound } from "/static/pages/settings.js?v=274";
 import { initMultiplayer } from "/static/pages/multiplayer.js?v=274";
-import { get, post, prefetch, peekCached } from "/static/api.js?v=279";
+import { get, post, prefetch, peekCached } from "/static/api.js?v=282";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -566,12 +566,9 @@ function showPendingLoginGifts(gifts) {
     await renderBrowserLogin();
     return;
   }
-  let initial = "home";
-  try {
-    const saved = localStorage.getItem("kovcheg.tab");
-    // The hidden admin screen is never restored without its explicit gesture.
-    if (saved && saved !== "admin" && RENDERERS[saved]) initial = saved;
-  } catch (_) {}
+  // Every fresh launch starts from the public entrance. Mounted tabs remain
+  // cached only inside the current session and never override this choice.
+  const initial = "home";
   try {
     await setTab(initial);
     showPendingLoginGifts(pendingLoginGifts);
