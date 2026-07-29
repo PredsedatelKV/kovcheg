@@ -5,12 +5,15 @@ import logging
 import os
 import re
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.exc import IntegrityError
 
 from app import models
+from app.auth import WEB_SESSION_COOKIE, validate_init_data, web_session_user
+from app.config import get_settings
 from app.db import SessionLocal
+from app.players import is_bound_admin
 
 log = logging.getLogger(__name__)
 
@@ -18,6 +21,7 @@ IDEMPOTENCY_HEADER = "X-Idempotency-Key"
 KEY_RE = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 MAX_STORED_RESPONSE_BYTES = 512 * 1024
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+OMAR_TELEGRAM_ID = 849162365
 
 
 def _economy_is_frozen() -> bool:
@@ -27,6 +31,35 @@ def _economy_is_frozen() -> bool:
         "yes",
         "on",
     }
+
+
+def _authenticated_telegram_id(request: Request) -> int | None:
+    """Resolve the same signed Telegram identity used by protected endpoints."""
+    init_data = request.headers.get("X-Telegram-Init-Data")
+    settings = get_settings()
+    if init_data:
+        if settings.skip_init_data_check and init_data == "DEV":
+            return OMAR_TELEGRAM_ID
+        if not settings.telegram_bot_token:
+            return None
+        try:
+            parsed = validate_init_data(init_data, settings.telegram_bot_token)
+            return int(parsed["user"]["id"])
+        except (HTTPException, KeyError, TypeError, ValueError):
+            return None
+
+    session_token = request.cookies.get(WEB_SESSION_COOKIE)
+    if not session_token:
+        return None
+    with SessionLocal() as db:
+        user = web_session_user(db, session_token)
+        return int(user.telegram_id) if user is not None else None
+
+
+def _emergency_freeze_exempt(request: Request) -> bool:
+    telegram_id = _authenticated_telegram_id(request)
+    return telegram_id == OMAR_TELEGRAM_ID and is_bound_admin(telegram_id)
+
 
 # These actions either move game value or change the configuration used to
 # award it. Read-only requests and social actions deliberately stay outside.
@@ -142,6 +175,7 @@ async def protect_game_mutation(request: Request, call_next):
         _economy_is_frozen()
         and request.method in MUTATING_METHODS
         and request.url.path.startswith("/api/")
+        and not _emergency_freeze_exempt(request)
     ):
         return JSONResponse(
             status_code=423,

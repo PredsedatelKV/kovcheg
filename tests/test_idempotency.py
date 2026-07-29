@@ -84,6 +84,24 @@ def _headers(key: str) -> dict[str, str]:
     return {"X-Idempotency-Key": key, "X-Telegram-Init-Data": "signed-user-scope"}
 
 
+def test_emergency_freeze_still_blocks_everyone_except_bound_omar(guarded_api, monkeypatch):
+    client, calls, _ = guarded_api
+    monkeypatch.setenv("EMERGENCY_ECONOMY_FREEZE", "1")
+
+    monkeypatch.setattr(idempotency, "_authenticated_telegram_id", lambda request: 7735808918)
+    blocked = client.post("/api/tasks/claim")
+    assert blocked.status_code == 423
+    assert calls["ok"] == 0
+
+    monkeypatch.setattr(idempotency, "_authenticated_telegram_id", lambda request: 849162365)
+    allowed = client.post(
+        "/api/tasks/claim",
+        headers=_headers("01010101-0101-4101-8101-010101010101"),
+    )
+    assert allowed.status_code == 200
+    assert calls["ok"] == 1
+
+
 def test_critical_mutation_requires_key_and_success_is_replayed(guarded_api):
     client, calls, sessions = guarded_api
     assert client.post("/api/tasks/claim").status_code == 400
