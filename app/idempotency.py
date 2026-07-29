@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
 
 from fastapi import Request
@@ -16,6 +17,16 @@ log = logging.getLogger(__name__)
 IDEMPOTENCY_HEADER = "X-Idempotency-Key"
 KEY_RE = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 MAX_STORED_RESPONSE_BYTES = 512 * 1024
+MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _economy_is_frozen() -> bool:
+    return os.getenv("EMERGENCY_ECONOMY_FREEZE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 # These actions either move game value or change the configuration used to
 # award it. Read-only requests and social actions deliberately stay outside.
@@ -42,7 +53,7 @@ CRITICAL_PREFIXES = (
 
 
 def _is_critical(request: Request) -> bool:
-    return request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.url.path.startswith(CRITICAL_PREFIXES)
+    return request.method in MUTATING_METHODS and request.url.path.startswith(CRITICAL_PREFIXES)
 
 
 def _finish_receipt(
@@ -127,6 +138,22 @@ async def protect_game_mutation(request: Request, call_next):
     same HTTP action cannot enter its read/validate/write transaction. Failed
     and uncertain outcomes remain guarded but are never executed again.
     """
+    if (
+        _economy_is_frozen()
+        and request.method in MUTATING_METHODS
+        and request.url.path.startswith("/api/")
+    ):
+        return JSONResponse(
+            status_code=423,
+            content={
+                "detail": (
+                    "Игровые счета, инвентарь, магазин и Пропуск временно "
+                    "заморожены до завершения проверки"
+                )
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
     if not _is_critical(request):
         return await call_next(request)
 
