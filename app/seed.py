@@ -44,12 +44,12 @@ CATALOG_SNACKS = (
 )
 
 CATALOG_SWEETS = (
-    ("milky_way", "Шоколадный батончик Milky Way", "milky_way.jpeg", 25, 3),
-    ("orbit_white_mint", "Жевательная резинка Orbit White Нежная мята без сахара", "orbit_white_mint.jpeg", 25, 2),
-    ("orion_fresh_pie_passionfruit", "Пирожное бисквитное с начинкой Маракуйя Orion Fresh Pie", "orion_fresh_pie_passionfruit.jpeg", 15, 7),
-    ("mms_peanut", "Драже с арахисом и молочным шоколадом M&M’s", "mms_peanut.jpeg", 45, 2),
-    ("babyfox_hippos", "Мармелад жевательный бегемоты Babyfox", "babyfox_hippos.jpeg", 35, 3),
-    ("zerfer_marshmallow_duo", "Маршмэллоу Duo клубника-ваниль Zerfer", "zerfer_marshmallow_duo.jpeg", 60, 2),
+    ("milky_way", "Шоколадный батончик Milky Way", "milky_way.jpeg", 38, 3),
+    ("orbit_white_mint", "Жевательная резинка Orbit White Нежная мята без сахара", "orbit_white_mint.jpeg", 38, 2),
+    ("orion_fresh_pie_passionfruit", "Пирожное бисквитное с начинкой Маракуйя Orion Fresh Pie", "orion_fresh_pie_passionfruit.jpeg", 23, 7),
+    ("mms_peanut", "Драже с арахисом и молочным шоколадом M&M’s", "mms_peanut.jpeg", 68, 2),
+    ("babyfox_hippos", "Мармелад жевательный бегемоты Babyfox", "babyfox_hippos.jpeg", 53, 3),
+    ("zerfer_marshmallow_duo", "Маршмэллоу Duo клубника-ваниль Zerfer", "zerfer_marshmallow_duo.jpeg", 90, 2),
 )
 
 
@@ -1030,12 +1030,12 @@ def seed(db: Session) -> None:
     # Canonical pre-launch prices. These managed products are synced to
     # the real shop below, so purchase price never comes from the client.
     default_sale_prices = {
-        "common": 19,
-        "rare": 29,
-        "epic": 39,
-        "legendary": 59,
-        "seasonal": 45,
-        "mega": 79,
+        "common": 38,
+        "rare": 58,
+        "epic": 78,
+        "legendary": 118,
+        "seasonal": 90,
+        "mega": 158,
         "consolation": None,
     }
     for code in created_pool_codes:
@@ -1046,12 +1046,12 @@ def seed(db: Session) -> None:
     # this mode, later starts preserve every administrator change instead of
     # silently restoring seed values.
     chest_defaults = {
-        "common": ((1, 1), (5, 10), (1, 3), 5),
-        "rare": ((1, 2), (10, 20), (3, 6), 15),
-        "epic": ((2, 3), (20, 40), (6, 12), 30),
-        "legendary": ((3, 4), (40, 80), (12, 25), 100),
-        "seasonal": ((2, 3), (30, 60), (8, 18), 50),
-        "consolation": ((1, 2), (10, 25), (3, 7), 25),
+        "common": ((1, 1), (1, 3), (1, 3), 5),
+        "rare": ((1, 2), (3, 6), (3, 6), 15),
+        "epic": ((2, 3), (6, 13), (6, 12), 30),
+        "legendary": ((3, 4), (13, 26), (12, 25), 100),
+        "seasonal": ((2, 3), (10, 20), (8, 18), 50),
+        "consolation": ((1, 2), (3, 8), (3, 7), 25),
     }
     prize_codes = [row[0] for row in (*CATALOG_SNACKS, *CATALOG_SWEETS)]
     prize_items = (
@@ -1116,7 +1116,7 @@ def seed(db: Session) -> None:
         mega_pool.allow_duplicates = False
         defaults = [
             ("item", fragment.id, 2, 4, 20),
-            ("xp", None, 30, 70, 20),
+            ("xp", None, 10, 23, 20),
             ("kovbucks", None, 10, 25, 20),
         ]
         selected_prizes = prize_items[:4]
