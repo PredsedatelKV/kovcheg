@@ -1449,14 +1449,14 @@ def _lootbox_item_code(code: str) -> str:
     return code if code.startswith("lootbox_") else f"lootbox_{code}"
 
 
-CANONICAL_CHEST_CODES = {"common", "rare", "epic", "legendary", "seasonal", "consolation"}
+CANONICAL_CHEST_CODES = {
+    "common", "rare", "epic", "legendary", "seasonal", "mega", "consolation",
+}
 
 
 def _validate_managed_lootbox_mode(code: str, opening_mode: str) -> None:
     if code in CANONICAL_CHEST_CODES and opening_mode != "chest_v2":
         raise HTTPException(400, "Основные ковбоксы должны использовать механику сундука")
-    if code == "mega" and opening_mode != "choice_v2":
-        raise HTTPException(400, "Мегаковбокс зарезервирован для механики выбора предметов")
 
 
 def _ensure_lootbox_item_link(db: Session, pool: models.LootboxPool) -> models.Item:

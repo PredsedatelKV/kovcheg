@@ -170,7 +170,9 @@ def award_xp(db: Session, user: models.User, amount: int) -> dict[str, int]:
         user.level = min(MAX_PLAYER_LEVEL, level + levels_gained)
         user.xp = 0 if user.level >= MAX_PLAYER_LEVEL else accumulated % XP_PER_LEVEL
     overflow = amount - consumed
-    coins = overflow // 10
+    # After the Kovbucks denomination, the old 1 K conversion is displayed
+    # and stored as 10 K while preserving the same purchasing power.
+    coins = (overflow // 10) * 10
     if coins > 0:
         w = ensure_wallet(db, user)
         if w.balance < 0 or w.balance > MAX_GAME_BALANCE - coins:

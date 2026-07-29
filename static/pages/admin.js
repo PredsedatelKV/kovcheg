@@ -183,7 +183,7 @@ async function renderUsers(body) {
       <hr class="admin-sep"/>
       <div class="admin-sub" style="margin-bottom:8px"><strong>Подарок при следующем входе</strong> · ожидает: <span data-k="pending-gifts">${u.pending_login_gifts || 0}</span></div>
       <div class="admin-form-grid login-gift-editor">
-        ${field("Ковбаксы", `<label class="row gap"><input type="checkbox" data-k="gift-use-kovbucks"/> Добавить</label><input class="input input-sm" data-k="gift-kovbucks" type="number" min="1" value="10" disabled/>`)}
+        ${field("Ковбаксы", `<label class="row gap"><input type="checkbox" data-k="gift-use-kovbucks"/> Добавить</label><input class="input input-sm" data-k="gift-kovbucks" type="number" min="1" value="100" disabled/>`)}
         ${field("XP", `<label class="row gap"><input type="checkbox" data-k="gift-use-xp"/> Добавить</label><input class="input input-sm" data-k="gift-xp" type="number" min="1" value="10" disabled/>`)}
         ${field("Предмет", `<label class="row gap"><input type="checkbox" data-k="gift-use-item"/> Добавить</label><select class="input input-sm" data-k="gift-item" disabled>${itemOptions()}</select><input class="input input-sm" data-k="gift-item-qty" type="number" min="1" value="1" disabled/>`)}
       </div>
@@ -821,7 +821,7 @@ async function renderTasks(body) {
       formGrid(
         field("Название", `<input class="input" id="t-name"/>`),
         field("Описание", `<textarea class="input" id="t-desc" rows="3"></textarea>`),
-        field("Ковбаксы", `<label class="row gap"><input type="checkbox" id="t-use-kovbucks" checked/> Давать</label><input class="input" id="t-reward" type="number" min="0" value="10"/>`),
+        field("Ковбаксы", `<label class="row gap"><input type="checkbox" id="t-use-kovbucks" checked/> Давать</label><input class="input" id="t-reward" type="number" min="0" value="100"/>`),
         field("XP", `<label class="row gap"><input type="checkbox" id="t-use-xp"/> Давать</label><input class="input" id="t-xp-reward" type="number" min="0" value="10"/>`),
         field("Предмет", `<label class="row gap"><input type="checkbox" id="t-use-item"/> Давать</label><select class="input" id="t-item">${itemOptions()}</select><input class="input" id="t-item-qty" type="number" min="1" value="1"/>`),
         field("Цель", `<input class="input" id="t-target" type="number" value="1"/>`),
@@ -1770,7 +1770,7 @@ function openLootboxEditor(body, existing = null) {
         ${field("Редкость", `<select class="input" id="lb-rarity">${LOOTBOX_RARITIES.map((rarity) => `<option ${box.rarity === rarity ? "selected" : ""}>${rarity}</option>`).join("")}</select>`)}
         ${field("Ассет", `<input class="input" id="lb-image" value="${escapeHtml(box.image_url)}"/>`)}
         ${field("Ассет открытого ковбокса", `<input class="input" id="lb-open-image" value="${escapeHtml(box.open_image_url || box.image_url)}"/>`)}
-        ${field("Механика", `<select class="input" id="lb-opening-mode" disabled><option value="chest_v2" ${box.opening_mode === "chest_v2" ? "selected" : ""}>Сундук: награды по очереди</option><option value="choice_v2" ${box.opening_mode === "choice_v2" ? "selected" : ""}>Выбор предметов (Мега)</option></select>`)}
+        ${field("Механика", `<select class="input" id="lb-opening-mode" disabled><option value="chest_v2" selected>Ковбокс со звёздами и одной наградой</option></select>`)}
         ${field("Обычный предмет, %", `<input class="input" id="lb-bonus-chance" type="number" min="0" max="100" value="${box.bonus_item_chance || 0}" ${box.opening_mode === "choice_v2" ? "disabled" : ""}/>`)}
         ${field("Особый предмет, %", `<input class="input" id="lb-special-chance" type="number" min="0" max="100" value="${box.special_item_chance || 0}" ${box.opening_mode === "choice_v2" ? "disabled" : ""}/>`)}
         ${field("Сверхособый предмет, %", `<input class="input" id="lb-super-special-chance" type="number" min="0" max="100" value="${box.super_special_item_chance || 0}" ${box.opening_mode === "choice_v2" ? "disabled" : ""}/>`)}
@@ -1924,7 +1924,7 @@ async function renderLootboxes(body) {
         <select class="input input-sm" id="lb-active-filter"><option value="">Все статусы</option><option value="active">Активные</option><option value="inactive">Отключённые</option><option value="archived">Архив</option></select>
         <select class="input input-sm" id="lb-rarity-filter"><option value="">Все редкости</option>${rarities.map((rarity) => `<option>${escapeHtml(rarity)}</option>`).join("")}</select>
       </div>
-      <div class="admin-sub" style="margin-top:8px">Для мегаковбокса настраиваются число этапов, повторы, состав наград, количество и шансы. При открытии каждый этап показывает две карточки, игрок забирает одну. Сумма шансов — 100%.</div>
+      <div class="admin-sub" style="margin-top:8px">Каждый ковбокс открывается за три нажатия, улучшает редкость до пяти звёзд и выдаёт ровно одну награду.</div>
     </div>
     <div id="lb-list"></div>`;
 
@@ -1948,7 +1948,7 @@ async function renderLootboxes(body) {
           <div style="min-width:0;flex:1">
             <h3 class="admin-card-title">${escapeHtml(row.name)} ${row.is_archived ? '<span class="admin-badge">архив</span>' : row.is_active ? '<span class="admin-badge">активен</span>' : ""}</h3>
             <div class="admin-sub">${escapeHtml(row.rarity)} · ${row.entries.length} наград</div>
-            <div class="admin-sub">${row.opening_mode === "chest_v2" ? "Сундук с наградами" : "Мегаковбокс: выбор одной из двух наград"}</div>
+            <div class="admin-sub">Звёздный ковбокс · одна награда</div>
           </div>
         </div>
         <div class="row gap wrap" style="margin-top:10px">

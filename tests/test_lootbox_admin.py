@@ -55,7 +55,10 @@ def lootbox_api(tmp_path):
         normal = models.User(id=1, telegram_id=111, first_name="Игрок", xp=0)
         administrator = models.User(id=2, telegram_id=222, first_name="Админ", xp=0)
         fragment = models.Item(code="box_fragment", name="Фрагмент ковбокса", icon="fragment.svg")
-        prize = models.Item(code="prize", name="Предмет-приз", icon="prize.svg")
+        prize = models.Item(
+            code="prize", name="Предмет-приз", icon="prize.svg",
+            skin_slot="body",
+        )
         db.add_all([normal, administrator, fragment, prize])
         db.flush()
         db.add_all([models.Wallet(user_id=1, balance=100), models.Wallet(user_id=2, balance=100)])
@@ -290,11 +293,10 @@ def test_chest_v2_contract_is_validated_by_server(lootbox_api):
         fragment = db.query(models.Item).filter_by(code="box_fragment").one()
         prize = db.query(models.Item).filter_by(code="prize").one()
         payload = _chest_payload(fragment.id, prize.id, code="invalid_chest")
-    payload["entries"] = [entry for entry in payload["entries"] if entry["item_id"] != fragment.id]
-    payload["allow_duplicates"] = True
+    payload["bonus_item_chance"] = 80
+    payload["special_item_chance"] = 30
     response = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2))
-    assert response.status_code == 400
-    assert "фрагменты, XP и ковбаксы" in response.json()["detail"]
+    assert response.status_code == 422
 
 
 def test_chest_v2_can_have_only_guaranteed_rewards_when_bonus_is_disabled(lootbox_api):
@@ -316,12 +318,22 @@ def test_sold_out_lootbox_prize_is_replaced_with_available_shop_item(lootbox_api
     with sessions() as db:
         fragment = db.query(models.Item).filter_by(code="box_fragment").one()
         prize = db.query(models.Item).filter_by(code="prize").one()
-        fallback = models.Item(code="fallback_prize", name="Запасной приз", icon="fallback.svg")
+        fallback = models.Item(
+            code="fallback_prize", name="Запасной приз", icon="fallback.svg",
+            skin_slot="body",
+        )
         db.add(fallback)
         db.flush()
         db.query(models.ShopProduct).filter_by(item_id=prize.id).one().stock = 0
         db.add(models.ShopProduct(item_id=fallback.id, price=10, stock=2, is_active=True))
-        payload = _chest_payload(fragment.id, prize.id, code="fallback_chest")
+        payload = _box_payload(prize.id, code="fallback_chest")
+        payload.update({
+            "opening_mode": "chest_v2",
+            "open_image_url": "/static/img/items/fallback_chest_open.svg",
+            "bonus_item_chance": 0,
+            "guaranteed_slots": 1,
+            "allow_duplicates": False,
+        })
         db.commit()
     created = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2)).json()
     _grant_box(sessions, created["item_id"])
@@ -360,6 +372,7 @@ def test_chest_global_special_pool_and_limited_player_stock(lootbox_api):
             bonus_item_chance=0,
         )
         payload["special_item_chance"] = 100
+        payload["rarity"] = "Легендарный"
         payload["entries"] = [entry for entry in payload["entries"] if entry["is_guaranteed"]]
         db.commit()
 
@@ -412,13 +425,10 @@ def test_chest_v2_returns_ordered_presentation_and_stable_replay(lootbox_api):
         "image_url": "/static/img/items/lootbox_common.svg",
         "open_image_url": "/static/img/items/ordered_chest_open.svg",
     }
-    assert [reward["presentation_kind"] for reward in result["rewards"]] == [
-        "fragment", "xp", "kovbucks", "item",
-    ]
-    assert [reward["reveal_order"] for reward in result["rewards"]] == [0, 1, 2, 3]
-    assert [reward["amount"] for reward in result["rewards"]] == [1, 5, 4, 1]
-    assert _quantity(sessions, "box_fragment") == 1
-    assert _quantity(sessions, "prize") == 1
+    assert len(result["rewards"]) == 1
+    assert result["opening_mode"] == "chest_v2"
+    assert len(result["star_sequence"]) == 3
+    assert result["rewards"][0]["reveal_order"] == 0
 
     with sessions() as db:
         pool = db.query(models.LootboxPool).filter_by(code="ordered_chest").one()
@@ -447,12 +457,18 @@ def test_chest_v2_reports_actual_xp_and_overflow_kovbucks(lootbox_api):
     with sessions() as db:
         fragment = db.query(models.Item).filter_by(code="box_fragment").one()
         prize = db.query(models.Item).filter_by(code="prize").one()
-        payload = _chest_payload(
-            fragment.id, prize.id, code="xp_overflow_chest", bonus_item_chance=0,
+        payload = _box_payload(
+            prize.id, code="xp_overflow_chest", kind="xp", amount=25,
         )
-        payload["entries"][1]["amount_min"] = 25
-        payload["entries"][1]["amount_max"] = 25
-        db.get(models.User, 1).xp = 2999
+        payload.update({
+            "opening_mode": "chest_v2",
+            "open_image_url": "/static/img/items/xp_overflow_chest_open.svg",
+            "bonus_item_chance": 0,
+            "guaranteed_slots": 1,
+            "allow_duplicates": False,
+        })
+        db.get(models.User, 1).level = 100
+        db.get(models.User, 1).xp = 0
         db.commit()
     created = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2))
     assert created.status_code == 200, created.text
@@ -466,12 +482,10 @@ def test_chest_v2_reports_actual_xp_and_overflow_kovbucks(lootbox_api):
     )
     assert response.status_code == 200, response.text
     result = response.json()
-    assert [reward["presentation_kind"] for reward in result["rewards"]] == [
-        "fragment", "xp", "kovbucks",
-    ]
-    assert [reward["amount"] for reward in result["rewards"]] == [1, 1, 6]
-    assert result["xp"] == 3000
-    assert result["balance"] == 106
+    assert [reward["presentation_kind"] for reward in result["rewards"]] == ["kovbucks"]
+    assert [reward["amount"] for reward in result["rewards"]] == [20]
+    assert result["xp"] == 0
+    assert result["balance"] == 120
     assert _quantity(sessions, "prize") == 0
 
 
@@ -496,7 +510,7 @@ def test_seed_migrates_canonical_chests_once_and_preserves_admin_edits(lootbox_a
             assert len(guaranteed) == 3
             assert {entry.reward_kind for entry in guaranteed} == {"item", "xp", "kovbucks"}
             assert next(entry for entry in guaranteed if entry.reward_kind == "item").item.code == "box_fragment"
-        assert canonical["mega"].opening_mode == "choice_v2"
+        assert canonical["mega"].opening_mode == "chest_v2"
         assert canonical["mega"].is_droppable is False
 
         common = canonical["common"]
@@ -741,6 +755,11 @@ def test_item_open_is_idempotent_and_one_box_is_consumed(lootbox_api):
     first = client.post("/api/profile/inventory/open-lootbox", json=request, headers=_headers())
     assert first.status_code == 200
     assert first.json()["replayed"] is False
+    assert len(first.json()["rewards"]) == 1
+    assert first.json()["opening_mode"] == "chest_v2"
+    assert first.json()["starting_stars"] == 1
+    assert len(first.json()["star_sequence"]) == 3
+    assert all(1 <= value <= 5 for value in first.json()["star_sequence"])
     assert first.json()["rewards"][0]["kind"] == "item"
     second = client.post("/api/profile/inventory/open-lootbox", json=request, headers=_headers())
     assert second.status_code == 200
@@ -807,20 +826,18 @@ def test_disabled_box_does_not_consume_inventory(lootbox_api):
     assert _quantity(sessions, "lootbox_disabled") == 1
 
 
-def test_mega_box_offers_two_choices_and_grants_only_selected_reward(lootbox_api):
+def test_mega_box_uses_five_star_single_reward_opening(lootbox_api):
     client, sessions = lootbox_api
     with sessions() as db:
         prize_id = db.query(models.Item).filter_by(code="prize").one().id
-        second = models.Item(code="prize_two", name="Второй приз", icon="prize2.svg")
-        db.add(second)
-        db.commit()
-        second_id = second.id
     payload = _box_payload(prize_id, code="mega")
-    payload["opening_mode"] = "choice_v2"
-    payload["entries"] = [
-        {**payload["entries"][0], "weight": 50},
-        {**payload["entries"][0], "item_id": second_id, "weight": 50, "sort_order": 1},
-    ]
+    payload.update({
+        "opening_mode": "chest_v2",
+        "open_image_url": "/static/img/items/lootbox_mega_open.png",
+        "bonus_item_chance": 0,
+        "guaranteed_slots": 1,
+        "allow_duplicates": False,
+    })
     created = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2))
     assert created.status_code == 200, created.text
     box = created.json()
@@ -832,30 +849,19 @@ def test_mega_box_offers_two_choices_and_grants_only_selected_reward(lootbox_api
     )
     assert opened.status_code == 200, opened.text
     plan = opened.json()
-    assert plan["opening_mode"] == "choice_v2"
-    assert plan["finalized"] is False
-    assert len(plan["choice_groups"]) == 1
-    assert len(plan["choice_groups"][0]["options"]) == 2
+    assert plan["opening_mode"] == "chest_v2"
+    assert plan["finalized"] is True
+    assert plan["starting_stars"] == 5
+    assert plan["star_sequence"] == [5, 5, 5]
+    assert plan["choice_groups"] == []
+    assert len(plan["rewards"]) == 1
     assert _quantity(sessions, "lootbox_mega") == 0
-
-    choice_payload = {
-        "opening_id": plan["opening_id"],
-        "request_id": plan["request_id"],
-        "choices": [0],
-    }
-    finalized = client.post("/api/profile/inventory/choose-lootbox", json=choice_payload, headers=_headers())
-    assert finalized.status_code == 200, finalized.text
-    assert finalized.json()["finalized"] is True
-    assert len(finalized.json()["rewards"]) == 1
-    replay = client.post("/api/profile/inventory/choose-lootbox", json=choice_payload, headers=_headers())
-    assert replay.status_code == 200
-    assert replay.json()["replayed"] is True
     with sessions() as db:
-        assert db.query(models.LootboxOpen).count() == 1
-        assert db.query(models.InventoryItem).filter(
-            models.InventoryItem.user_id == 1,
-            models.InventoryItem.item_id.in_([prize_id, second_id]),
-        ).count() == 1
+            assert db.query(models.LootboxOpen).count() == 1
+            assert db.query(models.InventoryItem).filter(
+                models.InventoryItem.user_id == 1,
+                models.InventoryItem.item_id == prize_id,
+            ).count() == 1
 
 
 def test_fragment_assembly_cost_insufficient_and_parallel(lootbox_api):

@@ -3948,6 +3948,77 @@ html.dark .lootbox-title { color:#e8f0ff; }
 .lootbox-chest-hint { min-height:20px; margin-top:-4px; font-size:12px; font-weight:800; opacity:.78; }
 .lootbox-chest-done { width:min(100%, 300px); margin-top:8px; background:linear-gradient(135deg, var(--lb-accent), var(--lb-light)); color:#152031; border:0; font-weight:900; }
 .lootbox-chest-done[hidden] { display:none; }
+.lootbox-star-opening { grid-template-rows:auto minmax(190px,1fr) auto; }
+.lootbox-stars {
+  min-height:38px;
+  margin-top:8px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  filter:drop-shadow(0 4px 8px rgba(0,0,0,.32));
+}
+.lootbox-star {
+  color:rgba(255,255,255,.24);
+  font-size:31px;
+  line-height:1;
+  -webkit-text-stroke:1px rgba(255,255,255,.45);
+  transform:scale(.9);
+}
+.lootbox-star.is-active {
+  color:#ffe35a;
+  -webkit-text-stroke:1px #fff2a8;
+  text-shadow:0 0 13px rgba(255,218,42,.82);
+  transform:scale(1);
+}
+.lootbox-star.is-new { animation:lootbox-star-pop .55s cubic-bezier(.18,.89,.32,1.45) both; }
+@keyframes lootbox-star-pop {
+  0% { opacity:0; transform:translateY(22px) scale(.2) rotate(-28deg); }
+  70% { opacity:1; transform:translateY(-5px) scale(1.35) rotate(8deg); }
+  100% { opacity:1; transform:none; }
+}
+.lootbox-chest-button.is-star-tap { animation:lootbox-star-tap .46s cubic-bezier(.2,.75,.26,1.2); }
+@keyframes lootbox-star-tap {
+  0% { transform:translateX(0) rotate(0); }
+  22% { transform:translateX(-10px) rotate(-4deg) scale(.97); }
+  48% { transform:translateX(9px) rotate(4deg) scale(1.03); }
+  72% { transform:translateX(-4px) rotate(-2deg); }
+  100% { transform:none; }
+}
+.lootbox-chest-button.is-opening { animation:lootbox-chest-open .72s cubic-bezier(.18,.89,.32,1.35) both; }
+@keyframes lootbox-chest-open {
+  0% { transform:translateY(0) scale(1); }
+  48% { transform:translateY(-38px) scale(.94); }
+  78% { transform:translateY(7px) scale(1.07,.93); }
+  100% { transform:none; }
+}
+.lootbox-reward-card.reward-tier-special {
+  border-color:transparent;
+  background:
+    linear-gradient(155deg,rgba(255,255,255,.93),rgba(232,239,255,.93)) padding-box,
+    linear-gradient(110deg,#ff3b30,#ffcc00,#34c759,#32ade6,#af52de,#ff2d8d) border-box;
+  background-size:100% 100%,300% 300%;
+  animation:lootbox-reward-jump .52s cubic-bezier(.18,.89,.32,1.35) forwards,
+    lootbox-rainbow 2.2s linear infinite;
+}
+.lootbox-reward-card.reward-tier-super_special {
+  border-color:transparent;
+  color:#172033;
+  background:
+    linear-gradient(120deg,rgba(255,80,120,.90),rgba(255,218,45,.90),rgba(65,220,145,.90),rgba(69,168,255,.90),rgba(183,85,255,.90)) padding-box,
+    linear-gradient(110deg,#fff,#ffcc00,#34c759,#32ade6,#af52de,#fff) border-box;
+  background-size:320% 320%;
+  box-shadow:0 0 26px rgba(255,255,255,.86),0 0 70px rgba(185,92,255,.72),0 20px 50px rgba(0,0,0,.3);
+  animation:lootbox-reward-jump .52s cubic-bezier(.18,.89,.32,1.35) forwards,
+    lootbox-super-glow 2.4s linear infinite;
+}
+.lootbox-reward-card.reward-tier-special strong,
+.lootbox-reward-card.reward-tier-special span,
+.lootbox-reward-card.reward-tier-super_special strong,
+.lootbox-reward-card.reward-tier-super_special span { color:#172033; }
+@keyframes lootbox-super-glow {
+  to { background-position:320% 0; filter:hue-rotate(360deg); }
+}
 
 @media (max-height:690px) {
   .lootbox-chest-overlay { grid-template-rows:auto 34px minmax(130px, 1fr) auto; padding-block:10px; }

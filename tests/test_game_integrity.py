@@ -116,7 +116,7 @@ def test_daily_reward_streak_reset_and_cap(game_api, monkeypatch):
     client, sessions = game_api
     monkeypatch.setattr(home, "_today_str", lambda: "2026-07-01")
     monkeypatch.setattr(home, "_yesterday_str", lambda: "2026-06-30")
-    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 1
+    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 10
     with sessions() as db:
         row = db.query(models.DailyReward).filter_by(user_id=1).one()
         row.streak = 7
@@ -124,10 +124,10 @@ def test_daily_reward_streak_reset_and_cap(game_api, monkeypatch):
         db.commit()
     monkeypatch.setattr(home, "_today_str", lambda: "2026-07-02")
     monkeypatch.setattr(home, "_yesterday_str", lambda: "2026-07-01")
-    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 7
+    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 70
     monkeypatch.setattr(home, "_today_str", lambda: "2026-07-04")
     monkeypatch.setattr(home, "_yesterday_str", lambda: "2026-07-03")
-    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 1
+    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 10
 
 
 def test_daily_reward_parallel_claim_only_once(game_api, monkeypatch):
@@ -138,7 +138,7 @@ def test_daily_reward_parallel_claim_only_once(game_api, monkeypatch):
     with ThreadPoolExecutor(max_workers=2) as pool:
         statuses = list(pool.map(lambda _: client.post("/api/home/daily-reward/claim", headers=_headers()).status_code, range(2)))
     assert sorted(statuses) == [200, 409]
-    assert _balance(sessions) == before + 1
+    assert _balance(sessions) == before + 10
 
 
 @pytest.mark.parametrize("game", sorted(arcade.FIRST_WIN_GAMES))
@@ -171,7 +171,7 @@ def test_each_arcade_first_win_requires_round_and_is_daily(game_api, game):
         json={"game": game, "round_token": token, **result},
         headers=_headers(),
     )
-    assert first.status_code == 200 and first.json()["reward"] == 3
+    assert first.status_code == 200 and first.json()["reward"] == 30
     token2 = client.post("/api/arcade/round/start", json={"game": game}, headers=_headers()).json()["token"]
     with sessions() as db:
         row = db.query(models.ArcadeRound).filter_by(token=token2).one()
@@ -207,7 +207,7 @@ def test_first_win_parallel_request_cannot_double_credit(game_api):
     with ThreadPoolExecutor(max_workers=2) as pool:
         statuses = list(pool.map(claim, range(2)))
     assert sorted(statuses) == [200, 409]
-    assert _balance(sessions) == before + 3
+    assert _balance(sessions) == before + 30
 
 
 def test_fragment_assembly_and_parallel_safety(game_api):
@@ -306,8 +306,8 @@ def test_clicker_cashout_uses_safe_rate(game_api, monkeypatch):
     before = _balance(sessions)
     response = client.post("/api/arcade/clicker/cashout", json={}, headers=_headers())
     assert response.status_code == 200
-    assert response.json()["cashed_out"] == 2
-    assert _balance(sessions) == before + 2
+    assert response.json()["cashed_out"] == 20
+    assert _balance(sessions) == before + 20
 
 
 def test_shop_restock_request_is_limited_to_one_per_day(game_api):
@@ -338,9 +338,10 @@ def test_legacy_casino_payout_is_rejected(game_api):
 
 
 def test_casino_tables_have_exact_90_percent_rtp():
-    for table in (arcade.ROULETTE_PAYOUTS, arcade.RISKWHEEL_PAYOUTS):
-        assert sum(percent * chance for percent, chance in table) == 90 * 100
-        assert sum(chance for _, chance in table) == 100
+    assert sum(payout * weight for payout, weight in arcade.ROULETTE_PAYOUTS) == 90 * 10_000
+    assert sum(weight for _, weight in arcade.ROULETTE_PAYOUTS) == 10_000
+    assert sum(percent * chance for percent, chance in arcade.RISKWHEEL_PAYOUTS) == 90 * 100
+    assert sum(chance for _, chance in arcade.RISKWHEEL_PAYOUTS) == 100
     assert sum(percent * chance for _, percent, chance in arcade.SLOTS_OUTCOMES) == 90 * 100
     assert sum(chance for _, _, chance in arcade.SLOTS_OUTCOMES) == 100
     assert arcade.DICE_EXACT_PAYOUT_PERCENT / 6 == 90
@@ -357,43 +358,48 @@ def test_rocket_has_ten_percent_immediate_bust_bucket(monkeypatch):
 def test_roulette_is_atomic_idempotent_and_awards_failure_fragment(game_api, monkeypatch):
     client, sessions = game_api
     monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 17)
-    payload = {"amount": 10, "request_id": "roulette_low_0001"}
+    payload = {"amount": 100, "request_id": "roulette_low_0001"}
     first = client.post("/api/arcade/roulette/spin", json=payload, headers=_headers())
     assert first.status_code == 200, first.text
-    assert first.json()["payout"] == 5
-    assert first.json()["balance"] == 95
+    assert first.json()["payout"] == 10
+    assert first.json()["balance"] == 10
     assert first.json()["failure_fragment_awarded"] == 1
     replay = client.post("/api/arcade/roulette/spin", json=payload, headers=_headers())
     assert replay.status_code == 200
     assert replay.json()["replayed"] is True
-    assert _balance(sessions) == 95
+    assert _balance(sessions) == 10
     with sessions() as db:
         fragment = db.query(models.Item).filter_by(code="failure_fragment").one()
         assert db.query(models.InventoryItem).filter_by(user_id=1, item_id=fragment.id).one().quantity == 1
 
 
-def test_roulette_enforces_minimum_but_allows_the_whole_balance(game_api):
+def test_roulette_enforces_fixed_bet(game_api):
     client, _ = game_api
     assert client.post(
         "/api/arcade/roulette/spin",
-        json={"amount": 9, "request_id": "roulette_min_001"},
+        json={"amount": 99, "request_id": "roulette_min_001"},
         headers=_headers(),
     ).status_code == 422
     assert client.post(
         "/api/arcade/roulette/spin",
-        json={"amount": 100, "request_id": "roulette_full_balance_001"},
+        json={"amount": 101, "request_id": "roulette_wrong_001"},
+        headers=_headers(),
+    ).status_code == 422
+    assert client.post(
+        "/api/arcade/roulette/spin",
+        json={"amount": 100, "request_id": "roulette_fixed_001"},
         headers=_headers(),
     ).status_code == 200
 
 
 def test_casino_has_no_round_count_limit(game_api, monkeypatch):
     client, _ = game_api
-    # Рулетка x1.8: серия не достигает защитного лимита убытка.
-    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 99)
+    # Билет 6000 попадает в сектор возврата 100, баланс не меняется.
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 6000)
     for index in range(8):
         response = client.post(
             "/api/arcade/roulette/spin",
-            json={"amount": 10, "request_id": f"unlimited_roulette_{index:02d}"},
+            json={"amount": 100, "request_id": f"unlimited_roulette_{index:02d}"},
             headers=_headers(),
         )
         assert response.status_code == 200, response.text
@@ -405,32 +411,33 @@ def test_casino_locks_for_six_hours_after_half_balance_loss(game_api, monkeypatc
     monkeypatch.setattr(arcade.models, "now_utc", lambda: now)
     monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 1)
 
-    # Каждый раунд возвращает 10%: после трёх ставок по 20 чистый убыток 54
-    # относительно стартовых 100. Раунд, который достиг порога, завершается.
-    for index in range(3):
-        response = client.post(
-            "/api/arcade/roulette/spin",
-            json={"amount": 20, "request_id": f"loss_lock_{index:02d}"},
-            headers=_headers(),
-        )
-        assert response.status_code == 200, response.text
-        with sessions() as db:
-            for stored in db.query(models.CasinoRound).all():
-                stored.created_at = now
-            db.commit()
+    # Один фиксированный спин возвращает 10 и теряет 90% стартового баланса.
+    response = client.post(
+        "/api/arcade/roulette/spin",
+        json={"amount": 100, "request_id": "loss_lock_fixed"},
+        headers=_headers(),
+    )
+    assert response.status_code == 200, response.text
+    with sessions() as db:
+        for stored in db.query(models.CasinoRound).all():
+            stored.created_at = now
+        db.commit()
 
     blocked = client.post(
         "/api/arcade/casino/start",
-        json={"game": "dice", "amount": 1, "choice": "odd"},
+        json={"game": "dice", "amount": 100, "choice": "odd"},
         headers=_headers(),
     )
     assert blocked.status_code == 429
     assert int(blocked.headers["Retry-After"]) == 6 * 60 * 60
 
     monkeypatch.setattr(arcade.models, "now_utc", lambda: now + arcade.CASINO_LOCK_DURATION)
+    with sessions() as db:
+        db.get(models.Wallet, 1).balance = 100
+        db.commit()
     allowed = client.post(
         "/api/arcade/casino/start",
-        json={"game": "dice", "amount": 1, "choice": "odd"},
+        json={"game": "dice", "amount": 100, "choice": "odd"},
         headers=_headers(),
     )
     assert allowed.status_code == 200
@@ -462,7 +469,7 @@ def test_previously_maintenance_players_have_open_sections(game_api):
         assert koverna.get("/api/shop/products", headers=headers).status_code == 200
         assert koverna.get("/api/market/listings", headers=headers).status_code == 200
         assert client.post(
-            "/api/arcade/casino/start", json={"game": "slots", "amount": 1}, headers=headers,
+            "/api/arcade/casino/start", json={"game": "slots", "amount": 100}, headers=headers,
         ).status_code == 200
         assert client.get("/api/battlepass", headers=headers).status_code == 200
 
@@ -479,7 +486,7 @@ def test_open_sections_stay_open_for_everyone_else(game_api):
         assert koverna.get("/api/shop/products", headers=headers).status_code == 200
         assert koverna.get("/api/market/listings", headers=headers).status_code == 200
         assert client.post(
-            "/api/arcade/casino/start", json={"game": "slots", "amount": 1}, headers=headers,
+            "/api/arcade/casino/start", json={"game": "slots", "amount": 100}, headers=headers,
         ).status_code == 200
         assert client.get("/api/battlepass", headers=headers).status_code == 200
 

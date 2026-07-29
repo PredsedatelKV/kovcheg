@@ -153,7 +153,7 @@ def test_rocket_rejects_non_finite_multiplier_without_consuming_round(pingpong_a
     monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 3000)
     started = client.post(
         "/api/arcade/casino/start",
-        json={"game": "rocket", "amount": 10},
+        json={"game": "rocket", "amount": 100},
     )
     assert started.status_code == 200
     token = started.json()["token"]
@@ -168,7 +168,7 @@ def test_rocket_rejects_non_finite_multiplier_without_consuming_round(pingpong_a
     with sessions() as db:
         game_round = db.query(models.CasinoRound).filter_by(token=token).one()
         assert game_round.settled is False
-        assert db.query(models.Wallet).filter_by(user_id=1).one().balance == 90
+        assert db.query(models.Wallet).filter_by(user_id=1).one().balance == 0
 
     # The invalid attempt must roll back fully: the same round can still be
     # settled with a finite, currently reachable multiplier.
@@ -177,7 +177,7 @@ def test_rocket_rejects_non_finite_multiplier_without_consuming_round(pingpong_a
         json={"token": token, "multiplier": 1.0},
     )
     assert valid.status_code == 200
-    assert valid.json()["payout"] == 10
+    assert valid.json()["payout"] == 100
 
 
 def test_rocket_start_and_live_status_hide_future_crash(pingpong_api, monkeypatch):
@@ -187,7 +187,7 @@ def test_rocket_start_and_live_status_hide_future_crash(pingpong_api, monkeypatc
 
     started = client.post(
         "/api/arcade/casino/start",
-        json={"game": "rocket", "amount": 10},
+        json={"game": "rocket", "amount": 100},
     )
 
     assert started.status_code == 200
@@ -230,7 +230,7 @@ def test_rocket_settlement_ignores_forged_client_multiplier(pingpong_api, monkey
     monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 3000)
     started = client.post(
         "/api/arcade/casino/start",
-        json={"game": "rocket", "amount": 10},
+        json={"game": "rocket", "amount": 100},
     )
     assert started.status_code == 200
     token = started.json()["token"]
@@ -250,9 +250,9 @@ def test_rocket_settlement_ignores_forged_client_multiplier(pingpong_api, monkey
     body = settled.json()
     assert body["crashed"] is False
     assert 1.5 <= body["multiplier"] < 2.0
-    assert 15 <= body["payout"] < 20
-    assert body["payout"] != 49
-    assert _balance(sessions) == 90 + body["payout"]
+    assert 150 <= body["payout"] < 200
+    assert body["payout"] != 490
+    assert _balance(sessions) == body["payout"]
 
 
 def test_rocket_displayed_multiplier_matches_integer_payout(pingpong_api, monkeypatch):
@@ -297,7 +297,7 @@ def test_rocket_cannot_cash_out_after_server_crash(pingpong_api, monkeypatch):
     monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 6000)
     started = client.post(
         "/api/arcade/casino/start",
-        json={"game": "rocket", "amount": 10},
+        json={"game": "rocket", "amount": 100},
     )
     assert started.status_code == 200
     token = started.json()["token"]
@@ -324,4 +324,4 @@ def test_rocket_cannot_cash_out_after_server_crash(pingpong_api, monkeypatch):
     assert settled.status_code == 200
     assert settled.json()["crashed"] is True
     assert settled.json()["payout"] == 0
-    assert _balance(sessions) == 90
+    assert _balance(sessions) == 0

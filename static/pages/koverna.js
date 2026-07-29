@@ -18,7 +18,7 @@ const KOVBOX_SHOWCASE = [
   { code: "lootbox_rare", name: "Редкий ковбокс", icon: "/static/img/items/lootbox_rare.png?v=263" },
   { code: "lootbox_epic", name: "Эпический ковбокс", icon: "/static/img/items/lootbox_epic.png?v=263" },
   { code: "lootbox_legendary", name: "Легендарный ковбокс", icon: "/static/img/items/lootbox_legendary.png?v=263" },
-  { code: "lootbox_seasonal", name: "Сезонный ковбокс", icon: "/static/img/items/lootbox_seasonal.png", oldPrice: 59 },
+  { code: "lootbox_seasonal", name: "Сезонный ковбокс", icon: "/static/img/items/lootbox_seasonal.png", oldPrice: 1180 },
   { code: "lootbox_mega", name: "Мегаковбокс с выбором предметов", icon: "/static/img/items/lootbox_mega.png" },
 ];
 

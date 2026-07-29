@@ -345,7 +345,7 @@ class AdminTaskBody(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     description: str = Field(default="", max_length=4000)
     icon: str = "/static/img/tasks/scroll.svg"
-    reward: StrictInt = Field(default=10, ge=0, le=1_000_000)
+    reward: StrictInt = Field(default=100, ge=0, le=1_000_000)
     xp_reward: StrictInt = Field(default=0, ge=0, le=1_000_000)
     reward_item_id: StrictInt | None = Field(default=None, gt=0)
     reward_item_quantity: StrictInt = Field(default=0, ge=0, le=1_000_000)
@@ -722,7 +722,7 @@ class ChooseLootboxRequest(BaseModel):
 
 
 class RouletteSpinRequest(BaseModel):
-    amount: StrictInt = Field(ge=10, le=1_000_000)
+    amount: StrictInt = Field(ge=100, le=100)
     request_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 
@@ -768,6 +768,8 @@ class LootboxOpenResult(BaseModel):
     replayed: bool = False
     balance: int = 0
     xp: int = 0
+    starting_stars: int = Field(default=1, ge=1, le=5)
+    star_sequence: list[int] = Field(default_factory=list, max_length=4)
     # Compatibility fields for the pre-editor client.
     item: ItemOut | None = None
     quantity: int = 0

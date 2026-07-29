@@ -58,14 +58,14 @@ function animateElement(el, animation, duration) {
 // Ограничение «не больше 20% баланса» снято: ставить можно любую сумму
 // вплоть до всего баланса. Достаточность средств проверяет сервер.
 function getMaxBet() {
-  return Math.max(1, Math.floor(balance));
+  return Math.max(0, Math.min(10_000, Math.floor(balance)));
 }
 
 function betInputHTML(id) {
   const max = getMaxBet();
   return `<div class="game-bet-custom">
     <label>Ставка:</label>
-    <input type="number" id="${id}" value="1" min="1" max="${max}" class="input input-sm"/>
+    <input type="number" id="${id}" value="100" min="100" max="${max}" class="input input-sm"/>
     <span class="game-bet-hint"><img src="/static/img/ui/kovbaks.png" alt="" class="game-icon-sm"/> макс ${max}</span>
   </div>`;
 }
@@ -75,7 +75,7 @@ function getBetValue(id) {
   if (!input) return 0;
   let val = Math.floor(Number(input.value));
   const max = getMaxBet();
-  if (val < 1) val = 1;
+  if (val < 100) val = 100;
   if (val > max) val = max;
   return val;
 }
@@ -739,8 +739,9 @@ function gameHarvest() {
 
 
 function gameRoulette() {
-  const payoutPercents = [10, 30, 50, 70, 80, 90, 100, 120, 140, 160, 180];
-  const sectorColor = (percent) => percent <= 50 ? "#cf4d57" : percent < 100 ? "#e99d35" : percent < 140 ? "#41ad75" : "#7557d8";
+  const fixedBet = 100;
+  const payouts = [10, 20, 30, 40, 50, 100, 200, 500, 1000];
+  const sectorColor = (amount) => amount <= 50 ? "#cf4d57" : amount === 100 ? "#e99d35" : amount < 500 ? "#41ad75" : "#7557d8";
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
     <h2>Рулетка <span class="arcade-new-inline">Новое</span></h2>
@@ -751,14 +752,13 @@ function gameRoulette() {
     </div>
     <div class="game-bet-custom">
       <label>Ставка:</label>
-      <input type="number" id="roulette-bet" value="10" min="10" max="${getMaxBet()}" class="input input-sm"/>
-      <span class="game-bet-hint"><img src="/static/img/ui/kovbaks.png" alt="" class="game-icon-sm"/> макс ${getMaxBet()}</span>
+      <strong>100</strong>
+      <span class="game-bet-hint"><img src="/static/img/ui/kovbaks.png" alt="" class="game-icon-sm"/> фиксированная</span>
     </div>
-    <button class="btn" id="roulette-spin-btn">Крутить</button>
+    <button class="btn" id="roulette-spin-btn"${balance < fixedBet ? " disabled" : ""}>Крутить</button>
     <div class="game-result" id="roulette-result"></div>
   `);
   const wheel = modal.querySelector("#roulette-wheel");
-  const input = modal.querySelector("#roulette-bet");
   const button = modal.querySelector("#roulette-spin-btn");
   const result = modal.querySelector("#roulette-result");
   const track = wheel.querySelector(".roulette-reel-track");
@@ -769,44 +769,33 @@ function gameRoulette() {
     spinSoundTimer = null;
   });
 
-  const slotsHtml = (bet, cycles, selectedIndex = -1) => {
+  const slotsHtml = (cycles, selectedIndex = -1) => {
     const slots = [];
     for (let cycle = 0; cycle < cycles; cycle += 1) {
-      payoutPercents.forEach((percent, index) => {
-        const absoluteIndex = cycle * payoutPercents.length + index;
+      payouts.forEach((amount, index) => {
+        const absoluteIndex = cycle * payouts.length + index;
         slots.push(
-          `<div class="roulette-reel-slot${absoluteIndex === selectedIndex ? " is-selected" : ""}" style="--slot-color:${sectorColor(percent)}" data-index="${absoluteIndex}">` +
-          `<img src="/static/img/ui/kovbaks.png" alt=""/><strong>${Math.floor(bet * percent / 100)}</strong></div>`
+          `<div class="roulette-reel-slot${absoluteIndex === selectedIndex ? " is-selected" : ""}" style="--slot-color:${sectorColor(amount)}" data-index="${absoluteIndex}">` +
+          `<img src="/static/img/ui/kovbaks.png" alt=""/><strong>${amount}</strong></div>`
         );
       });
     }
     return slots.join("");
   };
 
-  const normalizedBet = () => {
-    const max = getMaxBet();
-    return Math.max(10, Math.min(max, Math.floor(Number(input.value) || 10)));
-  };
   const renderAmounts = () => {
     if (spinning) return;
-    const bet = normalizedBet();
     track.style.transition = "none";
     track.style.transform = "translate3d(0,0,0)";
-    track.innerHTML = slotsHtml(bet, 2);
+    track.innerHTML = slotsHtml(2);
   };
-  input.addEventListener("input", renderAmounts);
   renderAmounts();
 
   button.addEventListener("click", async () => {
     if (button.disabled) return;
-    const max = getMaxBet();
-    const bet = Math.floor(Number(input.value));
-    if (!Number.isInteger(bet) || bet < 10) {
-      result.innerHTML = `<div class="game-lose">Минимальная ставка — 10 ковбаксов</div>`;
-      return;
-    }
-    if (bet > max || bet > balance) {
-      result.innerHTML = `<div class="game-lose">Максимальная ставка — ${max} ковбаксов</div>`;
+    const bet = fixedBet;
+    if (balance < fixedBet) {
+      result.innerHTML = `<div class="game-lose">Для спина нужно 100 ковбаксов</div>`;
       return;
     }
     button.disabled = true;
@@ -815,7 +804,7 @@ function gameRoulette() {
     playUISound("bet");
     let spin;
     try {
-      spin = await post("/api/arcade/roulette/spin", { amount: bet, request_id: gameRequestId("roulette") });
+      spin = await post("/api/arcade/roulette/spin", { amount: fixedBet, request_id: gameRequestId("roulette") });
     } catch (error) {
       result.innerHTML = `<div class="game-lose">${escapeHtml(error.message || "Не удалось сделать ставку")}</div>`;
       button.disabled = false;
@@ -827,10 +816,10 @@ function gameRoulette() {
     updateBalanceDisplay("roulette-balance", balance);
     const chosenIdx = spin.index;
     const cycles = 7;
-    const selectedIndex = (cycles - 2) * payoutPercents.length + chosenIdx;
+    const selectedIndex = (cycles - 2) * payouts.length + chosenIdx;
     track.style.transition = "none";
     track.style.transform = "translate3d(0,0,0)";
-    track.innerHTML = slotsHtml(bet, cycles, selectedIndex);
+    track.innerHTML = slotsHtml(cycles, selectedIndex);
     const selected = track.querySelector(`[data-index="${selectedIndex}"]`);
     let spinFinished = false;
     const finishSpin = () => {
@@ -847,9 +836,7 @@ function gameRoulette() {
       if (spin.failure_fragment_awarded) {
         window.kov.toast(`Фрагмент неудачи получен · ${spin.failure_fragment_count}/10`);
       }
-      input.max = String(getMaxBet());
-      input.value = String(Math.min(Math.max(10, Number(input.value) || 10), getMaxBet()));
-      button.disabled = false;
+      button.disabled = balance < fixedBet;
       spinning = false;
       setCasinoRoundLocked(false);
     };
@@ -2333,11 +2320,12 @@ function gameClicker(hostRoot = null) {
     const kc = st.kovcoins != null ? st.kovcoins : (st.balance || 0);
     const min = st.cashout_min || 2000;
     const rate = st.cashout_rate || 2000;
-    elCashoutRate.textContent = fmt(rate) + " ковкойнов = 1 ковбакс";
+    const payout = st.cashout_kovbucks || 10;
+    elCashoutRate.textContent = fmt(rate) + " ковкойнов = " + fmt(payout) + " ковбаксов";
     elCashoutBtn.disabled = kc < min;
     elCashoutBtn.textContent = kc < min
       ? `Нужно ≥ ${min} ковкойнов`
-      : `Вывести ${fmt(Math.floor(kc / rate))} ковбаксов`;
+      : `Вывести ${fmt(Math.floor(kc / rate) * payout)} ковбаксов`;
   }
 
   // Применить снимок состояния (state/boost/tap-ответы могут содержать разные поля)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -44,12 +46,12 @@ CATALOG_SNACKS = (
 )
 
 CATALOG_SWEETS = (
-    ("milky_way", "Шоколадный батончик Milky Way", "milky_way.jpeg", 38, 3),
-    ("orbit_white_mint", "Жевательная резинка Orbit White Нежная мята без сахара", "orbit_white_mint.jpeg", 38, 2),
-    ("orion_fresh_pie_passionfruit", "Пирожное бисквитное с начинкой Маракуйя Orion Fresh Pie", "orion_fresh_pie_passionfruit.jpeg", 23, 7),
-    ("mms_peanut", "Драже с арахисом и молочным шоколадом M&M’s", "mms_peanut.jpeg", 68, 2),
-    ("babyfox_hippos", "Мармелад жевательный бегемоты Babyfox", "babyfox_hippos.jpeg", 53, 3),
-    ("zerfer_marshmallow_duo", "Маршмэллоу Duo клубника-ваниль Zerfer", "zerfer_marshmallow_duo.jpeg", 90, 2),
+    ("milky_way", "Шоколадный батончик Milky Way", "milky_way.jpeg", 380, 3),
+    ("orbit_white_mint", "Жевательная резинка Orbit White Нежная мята без сахара", "orbit_white_mint.jpeg", 380, 2),
+    ("orion_fresh_pie_passionfruit", "Пирожное бисквитное с начинкой Маракуйя Orion Fresh Pie", "orion_fresh_pie_passionfruit.jpeg", 230, 7),
+    ("mms_peanut", "Драже с арахисом и молочным шоколадом M&M’s", "mms_peanut.jpeg", 680, 2),
+    ("babyfox_hippos", "Мармелад жевательный бегемоты Babyfox", "babyfox_hippos.jpeg", 530, 3),
+    ("zerfer_marshmallow_duo", "Маршмэллоу Duo клубника-ваниль Zerfer", "zerfer_marshmallow_duo.jpeg", 900, 2),
 )
 
 
@@ -368,7 +370,6 @@ def migrate_schema(db: Session) -> None:
             # Preserve the configured legacy prize for both passing grades,
             # without retaining the old hidden automatic XP bonus.
             legacy_quizzes = db.query(models.Quiz).all()
-            import json
             for quiz in legacy_quizzes:
                 rewards = []
                 if quiz.prize_value > 0:
@@ -390,6 +391,63 @@ def migrate_schema(db: Session) -> None:
             applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
     """))
+    denomination_key = "2026-07-29-kovbucks-denomination-x10"
+    denomination_done = db.execute(
+        text("SELECT 1 FROM maintenance_migrations WHERE key = :key"),
+        {"key": denomination_key},
+    ).first()
+    if denomination_done is None:
+        # One atomic denomination: stored Kovbucks, their prices and historical
+        # monetary facts all move together, preserving every player's buying
+        # power and keeping audit reports comparable. XP, Kovcoins, quantities,
+        # stock and probability weights are intentionally untouched.
+        monetary_updates = (
+            ("wallets", ("balance",), "UPDATE wallets SET balance = balance * 10"),
+            ("transactions", ("amount",), "UPDATE transactions SET amount = amount * 10"),
+            ("tasks", ("reward",), "UPDATE tasks SET reward = reward * 10"),
+            ("shop_products", ("price",), "UPDATE shop_products SET price = price * 10"),
+            ("market_listings", ("price",), "UPDATE market_listings SET price = price * 10"),
+            ("pending_login_gifts", ("kovbucks",), "UPDATE pending_login_gifts SET kovbucks = kovbucks * 10"),
+            ("wheel_prizes", ("value", "kind"), "UPDATE wheel_prizes SET value = value * 10 WHERE kind = 'coins'"),
+            ("wheel_spins", ("prize_value", "prize_kind"), "UPDATE wheel_spins SET prize_value = prize_value * 10 WHERE prize_kind = 'coins'"),
+            ("quizzes", ("prize_value", "prize_kind"), "UPDATE quizzes SET prize_value = prize_value * 10 WHERE prize_kind = 'coins'"),
+            ("battlepass_rewards", ("value", "kind"), "UPDATE battlepass_rewards SET value = value * 10 WHERE kind = 'coins' OR kind LIKE 'coins_%'"),
+            ("battlepass_seasons", ("price_current", "price_old"), "UPDATE battlepass_seasons SET price_current = price_current * 10, price_old = price_old * 10"),
+            ("lootbox_pools", ("sale_price",), "UPDATE lootbox_pools SET sale_price = sale_price * 10 WHERE sale_price IS NOT NULL"),
+            ("lootbox_pool_entries", ("amount_min", "amount_max", "reward_kind"), "UPDATE lootbox_pool_entries SET amount_min = amount_min * 10, amount_max = amount_max * 10 WHERE reward_kind = 'kovbucks'"),
+            ("lootbox_open_rewards", ("amount", "reward_kind"), "UPDATE lootbox_open_rewards SET amount = amount * 10 WHERE reward_kind = 'kovbucks'"),
+            ("casino_rounds", ("bet", "payout", "balance_before"), "UPDATE casino_rounds SET bet = bet * 10, payout = payout * 10, balance_before = balance_before * 10"),
+        )
+        for table_name, required_columns, statement in monetary_updates:
+            columns = {
+                row[1] for row in db.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+            }
+            if all(column in columns for column in required_columns):
+                db.execute(text(statement))
+        quiz_reward_columns = {
+            row[1] for row in db.execute(text("PRAGMA table_info(quizzes)")).fetchall()
+        }
+        for quiz in db.query(models.Quiz).all() if {
+            "rewards_bad", "rewards_good", "rewards_excellent"
+        } <= quiz_reward_columns else []:
+            for attr in ("rewards_bad", "rewards_good", "rewards_excellent"):
+                try:
+                    rewards = json.loads(getattr(quiz, attr) or "[]")
+                except (TypeError, json.JSONDecodeError):
+                    rewards = []
+                if not isinstance(rewards, list):
+                    rewards = []
+                for reward in rewards:
+                    if isinstance(reward, dict) and reward.get("kind") == "kovbucks":
+                        amount = reward.get("amount")
+                        if type(amount) is int and amount >= 0:
+                            reward["amount"] = amount * 10
+                setattr(quiz, attr, json.dumps(rewards, ensure_ascii=False))
+        db.execute(
+            text("INSERT INTO maintenance_migrations(key) VALUES (:key)"),
+            {"key": denomination_key},
+        )
+        db.commit()
     cleanup_key = "2026-07-26-prelaunch-market-and-peanuts"
     cleanup_done = db.execute(
         text("SELECT 1 FROM maintenance_migrations WHERE key = :key"),
@@ -438,7 +496,6 @@ def migrate_schema(db: Session) -> None:
                 prize.kind = "nothing"
                 prize.item_code = None
                 prize.value = 0
-            import json
             for quiz in db.query(models.Quiz).all():
                 for attr in ("rewards_bad", "rewards_good", "rewards_excellent"):
                     try:
@@ -704,7 +761,6 @@ def migrate_schema(db: Session) -> None:
     # constraint.  Keep the JSON field during the compatibility window because
     # old admin tooling still reads it.
     if db.get_bind().dialect.name == "sqlite":
-        import json
         duplicate_quiz_attempts = db.execute(text(
             "SELECT COUNT(*) FROM ("
             "SELECT quiz_id, user_id FROM quiz_attempts "
@@ -1030,12 +1086,12 @@ def seed(db: Session) -> None:
     # Canonical pre-launch prices. These managed products are synced to
     # the real shop below, so purchase price never comes from the client.
     default_sale_prices = {
-        "common": 38,
-        "rare": 58,
-        "epic": 78,
-        "legendary": 118,
-        "seasonal": 90,
-        "mega": 158,
+        "common": 380,
+        "rare": 580,
+        "epic": 780,
+        "legendary": 1_180,
+        "seasonal": 900,
+        "mega": 1_580,
         "consolation": None,
     }
     for code in created_pool_codes:
@@ -1046,12 +1102,12 @@ def seed(db: Session) -> None:
     # this mode, later starts preserve every administrator change instead of
     # silently restoring seed values.
     chest_defaults = {
-        "common": ((1, 1), (1, 3), (1, 3), 5),
-        "rare": ((1, 2), (3, 6), (3, 6), 15),
-        "epic": ((2, 3), (6, 13), (6, 12), 30),
-        "legendary": ((3, 4), (13, 26), (12, 25), 100),
-        "seasonal": ((2, 3), (10, 20), (8, 18), 50),
-        "consolation": ((1, 2), (3, 8), (3, 7), 25),
+        "common": ((1, 1), (1, 3), (10, 30), 5),
+        "rare": ((1, 2), (3, 6), (30, 60), 15),
+        "epic": ((2, 3), (6, 13), (60, 120), 30),
+        "legendary": ((3, 4), (13, 26), (120, 250), 100),
+        "seasonal": ((2, 3), (10, 20), (80, 180), 50),
+        "consolation": ((1, 2), (3, 8), (30, 70), 25),
     }
     prize_codes = [row[0] for row in (*CATALOG_SNACKS, *CATALOG_SWEETS)]
     prize_items = (
@@ -1097,8 +1153,8 @@ def seed(db: Session) -> None:
         _migrate_chest_pool(code, pools[code])
 
     mega_pool = pools["mega"]
-    if mega_pool.opening_mode != "choice_v2":
-        mega_pool.opening_mode = "choice_v2"
+    if mega_pool.opening_mode != "chest_v2":
+        mega_pool.opening_mode = "chest_v2"
         mega_pool.bonus_item_chance = 0
         mega_pool.open_image_url = mega_pool.open_image_url or mega_pool.image_url
         mega_pool.is_droppable = False
@@ -1117,7 +1173,7 @@ def seed(db: Session) -> None:
         defaults = [
             ("item", fragment.id, 2, 4, 20),
             ("xp", None, 10, 23, 20),
-            ("kovbucks", None, 10, 25, 20),
+            ("kovbucks", None, 100, 250, 20),
         ]
         selected_prizes = prize_items[:4]
         remaining_weight = 40
@@ -1128,7 +1184,7 @@ def seed(db: Session) -> None:
                 for index, prize in enumerate(selected_prizes)
             )
         else:
-            defaults[-1] = ("kovbucks", None, 10, 25, 60)
+            defaults[-1] = ("kovbucks", None, 100, 250, 60)
         for index, (kind, item_id, low, high, weight) in enumerate(defaults):
             mega_pool.entries.append(models.LootboxPoolEntry(
                 reward_kind=kind, item_id=item_id, amount_min=low, amount_max=high,

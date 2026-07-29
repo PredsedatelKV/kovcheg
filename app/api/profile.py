@@ -861,6 +861,84 @@ def _roll_chest_random_entry(entries: list[models.LootboxPoolEntry]) -> models.L
     return None
 
 
+LOOTBOX_STARTING_STARS = {
+    "common": 1, "consolation": 1, "rare": 2, "epic": 3,
+    "seasonal": 3, "legendary": 4, "mega": 5,
+}
+LOOTBOX_TAPS = 3
+LOOTBOX_STAR_UPGRADE_PERCENT = {1: 44, 2: 34, 3: 18, 4: 4, 5: 0}
+
+
+def _lootbox_starting_stars(pool: models.LootboxPool) -> int:
+    if pool.code in LOOTBOX_STARTING_STARS:
+        return LOOTBOX_STARTING_STARS[pool.code]
+    rarity = (pool.rarity or "").casefold()
+    if "легендар" in rarity:
+        return 4
+    if "эпичес" in rarity:
+        return 3
+    if "редк" in rarity:
+        return 2
+    return 1
+
+
+def _roll_lootbox_stars(pool: models.LootboxPool) -> tuple[int, list[int]]:
+    starting = _lootbox_starting_stars(pool)
+    stars = starting
+    sequence: list[int] = []
+    for _ in range(LOOTBOX_TAPS):
+        if stars < 5 and secrets.randbelow(100) < LOOTBOX_STAR_UPGRADE_PERCENT[stars]:
+            stars += 1
+        sequence.append(stars)
+    return starting, sequence
+
+
+def _roll_single_chest_reward(
+    db: Session,
+    user: models.User,
+    pool: models.LootboxPool,
+    entries: list[models.LootboxPoolEntry],
+    final_stars: int,
+) -> tuple[str, int, models.Item | None, int]:
+    """Choose exactly one immutable reward after the star sequence."""
+    active = [entry for entry in entries if entry.is_active]
+    normal = [
+        entry for entry in active
+        if entry.reward_kind not in {"special_pool", "super_special_pool"}
+    ]
+    special_entries = [entry for entry in active if entry.reward_kind == "special_pool"]
+    super_entries = [entry for entry in active if entry.reward_kind == "super_special_pool"]
+    tier_roll = secrets.randbelow(100)
+    if final_stars >= 5 and pool.super_special_item_chance:
+        if tier_roll < pool.super_special_item_chance:
+            return "item", 1, _fallback_shop_item(db, user, tier="super_special"), 0
+        tier_roll -= pool.super_special_item_chance
+    if final_stars >= 4 and pool.special_item_chance:
+        if tier_roll < pool.special_item_chance:
+            return "item", 1, _fallback_shop_item(db, user, tier="special"), 0
+        tier_roll -= pool.special_item_chance
+    if final_stars >= 3 and pool.bonus_item_chance and tier_roll < pool.bonus_item_chance:
+        return "item", 1, _fallback_shop_item(db, user, tier="normal"), 0
+
+    candidates = list(normal)
+    if final_stars >= 4:
+        candidates.extend(special_entries)
+    if final_stars >= 5:
+        candidates.extend(super_entries)
+    if not candidates:
+        raise HTTPException(409, "У ковбокса нет награды для достигнутой редкости")
+    entry = _weighted_pick(candidates)
+    amount = entry.amount_min + secrets.randbelow(entry.amount_max - entry.amount_min + 1)
+    if entry.reward_kind == "special_pool":
+        return "item", 1, _fallback_shop_item(db, user, tier="special"), 0
+    if entry.reward_kind == "super_special_pool":
+        return "item", 1, _fallback_shop_item(db, user, tier="super_special"), 0
+    reward_item = entry.item
+    if entry.reward_kind == "item" and reward_item is not None:
+        reward_item = _resolved_reward_item(db, user, reward_item)
+    return entry.reward_kind, amount, reward_item, 0
+
+
 def _decrement_limited_stock(
     db: Session,
     user: models.User,
@@ -975,6 +1053,7 @@ def _grant_reward_specs(
 ) -> None:
     granted_rewards: list[tuple[str, int, models.Item | None, int]] = []
     total_kovbucks_for_presentation = 0
+    single_xp_reward = len(specs) == 1 and specs[0][0] == "xp"
     for kind, amount, reward_item, selected_index in specs:
         if kind == "item":
             if reward_item is None:
@@ -1001,7 +1080,10 @@ def _grant_reward_specs(
             total_kovbucks_for_presentation += amount
         elif kind == "xp":
             xp_result = award_xp(db, user, amount)
-            if xp_result["xp_added"] > 0:
+            # A chest always reveals exactly one card. At level 100 XP is
+            # converted to Kovbucks; on the boundary both balances can change,
+            # but the reveal must still remain a single, truthful card.
+            if xp_result["xp_added"] > 0 and not (single_xp_reward and xp_result["coins"] > 0):
                 granted_rewards.append(("xp", xp_result["xp_added"], None, selected_index))
             total_kovbucks_for_presentation += xp_result["coins"]
         elif kind == "kovcoins":
@@ -1067,8 +1149,10 @@ def _opening_result(
         stored_plan = json.loads(opening.choice_plan or "[]")
     except (TypeError, json.JSONDecodeError):
         stored_plan = []
+    star_meta = stored_plan if isinstance(stored_plan, dict) else {}
+    stored_groups = stored_plan if isinstance(stored_plan, list) else []
     choice_groups = []
-    for index, group in enumerate(stored_plan if isinstance(stored_plan, list) else []):
+    for index, group in enumerate(stored_groups):
         if not isinstance(group, list):
             continue
         options = []
@@ -1083,7 +1167,9 @@ def _opening_result(
             ))
         if len(options) == 2:
             choice_groups.append(schemas.LootboxChoiceGroupOut(index=index, options=options))
-    opening_mode = pool.opening_mode if pool else ("choice_v2" if choice_groups else "chest_v2")
+    opening_mode = "chest_v2" if star_meta.get("star_sequence") else (
+        pool.opening_mode if pool else ("choice_v2" if choice_groups else "chest_v2")
+    )
     return schemas.LootboxOpenResult(
         opening_id=opening.id,
         request_id=opening.request_id,
@@ -1101,6 +1187,12 @@ def _opening_result(
         replayed=replayed,
         balance=user.wallet.balance if user.wallet else 0,
         xp=user.xp,
+        starting_stars=max(1, min(5, int(star_meta.get("starting_stars") or 1))),
+        star_sequence=[
+            max(1, min(5, value))
+            for value in (star_meta.get("star_sequence") or [])
+            if type(value) is int
+        ][:LOOTBOX_TAPS],
         item=first_item.item if first_item else None,
         quantity=first_item.amount if first_item else 0,
     )
@@ -1161,42 +1253,14 @@ def open_lootbox_for_user(
     if inventory is None or inventory.quantity < 1:
         raise HTTPException(409, "У вас нет этого ковбокса")
 
-    guaranteed = [entry for entry in entries if entry.is_guaranteed]
-    random_entries = [entry for entry in entries if not entry.is_guaranteed]
-    selected = []
-    direct_specs: list[tuple[str, int, models.Item | None, int]] = []
-    choice_plan: list[list[dict]] = []
-    if pool.opening_mode == "chest_v2":
-        selected.extend(sorted(guaranteed, key=lambda entry: (entry.sort_order, entry.id)))
-        random_entry = _roll_chest_random_entry(random_entries) if random_entries else None
-        if random_entry is not None:
-            amount = random_entry.amount_min + secrets.randbelow(random_entry.amount_max - random_entry.amount_min + 1)
-            if random_entry.reward_kind == "special_pool":
-                direct_specs.append(("item", amount, _fallback_shop_item(db, user, tier="special"), len(selected)))
-            elif random_entry.reward_kind == "super_special_pool":
-                direct_specs.append(("item", amount, _fallback_shop_item(db, user, tier="super_special"), len(selected)))
-            else:
-                selected.append(random_entry)
-        elif not random_entries:
-            # Compatibility with pools saved before the simplified editor.
-            pool_item = _roll_chest_pool_item(db, user, pool)
-            if pool_item is not None:
-                direct_specs.append(("item", 1, pool_item, len(selected)))
-    elif pool.opening_mode == "choice_v2":
-        choice_plan = _build_choice_plan(db, user, pool, entries)
-    else:
-        available = list(guaranteed)
-        for _ in range(pool.guaranteed_slots if guaranteed else 0):
-            if not available:
-                break
-            chosen = _weighted_pick(available)
-            selected.append(chosen)
-            if not pool.allow_duplicates:
-                available.remove(chosen)
-        if random_entries:
-            selected.append(_weighted_pick(random_entries))
-    if not selected and not direct_specs and not choice_plan:
-        raise HTTPException(409, "У ковбокса нет доступных наград")
+    starting_stars, star_sequence = _roll_lootbox_stars(pool)
+    final_stars = star_sequence[-1] if star_sequence else starting_stars
+    reward_spec = _roll_single_chest_reward(db, user, pool, entries, final_stars)
+    star_plan = {
+        "starting_stars": starting_stars,
+        "star_sequence": star_sequence,
+        "final_stars": final_stars,
+    }
 
     inventory.quantity -= 1
     if inventory.quantity == 0:
@@ -1212,26 +1276,14 @@ def open_lootbox_for_user(
         pool_rarity_snapshot=pool.rarity,
         pool_image_snapshot=pool.image_url,
         pool_open_image_snapshot=pool.open_image_url or pool.image_url,
-        choice_plan=json.dumps(choice_plan, ensure_ascii=False),
+        choice_plan=json.dumps(star_plan, ensure_ascii=False),
         choice_selection="[]",
-        finalized_at=None if choice_plan else models.now_utc(),
+        finalized_at=models.now_utc(),
     )
     db.add(opening)
     db.flush()
 
-    if selected or direct_specs:
-        specs = []
-        for selected_index, entry in enumerate(selected):
-            amount = entry.amount_min + secrets.randbelow(entry.amount_max - entry.amount_min + 1)
-            kind = entry.reward_kind
-            reward_item = entry.item
-            if kind == "special_pool":
-                kind, reward_item = "item", _fallback_shop_item(db, user, tier="special")
-            elif kind == "super_special_pool":
-                kind, reward_item = "item", _fallback_shop_item(db, user, tier="super_special")
-            specs.append((kind, amount, reward_item, selected_index))
-        specs.extend(direct_specs)
-        _grant_reward_specs(db, user, pool, opening, specs)
+    _grant_reward_specs(db, user, pool, opening, [reward_spec])
     db.commit()
     db.refresh(opening)
     db.refresh(user)

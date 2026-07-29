@@ -48,7 +48,7 @@ def arcade_win(
 
 
 # Награда за первую победу дня в мини-игре (в ковбаксах). Только для 6 мини-игр Аркады.
-FIRST_WIN_REWARD = 3
+FIRST_WIN_REWARD = 30
 FIRST_WIN_GAMES = {"moshonka", "tictactoe", "minesweeper", "harvest", "checkers", "pingpong"}
 FIRST_WIN_MIN_SECONDS = {
     "moshonka": 2.0, "tictactoe": 1.0, "minesweeper": 2.0,
@@ -222,6 +222,8 @@ CASINO_GAMES = {"riskwheel", "slots", "dice", "rocket"}
 # ожидание казино положительно на любой дистанции и не зависит от того, какую
 # игру и какую стратегию выбирает игрок.
 CASINO_RTP_PERCENT = 90
+CASINO_MIN_BET = 100
+CASINO_MAX_BET = 10_000
 
 # Ограничений по числу раундов нет. Защитная пауза включается только если
 # чистый убыток за скользящий час достиг половины стартового баланса.
@@ -238,9 +240,22 @@ CASINO_LOSS_THRESHOLD_PERCENT = 50
 RISKWHEEL_PAYOUTS = ((5, 15), (25, 13), (50, 15), (75, 16), (100, 15),
                      (150, 11), (200, 8), (250, 4), (300, 3))
 
-# Рулетка: 11 секторов, та же схема, максимум x1.8.
-ROULETTE_PAYOUTS = ((10, 8), (30, 8), (50, 10), (70, 12), (80, 2), (90, 14),
-                    (100, 14), (120, 12), (140, 10), (160, 6), (180, 4))
+# Рулетка имеет фиксированную ставку и показывает реальные суммы, а не
+# множители. Шансы заданы в базисных пунктах (1/100 процента), чтобы редкие
+# выплаты не приходилось грубо округлять. Сумма весов = 10_000, а
+# sum(выплата * вес) / 10_000 = 90 при ставке 100: RTP ровно 90%.
+ROULETTE_FIXED_BET = 100
+ROULETTE_PAYOUTS = (
+    (10, 900),
+    (20, 1_100),
+    (30, 1_000),
+    (40, 1_000),
+    (50, 1_000),
+    (100, 3_490),
+    (200, 1_200),
+    (500, 300),
+    (1_000, 10),
+)
 
 # Слоты: выплата зависит от комбинации, а вероятности задаются напрямую.
 # Максимум ограничен x5, чтобы даже редкий результат не создавал огромный
@@ -285,6 +300,19 @@ def _weighted_percent(table: tuple) -> tuple[int, int]:
         current += chance
         if ticket <= current:
             return percents[index], index
+    raise HTTPException(status_code=503, detail="Не удалось выбрать исход раунда")
+
+
+def _weighted_basis_points(table: tuple[tuple[int, int], ...]) -> tuple[int, int]:
+    """Return (value, index) from an exact 10,000-basis-point table."""
+    if sum(weight for _, weight in table) != 10_000:
+        raise HTTPException(status_code=503, detail="Таблица шансов казино повреждена")
+    ticket = SYSTEM_RANDOM.randrange(1, 10_001)
+    current = 0
+    for index, (value, weight) in enumerate(table):
+        current += weight
+        if ticket <= current:
+            return value, index
     raise HTTPException(status_code=503, detail="Не удалось выбрать исход раунда")
 
 
@@ -432,7 +460,7 @@ def casino_start(
     choice = payload.get("choice")
     if type(game) is not str or type(amount) is not int or (choice is not None and type(choice) is not str):
         raise HTTPException(status_code=422, detail="Некорректный формат раунда")
-    if game not in CASINO_GAMES or amount <= 0 or amount > 1_000_000:
+    if game not in CASINO_GAMES or amount < CASINO_MIN_BET or amount > CASINO_MAX_BET:
         raise HTTPException(status_code=400, detail="Некорректный раунд")
     begin_game_write(db)
     _require_casino_access(db, user)
@@ -502,7 +530,7 @@ def roulette_spin(
         models.CasinoRound.token == body.request_id,
     ).first()
     if existing:
-        if existing.bet != body.amount:
+        if existing.bet != ROULETTE_FIXED_BET:
             raise HTTPException(409, "Этот запрос уже использован для другой ставки")
         outcome = json.loads(existing.outcome)
         fragment_item = db.query(models.Item).filter(models.Item.code == "failure_fragment").first()
@@ -524,14 +552,14 @@ def roulette_spin(
 
     _require_casino_access(db, user)
     wallet = ensure_wallet(db, user)
-    if body.amount < 10:
-        raise HTTPException(400, "Минимальная ставка — 10 ковбаксов")
-    if wallet.balance < body.amount:
+    if body.amount != ROULETTE_FIXED_BET:
+        raise HTTPException(400, f"Ставка в Рулетке фиксирована: {ROULETTE_FIXED_BET} ковбаксов")
+    if wallet.balance < ROULETTE_FIXED_BET:
         raise HTTPException(400, "Недостаточно ковбаксов")
 
-    payout_percent, index = _weighted_percent(ROULETTE_PAYOUTS)
-    payout = body.amount * payout_percent // 100
-    awarded_fragment = 1 if payout_percent <= 50 else 0
+    payout, index = _weighted_basis_points(ROULETTE_PAYOUTS)
+    payout_percent = payout * 100 // ROULETTE_FIXED_BET
+    awarded_fragment = 1 if payout <= ROULETTE_FIXED_BET // 2 else 0
     fragment_count = 0
     if awarded_fragment:
         fragment_item = db.query(models.Item).filter(models.Item.code == "failure_fragment").first()
@@ -551,17 +579,17 @@ def roulette_spin(
         fragment_count = stack.quantity
 
     balance_before = wallet.balance
-    wallet.balance = wallet.balance - body.amount + payout
+    wallet.balance = wallet.balance - ROULETTE_FIXED_BET + payout
     outcome = {
         "payout_percent": payout_percent,
         "index": index,
         "failure_fragment_awarded": awarded_fragment,
     }
     db.add(models.CasinoRound(
-        token=body.request_id, user_id=user.id, game="roulette_v2", bet=body.amount,
+        token=body.request_id, user_id=user.id, game="roulette_v2", bet=ROULETTE_FIXED_BET,
         balance_before=balance_before, outcome=json.dumps(outcome), payout=payout, settled=True,
     ))
-    db.add(models.Transaction(sender_id=user.id, amount=body.amount, note="casino:bet:roulette"))
+    db.add(models.Transaction(sender_id=user.id, amount=ROULETTE_FIXED_BET, note="casino:bet:roulette"))
     if payout:
         db.add(models.Transaction(recipient_id=user.id, amount=payout, note="casino:payout:roulette"))
     db.flush()
@@ -660,6 +688,7 @@ CLICKER_PROGRESSION_MIN_EARNED = 0.80
 CLICKER_START_KOVCOINS = 1        # стартовый баланс ковкойнов (сразу можно кликать)
 CLICKER_CASHOUT_RATE = 2_000
 CLICKER_CASHOUT_MIN = 2_000       # минимальная сумма к выводу (в ковкойнах)
+CLICKER_CASHOUT_KOVBUCKS = 10     # 2 000 ковкойнов = 10 деноминированных K
 
 # --- Дневной лимит заработка ---
 # Семь активных дней: максимум 5, 9, 13, 17, 21, 25 и 30 ковбаксов.
@@ -939,6 +968,7 @@ def _clicker_payload(state, wallet, now, passive_earned=0):
         "wallet": wallet.balance,                 # ковбаксы (после вывода)
         "cashout_rate": CLICKER_CASHOUT_RATE,
         "cashout_min": CLICKER_CASHOUT_MIN,
+        "cashout_kovbucks": CLICKER_CASHOUT_KOVBUCKS,
         # Дневной лимит
         "progression_day": max(1, int(state.progression_day or 1)),
         "daily_cap": cap,
@@ -1177,7 +1207,7 @@ def clicker_cashout(
             detail=f"Минимум для вывода — {CLICKER_CASHOUT_MIN} ковкойнов",
         )
 
-    kovbaks = spend // CLICKER_CASHOUT_RATE
+    kovbaks = (spend // CLICKER_CASHOUT_RATE) * CLICKER_CASHOUT_KOVBUCKS
     if wallet.balance < 0 or wallet.balance > 2_000_000_000 - kovbaks:
         raise HTTPException(status_code=409, detail="Достигнут максимальный баланс ковбаксов")
     state.kovcoins = kc - spend

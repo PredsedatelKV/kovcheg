@@ -217,7 +217,7 @@ class Task(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     icon: Mapped[str] = mapped_column(String(64), default="🪓")
-    reward: Mapped[int] = mapped_column(Integer, default=10)
+    reward: Mapped[int] = mapped_column(Integer, default=100)
     target_progress: Mapped[int] = mapped_column(Integer, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_daily_plan: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -481,8 +481,8 @@ class BattlePassSeason(Base):
     theme: Mapped[str] = mapped_column(String(32), default="summer")  # summer/winter/...
     xp_per_level: Mapped[int] = mapped_column(Integer, default=100)
     total_levels: Mapped[int] = mapped_column(Integer, default=100)
-    price_current: Mapped[int] = mapped_column(Integer, default=499)
-    price_old: Mapped[int] = mapped_column(Integer, default=799)
+    price_current: Mapped[int] = mapped_column(Integer, default=4_990)
+    price_old: Mapped[int] = mapped_column(Integer, default=7_990)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
@@ -43,7 +44,7 @@ def quiz_api(tmp_path):
         user = models.User(id=1, telegram_id=101, first_name="Игрок", xp=0)
         db.add(user)
         db.flush()
-        db.add(models.Wallet(user_id=user.id, balance=10))
+        db.add(models.Wallet(user_id=user.id, balance=100))
         test = models.Quiz(
             title="Проверка",
             is_active=True,
@@ -52,6 +53,9 @@ def quiz_api(tmp_path):
             prize_label="5 ковбаксов",
             threshold_good=1,
             threshold_excellent=2,
+            rewards_excellent=json.dumps([
+                {"kind": "kovbucks", "amount": 50, "item_id": None},
+            ]),
         )
         db.add(test)
         db.flush()
@@ -116,7 +120,7 @@ def test_quiz_requires_server_issued_run_and_plausible_time(quiz_api):
     assert completed.status_code == 200
     assert completed.json()["score"] == 2
     with sessions() as db:
-        assert db.query(models.Wallet).filter_by(user_id=1).one().balance == 15
+        assert db.query(models.Wallet).filter_by(user_id=1).one().balance == 150
 
 
 def test_quiz_result_replay_and_parallel_submit_do_not_double_award(quiz_api):
@@ -135,10 +139,10 @@ def test_quiz_result_replay_and_parallel_submit_do_not_double_award(quiz_api):
     assert client.post("/api/quiz/submit", json=body, headers={"X-Test-User": "1"}).status_code in {400, 409}
     with sessions() as db:
         assert db.query(models.QuizAttempt).filter_by(user_id=1, quiz_id=1).count() == 1
-        assert db.query(models.Wallet).filter_by(user_id=1).one().balance == 15
+        assert db.query(models.Wallet).filter_by(user_id=1).one().balance == 150
 
 
-def test_invalid_thresholds_do_not_consume_run_or_partially_award(quiz_api):
+def test_fixed_percentage_grades_ignore_removed_legacy_thresholds(quiz_api):
     client, sessions = quiz_api
     started = _start(client)
     _age_run(sessions, started["run_token"])
@@ -153,16 +157,12 @@ def test_invalid_thresholds_do_not_consume_run_or_partially_award(quiz_api):
         json={"quiz_id": 1, "run_token": started["run_token"], "answers": _answers(started)},
         headers={"X-Test-User": "1"},
     )
-    assert response.status_code == 503
-    assert response.json()["detail"] == "Пороги теста настроены некорректно"
+    assert response.status_code == 200
     with sessions() as db:
-        assert db.query(models.QuizAttempt).count() == 0
-        assert db.get(models.QuizRun, started["run_token"]).consumed_at is None
+        assert db.query(models.QuizAttempt).count() == 1
+        assert db.get(models.QuizRun, started["run_token"]).consumed_at is not None
         assert db.get(models.User, 1).xp == 0
-        assert db.query(models.Wallet).filter_by(user_id=1).one().balance == 10
-
-    # Invalid active quizzes must also be rejected before issuing a new run.
-    assert client.post("/api/quiz/1/start", headers={"X-Test-User": "1"}).status_code == 503
+        assert db.query(models.Wallet).filter_by(user_id=1).one().balance == 150
 
 
 def test_item_stack_cap_rejects_reward_without_partial_changes(quiz_api):
@@ -176,6 +176,9 @@ def test_item_stack_cap_rejects_reward_without_partial_changes(quiz_api):
         item = models.Item(code="quiz_reward", name="Наградной предмет")
         db.add(item)
         db.flush()
+        configured.rewards_excellent = json.dumps([
+            {"kind": "item", "amount": 1, "item_id": item.id},
+        ])
         db.add(models.InventoryItem(user_id=1, item_id=item.id, quantity=quiz.MAX_INVENTORY_QUANTITY))
         db.commit()
 
@@ -196,4 +199,4 @@ def test_item_stack_cap_rejects_reward_without_partial_changes(quiz_api):
         assert db.query(models.QuizAttempt).count() == 0
         assert db.get(models.QuizRun, started["run_token"]).consumed_at is None
         assert db.get(models.User, 1).xp == 0
-        assert db.query(models.Wallet).filter_by(user_id=1).one().balance == 10
+        assert db.query(models.Wallet).filter_by(user_id=1).one().balance == 100

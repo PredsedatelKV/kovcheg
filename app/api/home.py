@@ -144,17 +144,17 @@ def get_daily_reward(user: models.User = Depends(current_user), db: Session = De
     dr = db.query(models.DailyReward).filter(models.DailyReward.user_id == user.id).first()
     today, yesterday = _day_keys()
     if not dr:
-        return {"streak": 0, "claimed_today": False, "reward": 1}
+        return {"streak": 0, "claimed_today": False, "reward": 10}
     claimed_today = dr.last_claim_date == today
     if claimed_today:
         # Уже забрано сегодня: показываем текущую серию и полученную награду.
-        return {"streak": dr.streak, "claimed_today": True, "reward": min(dr.streak, 7)}
+        return {"streak": dr.streak, "claimed_today": True, "reward": min(dr.streak, 7) * 10}
     # Не забрано сегодня. Серия продолжается только если забирали вчера, иначе сбрасывается.
     if dr.last_claim_date == yesterday:
         next_streak = min(dr.streak + 1, 7)
     else:
         next_streak = 1  # пропущен календарный день — серия сброшена
-    return {"streak": dr.streak, "claimed_today": False, "reward": next_streak}
+    return {"streak": dr.streak, "claimed_today": False, "reward": next_streak * 10}
 
 
 @router.post("/daily-reward/claim")
@@ -177,7 +177,7 @@ def claim_daily_reward(user: models.User = Depends(current_user), db: Session = 
         dr = models.DailyReward(user_id=user.id, streak=1, last_claim_date=today)
         db.add(dr)
 
-    reward = dr.streak
+    reward = dr.streak * 10
     wallet = ensure_wallet(db, user)
     if wallet.balance < 0 or wallet.balance > 2_000_000_000 - reward:
         raise HTTPException(status_code=409, detail="Достигнут максимальный баланс ковбаксов")

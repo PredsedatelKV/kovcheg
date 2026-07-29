@@ -776,7 +776,7 @@ async function openSellDialog(item, maxQty) {
     <label class="field-label">Количество (макс. ${maxQty})</label>
     <input class="input" id="q" type="number" min="1" max="${maxQty}" value="1" />
     <label class="field-label">Цена за весь лот (K)</label>
-    <input class="input" id="p" type="number" min="1" value="10" />
+    <input class="input" id="p" type="number" min="1" value="100" />
     <p class="card-sub" style="font-size:12px; margin:8px 0 0">Предмет появится на рынке. Любой игрок сможет купить.</p>
     <button class="btn" id="ok" style="margin-top:14px">Выставить на рынок</button>
   `);
@@ -990,7 +990,7 @@ function showMegaLootboxChoices(result) {
   requestAnimationFrame(() => chestButton.click());
 }
 
-function showLootboxChest(result) {
+function showLootboxChestLegacy(result) {
   if (!result?.pool || !Array.isArray(result.rewards) || !result.rewards.length) {
     window.kov.toast("Ковбокс открыт, но список наград не удалось показать");
     return;
@@ -1201,4 +1201,166 @@ function showLootboxChest(result) {
   updateCounter();
   hint.textContent = "Открываем…";
   requestAnimationFrame(() => revealNext());
+}
+
+function showLootboxChest(result) {
+  if (!result?.pool || !Array.isArray(result.rewards) || result.rewards.length !== 1) {
+    window.kov.toast("Ковбокс должен содержать ровно одну награду");
+    return;
+  }
+  document.querySelector(".lootbox-chest-overlay")?.remove();
+  const themes = new Set(["common", "rare", "epic", "legendary", "seasonal", "mega", "consolation"]);
+  const theme = themes.has(result.pool.code) ? result.pool.code : "common";
+  const reward = result.rewards[0];
+  const closedImage = result.pool.image_url || "/static/img/ui/box.svg";
+  const openImage = result.pool.open_image_url || closedImage;
+  const sequence = Array.isArray(result.star_sequence) && result.star_sequence.length
+    ? result.star_sequence.slice(0, 3)
+    : [result.starting_stars || 1, result.starting_stars || 1, result.starting_stars || 1];
+  let stars = Math.max(1, Math.min(5, Number(result.starting_stars) || 1));
+  let tapIndex = 0;
+  let locked = false;
+  let finished = false;
+
+  [closedImage, openImage, reward.icon].forEach((src) => {
+    if (!src) return;
+    const preload = new Image();
+    preload.src = src;
+  });
+
+  const overlay = document.createElement("div");
+  overlay.className = `lootbox-chest-overlay lootbox-theme-${theme} lootbox-star-opening`;
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.innerHTML = `
+    <div class="lootbox-chest-rays" aria-hidden="true"></div>
+    <header class="lootbox-chest-head">
+      <div class="lootbox-chest-kicker">Открытие</div>
+      <h2>${escapeHtml(result.pool.name || "Ковбокс")}</h2>
+      <div class="lootbox-stars" id="lootbox-stars" aria-label="${stars} из 5 звёзд"></div>
+    </header>
+    <div class="lootbox-reward-stage" id="lootbox-reward-stage" aria-live="polite"></div>
+    <div class="lootbox-chest-floor">
+      <button class="lootbox-chest-button" id="lootbox-chest-button" type="button" aria-label="Улучшить ковбокс">
+        <img src="${escapeHtml(closedImage)}" alt="${escapeHtml(result.pool.name || "Ковбокс")}" id="lootbox-chest-image" draggable="false"/>
+      </button>
+      <div class="lootbox-chest-hint" id="lootbox-chest-hint">Нажмите на ковбокс · 1 из 3</div>
+      <button class="btn lootbox-chest-done" id="lootbox-chest-done" type="button" hidden>Забрать</button>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const starsEl = overlay.querySelector("#lootbox-stars");
+  const stage = overlay.querySelector("#lootbox-reward-stage");
+  const chestButton = overlay.querySelector("#lootbox-chest-button");
+  const chestImage = overlay.querySelector("#lootbox-chest-image");
+  const hint = overlay.querySelector("#lootbox-chest-hint");
+  const done = overlay.querySelector("#lootbox-chest-done");
+  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=280");
+  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=280");
+  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=280`));
+  const allSounds = [openSound, specialSound, ...bonusSounds];
+  allSounds.forEach((audio) => {
+    audio.preload = "auto";
+    try { audio.load(); } catch (_) {}
+  });
+
+  async function playAudio(audio) {
+    const settings = getSettings();
+    if (!settings.uiSounds) return false;
+    allSounds.forEach((sound) => {
+      if (sound !== audio) {
+        sound.pause();
+        sound.currentTime = 0;
+      }
+    });
+    try {
+      return await playManagedMedia(audio, settings.uiSoundsVolume);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function playAudioAndWait(audio, maxWait) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      audio.addEventListener("ended", finish, { once:true });
+      playAudio(audio);
+      setTimeout(finish, maxWait);
+    });
+  }
+
+  function renderStars(animateFrom = stars) {
+    starsEl.innerHTML = Array.from({ length:5 }, (_, index) => {
+      const active = index < stars;
+      const fresh = active && index >= animateFrom;
+      return `<span class="lootbox-star${active ? " is-active" : ""}${fresh ? " is-new" : ""}" aria-hidden="true">★</span>`;
+    }).join("");
+    starsEl.setAttribute("aria-label", `${stars} из 5 звёзд`);
+  }
+
+  function makeRewardCard() {
+    const tier = reward.item?.lootbox_reward_tier || "normal";
+    const card = document.createElement("article");
+    card.className = `lootbox-reward-card reward-${reward.presentation_kind || "item"} is-visible reward-tier-${tier}`;
+    card.innerHTML = `
+      <img src="${escapeHtml(reward.icon || "/static/img/ui/box.svg")}" alt=""/>
+      <strong>${escapeHtml(reward.label || "Награда")}</strong>
+      <span>${escapeHtml(reward.rarity || "Награда")}</span>`;
+    return card;
+  }
+
+  async function revealReward() {
+    chestImage.src = openImage;
+    chestButton.classList.remove("is-star-tap");
+    chestButton.classList.add("is-opening");
+    hint.textContent = "Ковбокс открывается…";
+    await playAudioAndWait(openSound, 2600);
+    if (!document.body.contains(overlay)) return;
+    chestButton.hidden = true;
+    const tier = reward.item?.lootbox_reward_tier || "normal";
+    if (tier === "special" || tier === "super_special") await playAudio(specialSound);
+    const card = makeRewardCard();
+    stage.replaceChildren(card);
+    hint.textContent = "Награда получена";
+    done.hidden = false;
+    finished = true;
+    _updateSections(["inventory", "balance"]);
+    try { window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success"); } catch (_) {}
+  }
+
+  chestButton.addEventListener("click", async () => {
+    if (locked || finished || tapIndex >= sequence.length) return;
+    locked = true;
+    chestButton.disabled = true;
+    const previousStars = stars;
+    stars = Math.max(stars, Math.min(5, Number(sequence[tapIndex]) || stars));
+    chestButton.classList.remove("is-star-tap");
+    void chestButton.offsetWidth;
+    chestButton.classList.add("is-star-tap");
+    await playAudioAndWait(bonusSounds[Math.min(tapIndex, 2)], 850);
+    renderStars(previousStars);
+    tapIndex += 1;
+    try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(stars > previousStars ? "heavy" : "medium"); } catch (_) {}
+    if (tapIndex >= sequence.length) {
+      await new Promise((resolve) => setTimeout(resolve, 260));
+      await revealReward();
+      return;
+    }
+    hint.textContent = `Нажмите на ковбокс · ${tapIndex + 1} из ${sequence.length}`;
+    locked = false;
+    chestButton.disabled = false;
+  });
+
+  done.addEventListener("click", () => {
+    try { sessionStorage.removeItem("kovcheg.pendingLootboxReveal"); } catch (_) {}
+    allSounds.forEach((audio) => { audio.pause(); audio.currentTime = 0; });
+    overlay.classList.add("is-closing");
+    setTimeout(() => overlay.remove(), 180);
+  });
+  renderStars();
 }

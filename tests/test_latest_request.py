@@ -32,12 +32,12 @@ def test_xp_rolls_over_into_levels_and_caps_at_100(tmp_path):
         user.xp = 95
         result = award_xp(db, user, 125)
         assert (user.level, user.xp) == (100, 0)
-        assert result == {"xp_added": 5, "levels_gained": 1, "coins": 12}
-        assert user.wallet.balance == 19
+        assert result == {"xp_added": 5, "levels_gained": 1, "coins": 120}
+        assert user.wallet.balance == 127
 
         result = award_xp(db, user, 29)
         assert (user.level, user.xp) == (100, 0)
-        assert result["coins"] == 2
+        assert result["coins"] == 20
 
 
 def test_all_sections_and_clicker_are_unlocked(tmp_path):
