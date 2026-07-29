@@ -54,7 +54,7 @@ const PERSISTED_CACHE_PATHS = new Set([
   "/api/market/listings",
 ]);
 const cacheUserScope = tg?.initDataUnsafe?.user?.id || "browser";
-const PERSISTED_CACHE_KEY = `kovcheg.query-cache.v243.${cacheUserScope}`;
+const PERSISTED_CACHE_KEY = `kovcheg.query-cache.v244.${cacheUserScope}`;
 
 function persistQueryCache() {
   try {

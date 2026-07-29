@@ -1,4 +1,4 @@
-import { get, post } from "/static/api.js?v=255";
+import { get, post } from "/static/api.js?v=279";
 
 var _bpRoot = null;
 var _bpData = null;
@@ -66,7 +66,7 @@ export async function renderBattlePass(root) {
   root.innerHTML = '<div class="bp-loading">Загрузка…</div>';
 
   try {
-    _bpData = await get("/api/battlepass");
+    _bpData = await get("/api/battlepass", { force: true });
     if (!_bpData || !_bpData.season) {
       root.innerHTML = '<div class="bp-loading">Боевой пропуск пока не активен</div>';
       return;
@@ -274,7 +274,7 @@ function _renderBP(data) {
         node.querySelector(".bp-isle-body").appendChild(check);
         // \u041f\u0435\u0440\u0435\u0437\u0430\u043f\u0440\u0430\u0448\u0438\u0432\u0430\u0435\u043c \u0441\u0432\u0435\u0436\u0438\u0435 \u0434\u0430\u043d\u043d\u044b\u0435, \u0447\u0442\u043e\u0431\u044b \u0445\u0435\u0434\u0435\u0440/\u0431\u0430\u0440 \u043e\u0442\u0440\u0430\u0436\u0430\u043b\u0438 \u0430\u043a\u0442\u0443\u0430\u043b\u044c\u043d\u044b\u0435 XP/\u0443\u0440\u043e\u0432\u0435\u043d\u044c \u043f\u043e\u0441\u043b\u0435 claim.
         try {
-          var fresh = await get("/api/battlepass");
+          var fresh = await get("/api/battlepass", { force: true });
           if (fresh && fresh.season) _bpData = fresh;
         } catch (_) {}
         syncIslandStates(_bpData);

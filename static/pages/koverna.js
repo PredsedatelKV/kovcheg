@@ -1,4 +1,4 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=255";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=279";
 
 import { playUISound } from "/static/pages/settings.js?v=274";
 const escapeHtml = (s = "") =>
@@ -197,7 +197,7 @@ export async function renderKoverna(root) {
 
   try {
     const [products, categories] = await Promise.all([
-      get("/api/shop/products"),
+      get("/api/shop/products", { force: true }),
       get("/api/shop/categories"),
     ]);
     state.shopProducts = products;
@@ -235,7 +235,7 @@ async function renderShop(root, background) {
   if (content && !background) content.innerHTML = `<div class="empty">Загрузка…</div>`;
   let products;
   try {
-    products = await get("/api/shop/products");
+    products = await get("/api/shop/products", { force: true });
   } catch (e) {
     if (content && shopLoadVersions.get(root) === requestVersion) content.innerHTML = `<div class="empty">Ошибка загрузки: ${escapeHtml(e.message)}</div>`;
     return;

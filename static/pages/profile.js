@@ -1,4 +1,4 @@
-import { get, post, iconHtml, productImg } from "/static/api.js?v=266";
+import { get, post, iconHtml, productImg } from "/static/api.js?v=279";
 
 import { playUISound, getSettings, playManagedMedia } from "/static/pages/settings.js?v=274";
 import { mountCharacterCard } from "/static/pages/character.js?v=274";
@@ -66,7 +66,7 @@ export async function renderProfile(root) {
   _profileRoot = root;
   _profileData = null;
   root.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
-  const data = await get("/api/profile/me");
+  const data = await get("/api/profile/me", { force: true });
   data.inventory = (data.inventory || []).filter((row) => !row.item?.skin_slot);
   _profileData = data;
   const user = data.user;
@@ -429,7 +429,7 @@ async function _updateSections(sectionNames) {
   var root = _profileRoot;
   if (!root) return;
   try {
-    var data = await get("/api/profile/me");
+    var data = await get("/api/profile/me", { force: true });
     data.inventory = (data.inventory || []).filter(function(row) { return !row.item || !row.item.skin_slot; });
     _profileData = data;
     var user = data.user;

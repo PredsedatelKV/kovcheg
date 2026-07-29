@@ -1,4 +1,4 @@
-import { get, post, iconHtml } from "/static/api.js?v=266";
+import { get, post, iconHtml } from "/static/api.js?v=279";
 
 import { openAssistantChat } from "/static/pages/assistant.js?v=264";
 
