@@ -1392,6 +1392,47 @@ def seed(db: Session) -> None:
         )
         db.flush()
 
+    # The consolation box is assembled from failure fragments and must remain
+    # separate from the four boxes sold in the shop.  The previous four-box
+    # migration retired it together with obsolete commercial boxes; restore it
+    # once without touching any player inventory.
+    consolation_key = "2026-08-01-consolation-kovbox-v1"
+    consolation_done = db.execute(
+        text("SELECT 1 FROM maintenance_migrations WHERE key = :key"),
+        {"key": consolation_key},
+    ).first()
+    if consolation_done is None:
+        consolation_item.name = "Утешительный ковбокс"
+        consolation_item.icon = "/static/img/items/lootbox_consolation.png"
+        consolation_item.image_url = "/static/img/items/lootbox_consolation.png"
+        consolation_item.category = "Ковбоксы"
+        consolation_item.rarity = "Утешительный"
+        consolation_item.description = ""
+        consolation_item.can_gift = True
+        consolation_item.can_activate = False
+        consolation_item.lootbox_pool_code = "consolation"
+        consolation_pool.item_id = consolation_item.id
+        consolation_pool.name = "Утешительный ковбокс"
+        consolation_pool.description = ""
+        consolation_pool.rarity = "Утешительный"
+        consolation_pool.image_url = "/static/img/items/lootbox_consolation.png"
+        consolation_pool.open_image_url = "/static/img/items/lootbox_consolation.png"
+        consolation_pool.opening_mode = "chest_v2"
+        consolation_pool.is_active = True
+        consolation_pool.is_archived = False
+        consolation_pool.is_droppable = False
+        consolation_pool.sale_price = None
+        consolation_pool.assembly_weight = 0
+        consolation_pool.sort_order = 99
+        consolation_pool.guaranteed_slots = 1
+        consolation_pool.allow_duplicates = False
+        consolation_pool.version += 1
+        db.execute(
+            text("INSERT INTO maintenance_migrations(key) VALUES (:key)"),
+            {"key": consolation_key},
+        )
+        db.flush()
+
     # Remove obsolete editor-created duplicates. The live data is checked
     # before this migration: these pools/items have no inventory, listings,
     # shop rows, pass rewards or opening history.

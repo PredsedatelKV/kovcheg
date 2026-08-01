@@ -518,10 +518,13 @@ def test_seed_migrates_to_four_canonical_chests_once_and_preserves_admin_edits(l
             assert pool.open_image_url == f"/static/img/items/lootbox_{code}.png"
             assert {entry.reward_kind for entry in pool.entries} == {"item", "xp"}
             assert next(entry for entry in pool.entries if entry.reward_kind == "item").item.code == "box_fragment"
-        for code in ("legendary", "mega", "consolation"):
+        for code in ("legendary", "mega"):
             assert canonical[code].is_active is False
             assert canonical[code].is_archived is True
             assert canonical[code].sale_price is None
+        assert canonical["consolation"].is_active is True
+        assert canonical["consolation"].is_archived is False
+        assert canonical["consolation"].sale_price is None
 
         common = canonical["common"]
         common.name = "Настроенный администратором"
@@ -848,10 +851,23 @@ def test_four_canonical_boxes_have_expected_starting_stars(code, stars):
     assert all(stars <= value <= 4 for value in sequence)
 
 
+def test_fragment_assembly_uses_exact_current_box_probabilities():
+    assert profile.FRAGMENT_ASSEMBLY_WEIGHTS == {
+        "common": 50,
+        "rare": 30,
+        "epic": 15,
+        "seasonal": 5,
+    }
+    assert sum(profile.FRAGMENT_ASSEMBLY_WEIGHTS.values()) == 100
+
+
 def test_fragment_assembly_cost_insufficient_and_parallel(lootbox_api):
     client, sessions = lootbox_api
     box, _ = _create_box(client, sessions, code="assembly")
     with sessions() as db:
+        pool = db.query(models.LootboxPool).filter_by(id=box["id"]).one()
+        pool.code = "common"
+        pool.item.lootbox_pool_code = "common"
         fragment = db.query(models.Item).filter_by(code="box_fragment").one()
         db.add(models.InventoryItem(user_id=1, item_id=fragment.id, quantity=19))
         db.commit()

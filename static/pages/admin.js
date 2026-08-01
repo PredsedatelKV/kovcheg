@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=282";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=284";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -1579,8 +1579,9 @@ function openQuestionEditor(body, quizId, existing) {
 }
 
 // ---------- KOVBOX EDITOR ----------
-const LOOTBOX_RARITIES = ["Бронзовый", "Серебряный", "Золотой", "Сезонный"];
-const EDITABLE_LOOTBOX_CODES = ["common", "rare", "epic", "seasonal"];
+const LOOTBOX_RARITIES = ["Бронзовый", "Серебряный", "Золотой", "Сезонный", "Утешительный"];
+const EDITABLE_LOOTBOX_CODES = ["common", "rare", "epic", "seasonal", "consolation"];
+const LOOTBOX_START_STARS = { common:1, rare:2, epic:3, seasonal:4, consolation:1 };
 const LOOTBOX_REWARD_LABELS = {
   item: "Предмет",
   kovbucks: "Ковбаксы",
@@ -1791,7 +1792,7 @@ function openLootboxEditor(body, existing = null) {
       <div style="display:flex;align-items:center;gap:12px;margin:10px 0">
         <img id="lb-image-preview" src="${escapeHtml(box.image_url)}" alt="Закрытый" title="Закрытый" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--border);border-radius:12px" onerror="this.src='/static/img/ui/box.svg'"/>
         <img id="lb-open-image-preview" src="${escapeHtml(box.open_image_url || box.image_url)}" alt="Открытый" title="Открытый" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--border);border-radius:12px" onerror="this.src='/static/img/ui/box.svg'"/>
-        <div class="admin-sub">Настройте только награды и их количество.</div>
+        <div class="admin-sub">Старт: ${LOOTBOX_START_STARS[box.code] || 1} ★. Настройте XP и фрагменты для награды 1–2 ★. На 3 ★ выдаётся случайная особая, на 4 ★ — случайная сверхособая награда.</div>
       </div>
       ${isChoice ? `
         <div class="admin-card" style="margin:10px 0;padding:12px">
@@ -1948,12 +1949,12 @@ async function renderLootboxes(body) {
           <div style="min-width:0;flex:1">
             <h3 class="admin-card-title">${escapeHtml(row.name)} ${row.is_archived ? '<span class="admin-badge">архив</span>' : row.is_active ? '<span class="admin-badge">активен</span>' : ""}</h3>
             <div class="admin-sub">${escapeHtml(row.rarity)} · ${row.entries.length} наград</div>
-            <div class="admin-sub">Звёздный ковбокс · одна награда</div>
+            <div class="admin-sub">Старт: ${LOOTBOX_START_STARS[row.code] || 1} ★ · одна награда</div>
           </div>
         </div>
         <div class="row gap wrap" style="margin-top:10px">
           <button class="btn btn-sm" data-lb-action="edit">Редактировать</button>
-          ${row.is_archived ? "" : '<button class="btn btn-sm btn-danger" data-lb-action="archive">Архивировать</button>'}
+          ${EDITABLE_LOOTBOX_CODES.includes(row.code) ? "" : (row.is_archived ? "" : '<button class="btn btn-sm btn-danger" data-lb-action="archive">Архивировать</button>')}
         </div>
       </div>`).join("") : '<div class="admin-card"><div class="admin-sub">Ковбоксы не найдены</div></div>';
 

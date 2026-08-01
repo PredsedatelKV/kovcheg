@@ -1,6 +1,6 @@
 const tg = window.Telegram && window.Telegram.WebApp;
 const DEFAULT_ITEM_ICON = "/static/img/ui/box.svg";
-const LOOTBOX_ASSET_VERSION = "282";
+const LOOTBOX_ASSET_VERSION = "284";
 
 export function versionedAssetUrl(value) {
   const src = String(value ?? "").trim();

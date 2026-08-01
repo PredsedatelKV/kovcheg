@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=266";
+import { post, get } from "/static/api.js?v=284";
 
-import { playUISound } from "/static/pages/settings.js?v=274";
+import { playUISound } from "/static/pages/settings.js?v=284";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -49,6 +49,12 @@ async function syncBalance() {
 function updateBalanceDisplay(id, amount) {
   const el = document.getElementById(id);
   if (el) el.textContent = amount;
+}
+
+function showFailureFragment(settled) {
+  if (settled && settled.failure_fragment_awarded) {
+    window.kov.toast(`Фрагмент неудачи получен · ${settled.failure_fragment_count}/10`);
+  }
 }
 
 function animateElement(el, animation, duration) {
@@ -744,18 +750,13 @@ function gameRoulette() {
   const sectorColor = (amount) => amount <= 50 ? "#cf4d57" : amount === 100 ? "#e99d35" : amount < 500 ? "#41ad75" : "#7557d8";
   const modal = window.kov.showModal(`
     <button class="close" onclick="closeModal()">×</button>
-    <h2>Рулетка <span class="arcade-new-inline">Новое</span></h2>
+    <h2>Рулетка</h2>
     <div class="game-balance">Баланс: <strong id="roulette-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
     <div class="roulette-reel" id="roulette-wheel">
       <div class="roulette-reel-pointer" aria-hidden="true"></div>
       <div class="roulette-reel-track"></div>
     </div>
-    <div class="game-bet-custom">
-      <label>Ставка:</label>
-      <strong>100</strong>
-      <span class="game-bet-hint"><img src="/static/img/ui/kovbaks.png" alt="" class="game-icon-sm"/> фиксированная</span>
-    </div>
-    <button class="btn" id="roulette-spin-btn"${balance < fixedBet ? " disabled" : ""}>Крутить</button>
+    <button class="btn roulette-spin-button" id="roulette-spin-btn"${balance < fixedBet ? " disabled" : ""}>Крутить <span><img src="/static/img/ui/kovbaks.png" alt="" class="game-icon-sm"/> 100</span></button>
     <div class="game-result" id="roulette-result"></div>
   `);
   const wheel = modal.querySelector("#roulette-wheel");
@@ -941,6 +942,7 @@ function gameRiskWheel() {
         animateElement(wheel.children[chosenIdx], "popIn", 300);
 
         const settled = await post("/api/arcade/casino/settle", { token: serverRound.token });
+        showFailureFragment(settled);
         balance = settled.balance;
         if (mult > 1) {
           updateBalanceDisplay("roulette-balance", balance);
@@ -1697,6 +1699,7 @@ function gameSlots() {
         modal.querySelector("#s3").textContent = r3;
         spinBtn.disabled = false;
         const settled = await post("/api/arcade/casino/settle", { token: serverRound.token });
+        showFailureFragment(settled);
         balance = settled.balance;
         if (combo === "jackpot") {
           updateBalanceDisplay("slots-balance", balance);
@@ -1780,6 +1783,7 @@ function gameRocket() {
     let crashMultiplier = Number(status && status.crash_multiplier);
     try {
       const settled = await post("/api/arcade/casino/settle", { token });
+      showFailureFragment(settled);
       balance = settled.balance;
       updateBalanceDisplay("rocket-balance", balance);
       if (Number.isFinite(Number(settled.crash_multiplier))) {
@@ -1884,6 +1888,7 @@ function gameRocket() {
       // The payout is derived only from the server clock; the client sends no
       // multiplier that could be altered through DevTools or a direct request.
       const settled = await post("/api/arcade/casino/settle", { token: serverRound.token });
+      showFailureFragment(settled);
       balance = settled.balance;
       updateBalanceDisplay("rocket-balance", balance);
       if (settled.crashed) {
@@ -1984,6 +1989,7 @@ function gameDice() {
           diceEl.innerHTML = diceSVG[roll - 1];
           const won = Number(serverRound.outcome.payout_percent) > 0;
           const settled = await post("/api/arcade/casino/settle", { token: serverRound.token });
+          showFailureFragment(settled);
           balance = settled.balance;
           if (won) {
             updateBalanceDisplay("dice-balance", balance);
@@ -2179,9 +2185,9 @@ function gameClicker(hostRoot = null) {
 
   // ---------- Бусты ----------
   const BOOST_INFO = {
-    turbo:   { name: "Турбо", icon: "🚀", desc: "x2 за тап, 30 секунд" },
-    refill:  { name: "Заправка", icon: "🔋", desc: "полная энергия" },
-    passive: { name: "Пассив x2", icon: "💰", desc: "×2 доход, 1 час" },
+    turbo:   { name: "Турбо", icon: "🚀", desc: "×2 клики · 30 сек" },
+    refill:  { name: "Энергия", icon: "🔋", desc: "восстановить полностью" },
+    passive: { name: "Пассив ×2", icon: "💰", desc: "двойной доход · 1 час" },
   };
 
   function renderBoosts() {
@@ -2245,11 +2251,11 @@ function gameClicker(hostRoot = null) {
   }
 
   const UPGRADE_INFO = {
-    click:   { name: "Сила клика", icon: "⚔️", desc: "+0.22 ковкойна за тап" },
-    passive: { name: "Пассивный доход", icon: "💰", desc: "+0.2 ковкойна/мин" },
-    energy:  { name: "Макс. энергия", icon: "🔋", desc: "+60 к максимуму" },
-    crit:    { name: "Крит шанс", icon: "🎯", desc: "+0.5% крит (x2)" },
-    regen:   { name: "Реген энергии", icon: "⚡", desc: "+0.15/сек реген" },
+    click:   { name: "Сила клика", icon: "⚔️", desc: "+0.3 за нажатие" },
+    passive: { name: "Пассивный доход", icon: "💰", desc: "+0.35 в минуту" },
+    energy:  { name: "Запас энергии", icon: "🔋", desc: "+80 к запасу" },
+    crit:    { name: "Критический клик", icon: "🎯", desc: "+0.6% шанса ×2" },
+    regen:   { name: "Восстановление", icon: "⚡", desc: "+0.2 энергии/сек" },
   };
 
   function renderUpgrades() {
@@ -2318,9 +2324,9 @@ function gameClicker(hostRoot = null) {
     if (!st) return;
     elWallet.textContent = fmt(st.wallet || 0);
     const kc = st.kovcoins != null ? st.kovcoins : (st.balance || 0);
-    const min = st.cashout_min || 2000;
-    const rate = st.cashout_rate || 2000;
-    const payout = st.cashout_kovbucks || 10;
+    const min = st.cashout_min || 100;
+    const rate = st.cashout_rate || 100;
+    const payout = st.cashout_kovbucks || 1;
     elCashoutRate.textContent = fmt(rate) + " ковкойнов = " + fmt(payout) + " ковбаксов";
     elCashoutBtn.disabled = kc < min;
     elCashoutBtn.textContent = kc < min
@@ -2355,7 +2361,7 @@ function gameClicker(hostRoot = null) {
   async function cashout() {
     if (!st) return;
     const kc = st.kovcoins != null ? st.kovcoins : 0;
-    if (kc < (st.cashout_min || 2000)) return;
+    if (kc < (st.cashout_min || 100)) return;
     elCashoutBtn.disabled = true;
     try {
       const resp = await post("/api/arcade/clicker/cashout", {});
@@ -2458,6 +2464,22 @@ function gameClicker(hostRoot = null) {
     setTimeout(() => { if (!destroyed) elCoin.style.transform = ""; }, 100);
     playUISound("click");
 
+    // Immediate optimistic feedback. The next batched server response remains
+    // authoritative and reconciles critical hits, anti-fraud and the day cap.
+    const turboMult = turbo ? Number(st.boosts?.turbo?.mult || 2) : 1;
+    const visualGain = Math.max(1, Math.floor(Number(st.click_power || 1) * turboMult));
+    const room = Math.max(0, Number(st.daily_cap || 0) - Number(st.earned_today || 0));
+    const creditedNow = Math.min(visualGain, room);
+    if (creditedNow > 0) {
+      st.kovcoins = Number(st.kovcoins || 0) + creditedNow;
+      st.balance = st.kovcoins;
+      st.earned_today = Number(st.earned_today || 0) + creditedNow;
+      elBalance.textContent = fmt(st.kovcoins);
+      updateDaily();
+      const rect = elCoinWrap.getBoundingClientRect();
+      showFloat("+" + creditedNow, e.clientX - rect.left, e.clientY - rect.top, false);
+    }
+
     // Haptic feedback (Telegram WebApp)
     try {
       if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
@@ -2541,7 +2563,6 @@ export async function renderArcade(root) {
     <div class="game-grid">
       <div class="game-tile casino roulette-feature-tile" data-game="roulette" style="grid-column: 1 / -1">
         ${arcadeIcon("roulette")}
-        <span class="arcade-new-badge">Новое</span>
       </div>
     </div>
 
@@ -2549,7 +2570,7 @@ export async function renderArcade(root) {
     <div class="game-grid">
       <div class="game-tile clicker-feature-tile ${canUseClicker ? "" : "is-coming-soon"}" data-game="clicker" ${canUseClicker ? "" : 'data-locked="true"'} style="grid-column: 1 / -1">
         ${arcadeIcon("clicker")}
-        ${canUseClicker ? '<span class="arcade-new-badge">Новое</span>' : '<span class="coming-soon-badge">Скоро</span>'}
+        ${canUseClicker ? '' : '<span class="coming-soon-badge">Скоро</span>'}
       </div>
     </div>
 
@@ -2564,10 +2585,6 @@ export async function renderArcade(root) {
         ${arcadeIcon("tictactoe")}
         <div class="game-tile-title">Крестики-нолики</div>
       </div>
-      <div class="game-tile" data-game="minesweeper">
-        ${arcadeIcon("minesweeper")}
-        <div class="game-tile-title">Сапёр</div>
-      </div>
       <div class="game-tile" data-game="harvest">
         ${arcadeIcon("harvest")}
         <div class="game-tile-title">Собери урожай</div>
@@ -2579,6 +2596,10 @@ export async function renderArcade(root) {
       <div class="game-tile" data-game="pingpong">
         ${arcadeIcon("pingpong")}
         <div class="game-tile-title">Пинг-понг</div>
+      </div>
+      <div class="game-tile" data-game="minesweeper">
+        ${arcadeIcon("minesweeper")}
+        <div class="game-tile-title">Сапёр</div>
       </div>
     </div>
 
@@ -2748,7 +2769,7 @@ async function loadFirstWinBadges(root, force = false) {
   // Server returns whole seconds (floored). The small margin guarantees that
   // the one forced refresh happens after, not just before, Moscow midnight.
   _fwResetAt = Date.now() + Math.max(0, Number(status.next_reset_seconds || 0)) * 1000 + 1250;
-  const reward = status.reward || 3;
+  const rewards = status.rewards || {};
   MINI_GAMES.forEach((g) => {
     const tile = root.querySelector('.game-tile[data-game="' + g + '"]');
     if (!tile) return;
@@ -2764,6 +2785,7 @@ async function loadFirstWinBadges(root, force = false) {
     } else {
       badge.classList.remove("claimed");
       badge.title = "Победи, чтобы получить награду";
+      const reward = Number(rewards[g] || status.reward || 10);
       badge.textContent = "+" + reward + " " + _kovbaksWord(reward);
     }
   });

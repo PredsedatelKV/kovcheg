@@ -10,8 +10,8 @@
 //   руки    (0,8)  и (12,8)  4×12
 //   торс    (4,8)  8×12
 //   ноги    (4,20) 8×12
-import { get, post } from "/static/api.js?v=270";
-import { playUISound } from "/static/pages/settings.js?v=274";
+import { get, post } from "/static/api.js?v=284";
+import { playUISound } from "/static/pages/settings.js?v=284";
 
 const escapeHtml = (s = "") =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

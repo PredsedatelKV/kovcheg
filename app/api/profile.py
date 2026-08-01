@@ -871,7 +871,14 @@ def _roll_chest_random_entry(entries: list[models.LootboxPoolEntry]) -> models.L
     return None
 
 
-LOOTBOX_STARTING_STARS = {"common": 1, "rare": 2, "epic": 3, "seasonal": 4}
+LOOTBOX_STARTING_STARS = {
+    "common": 1,
+    "rare": 2,
+    "epic": 3,
+    "seasonal": 4,
+    "consolation": 1,
+}
+FRAGMENT_ASSEMBLY_WEIGHTS = {"common": 50, "rare": 30, "epic": 15, "seasonal": 5}
 LOOTBOX_TAPS = 3
 # Direct per-tap probabilities. After three taps, Bronze finishes at
 # 1/2/3/4 stars with about 12.50/82.58/4.90/0.02 percent respectively.
@@ -1462,7 +1469,7 @@ def assemble_fragments(
             or not pool.is_droppable
             or pool.is_archived
             or pool.opening_mode == "choice_v2"
-            or pool.assembly_weight <= 0
+            or pool.code not in FRAGMENT_ASSEMBLY_WEIGHTS
             or (pool.starts_at and now < pool.starts_at)
             or (pool.ends_at and now >= pool.ends_at)
             or (pool.min_user_level is not None and level < pool.min_user_level)
@@ -1476,7 +1483,13 @@ def assemble_fragments(
         candidates.append(pool)
     if not candidates:
         raise HTTPException(503, "Нет активных ковбоксов для сборки")
-    selected_pool = _weighted_pick(candidates, "assembly_weight")
+    ticket = secrets.randbelow(sum(FRAGMENT_ASSEMBLY_WEIGHTS[pool.code] for pool in candidates))
+    selected_pool = candidates[-1]
+    for pool in candidates:
+        ticket -= FRAGMENT_ASSEMBLY_WEIGHTS[pool.code]
+        if ticket < 0:
+            selected_pool = pool
+            break
     lootbox_item = selected_pool.item
 
     inventory.quantity -= cost

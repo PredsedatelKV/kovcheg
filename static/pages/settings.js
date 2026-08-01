@@ -187,13 +187,20 @@ function playCustomMusic(url, volume) {
   initAudio(url, true, volume);
 }
 
-function togglePause() {
-  if (!audio) return;
-  if (audio.paused) {
-    audio.play().catch(() => {});
-  } else {
+async function togglePause(volume) {
+  if (!audio || !audio.src) return false;
+  document.removeEventListener("pointerdown", resumePlay);
+  document.removeEventListener("touchstart", resumePlay);
+  if (!audio.paused) {
     audio.pause();
+    return false;
   }
+  const started = await playManagedMedia(audio, volume, false);
+  if (!started) {
+    document.addEventListener("pointerdown", resumePlay, { once:true });
+    document.addEventListener("touchstart", resumePlay, { once:true });
+  }
+  return started;
 }
 
 function isCurrentlyPlaying() {
@@ -447,7 +454,7 @@ export function openSettings() {
     list.innerHTML = html;
 
     list.querySelectorAll(".settings-track").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         const st = getSettings();
         const stActive = getActiveTrack(st);
         const tid = btn.dataset.track;
@@ -458,8 +465,8 @@ export function openSettings() {
             return;
           }
           if (stActive && stActive.type === "custom") {
-            togglePause();
-            st.musicPaused = !isCurrentlyPlaying();
+            const playing = await togglePause(st.musicVolume);
+            st.musicPaused = !playing;
             saveSettings(st);
             renderTracks();
             return;
@@ -474,8 +481,8 @@ export function openSettings() {
 
         if (tid) {
           if (stActive && stActive.id === tid) {
-            togglePause();
-            st.musicPaused = !isCurrentlyPlaying();
+            const playing = await togglePause(st.musicVolume);
+            st.musicPaused = !playing;
             saveSettings(st);
             renderTracks();
             return;

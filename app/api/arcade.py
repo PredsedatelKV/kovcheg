@@ -48,8 +48,17 @@ def arcade_win(
 
 
 # Награда за первую победу дня в мини-игре (в ковбаксах). Только для 6 мини-игр Аркады.
-FIRST_WIN_REWARD = 10
 FIRST_WIN_GAMES = {"moshonka", "tictactoe", "minesweeper", "harvest", "checkers", "pingpong"}
+FIRST_WIN_REWARDS = {
+    "moshonka": 10,
+    "tictactoe": 10,
+    "harvest": 10,
+    "checkers": 20,
+    "pingpong": 20,
+    "minesweeper": 30,
+}
+# Kept for old integrations; new clients use the per-game table above.
+FIRST_WIN_REWARD = min(FIRST_WIN_REWARDS.values())
 FIRST_WIN_MIN_SECONDS = {
     "moshonka": 2.0, "tictactoe": 1.0, "minesweeper": 2.0,
     "harvest": 18.0, "checkers": 10.0, "pingpong": 6.0,
@@ -157,6 +166,7 @@ def first_win_status(user: models.User = Depends(current_user), db: Session = De
     return {
         "won_games": won,
         "reward": FIRST_WIN_REWARD,
+        "rewards": FIRST_WIN_REWARDS,
         "server_time": now.isoformat(),
         "next_reset_seconds": max(0, int((tomorrow - now).total_seconds())),
     }
@@ -198,13 +208,14 @@ def claim_first_win(
 
     db.add(models.ArcadeFirstWin(user_id=user.id, game=game, win_date=today))
     wallet = ensure_wallet(db, user)
-    if wallet.balance < 0 or wallet.balance > 2_000_000_000 - FIRST_WIN_REWARD:
+    reward = FIRST_WIN_REWARDS[game]
+    if wallet.balance < 0 or wallet.balance > 2_000_000_000 - reward:
         raise HTTPException(status_code=409, detail="Достигнут максимальный баланс ковбаксов")
-    wallet.balance += FIRST_WIN_REWARD
-    db.add(models.Transaction(recipient_id=user.id, amount=FIRST_WIN_REWARD, note=f"first_win:{game}"))
+    wallet.balance += reward
+    db.add(models.Transaction(recipient_id=user.id, amount=reward, note=f"first_win:{game}"))
     db.commit()
     db.refresh(user)
-    return {"ok": True, "reward": FIRST_WIN_REWARD, "balance": user.wallet.balance}
+    return {"ok": True, "reward": reward, "balance": user.wallet.balance}
 
 
 @router.post("/bet")
@@ -245,6 +256,7 @@ RISKWHEEL_PAYOUTS = ((5, 15), (25, 13), (50, 15), (75, 16), (100, 15),
 # выплаты не приходилось грубо округлять. Сумма весов = 10_000, а
 # sum(выплата * вес) / 10_000 = 90 при ставке 100: RTP ровно 90%.
 ROULETTE_FIXED_BET = 100
+FAILURE_FRAGMENT_MIN_BET = 100
 ROULETTE_PAYOUTS = (
     (10, 900),
     (20, 1_100),
@@ -385,6 +397,30 @@ def _require_casino_access(db: Session, user: models.User) -> None:
         ),
         headers={"Retry-After": str(remaining_seconds)},
     )
+
+
+def _grant_failure_fragment(db: Session, user: models.User, bet: int, payout: int) -> tuple[int, int]:
+    """Grant one fragment for a meaningful loss, inside the round transaction."""
+    if bet < FAILURE_FRAGMENT_MIN_BET or payout * 2 > bet:
+        return 0, 0
+    fragment = db.query(models.Item).filter(models.Item.code == "failure_fragment").one_or_none()
+    if fragment is None:
+        # A missing optional reward must never prevent settlement of the
+        # player's already-paid casino round.
+        return 0, 0
+    stack = db.query(models.InventoryItem).filter(
+        models.InventoryItem.user_id == user.id,
+        models.InventoryItem.item_id == fragment.id,
+    ).one_or_none()
+    if stack is None:
+        stack = models.InventoryItem(user_id=user.id, item_id=fragment.id, quantity=1)
+        db.add(stack)
+    else:
+        if stack.quantity >= 2_000_000_000:
+            raise HTTPException(409, "Достигнут максимальный размер стака")
+        stack.quantity += 1
+    db.flush()
+    return 1, stack.quantity
 
 
 def _rocket_progress(row: models.CasinoRound, now: datetime | None = None) -> dict:
@@ -559,24 +595,9 @@ def roulette_spin(
 
     payout, index = _weighted_basis_points(ROULETTE_PAYOUTS)
     payout_percent = payout * 100 // ROULETTE_FIXED_BET
-    awarded_fragment = 1 if payout <= ROULETTE_FIXED_BET // 2 else 0
-    fragment_count = 0
-    if awarded_fragment:
-        fragment_item = db.query(models.Item).filter(models.Item.code == "failure_fragment").first()
-        if fragment_item is None:
-            raise HTTPException(503, "Фрагмент неудачи временно недоступен")
-        stack = db.query(models.InventoryItem).filter(
-            models.InventoryItem.user_id == user.id,
-            models.InventoryItem.item_id == fragment_item.id,
-        ).first()
-        if stack:
-            if stack.quantity >= 2_000_000_000:
-                raise HTTPException(409, "Достигнут максимальный размер стака")
-            stack.quantity += 1
-        else:
-            stack = models.InventoryItem(user_id=user.id, item_id=fragment_item.id, quantity=1)
-            db.add(stack)
-        fragment_count = stack.quantity
+    awarded_fragment, fragment_count = _grant_failure_fragment(
+        db, user, ROULETTE_FIXED_BET, payout
+    )
 
     balance_before = wallet.balance
     wallet.balance = wallet.balance - ROULETTE_FIXED_BET + payout
@@ -663,10 +684,17 @@ def casino_settle(
             raise HTTPException(status_code=409, detail="Достигнут максимальный баланс ковбаксов")
         wallet.balance += payout
         db.add(models.Transaction(recipient_id=user.id, amount=payout, note=f"casino:win:{row.game}"))
+    awarded_fragment, fragment_count = _grant_failure_fragment(db, user, row.bet, payout)
     db.flush()
     _apply_casino_loss_lock(db, user)
     db.commit()
-    response = {"ok": True, "payout": payout, "balance": wallet.balance}
+    response = {
+        "ok": True,
+        "payout": payout,
+        "balance": wallet.balance,
+        "failure_fragment_awarded": awarded_fragment,
+        "failure_fragment_count": fragment_count,
+    }
     if rocket_result is not None:
         response.update({
             "crashed": rocket_result["crashed"],
@@ -686,14 +714,14 @@ CLICKER_PROGRESSION_MIN_EARNED = 0.80
 
 # Внутриигровая валюта — «ковкойны». Тапаешь → копишь ковкойны → выводишь в ковбаксы.
 CLICKER_START_KOVCOINS = 1        # стартовый баланс ковкойнов (сразу можно кликать)
-CLICKER_CASHOUT_RATE = 2_000
-CLICKER_CASHOUT_MIN = 2_000       # минимальная сумма к выводу (в ковкойнах)
-CLICKER_CASHOUT_KOVBUCKS = 10     # 2 000 ковкойнов = 10 деноминированных K
+CLICKER_CASHOUT_RATE = 100
+CLICKER_CASHOUT_MIN = 100
+CLICKER_CASHOUT_KOVBUCKS = 1
 
 # --- Дневной лимит заработка ---
-# Семь активных дней: максимум 40, 50, 60, 70, 80, 90 и 100 ковбаксов.
+# Семь активных дней: максимум 100, 130, 160, 200, 240, 270 и 300 ковбаксов.
 # Активный и пассивный доход расходуют один общий серверный лимит.
-CLICKER_DAILY_CAPS = (8_000, 10_000, 12_000, 14_000, 16_000, 18_000, 20_000)
+CLICKER_DAILY_CAPS = (10_000, 13_000, 16_000, 20_000, 24_000, 27_000, 30_000)
 
 # --- Активные бусты (бесплатные, с дневным лимитом) ---
 CLICKER_TURBO_SECONDS = 30
@@ -735,32 +763,32 @@ CLICKER_RANKS = [
 
 # Стоимость апгрейдов — в ковкойнах (реинвест заработка). Прокачка растянута на дни/недели.
 CLICKER_UPGRADES = {
-    "click":   {"base_cost": 200, "mult": 1.15, "name": "Сила клика"},
-    "passive": {"base_cost": 250, "mult": 1.15, "name": "Пассивный доход"},
-    "energy":  {"base_cost": 220, "mult": 1.15, "name": "Макс. энергия"},
-    "crit":    {"base_cost": 260, "mult": 1.15, "name": "Крит шанс"},
-    "regen":   {"base_cost": 220, "mult": 1.15, "name": "Реген энергии"},
+    "click":   {"base_cost": 1_500, "mult": 1.24, "name": "Сила клика"},
+    "passive": {"base_cost": 1_800, "mult": 1.24, "name": "Пассивный доход"},
+    "energy":  {"base_cost": 1_200, "mult": 1.22, "name": "Запас энергии"},
+    "crit":    {"base_cost": 2_000, "mult": 1.25, "name": "Критический клик"},
+    "regen":   {"base_cost": 1_400, "mult": 1.23, "name": "Восстановление"},
 }
 
 
 def _clicker_click_power(state):
-    return 2.0 + state.lvl_click * 0.22         # 2.0 → 6.4
+    return 2.0 + state.lvl_click * 0.30         # 2.0 → 8.0
 
 
 def _clicker_max_energy(state):
-    return 1_200 + state.lvl_energy * 60         # 1200 → 2400
+    return 1_200 + state.lvl_energy * 80          # 1200 → 2800
 
 
 def _clicker_regen_rate(state):
-    return 2.0 + state.lvl_regen * 0.15          # 2.0 → 5.0 /сек
+    return 2.0 + state.lvl_regen * 0.20           # 2.0 → 6.0 /сек
 
 
 def _clicker_crit_chance(state):
-    return min(state.lvl_crit * 0.5, 10) / 100.0  # 0 → 10%
+    return min(state.lvl_crit * 0.6, 12) / 100.0  # 0 → 12%
 
 
 def _clicker_passive_per_min(state):
-    return 0.25 + state.lvl_passive * 0.2        # 0.25 → 4.25 /мин
+    return 0.5 + state.lvl_passive * 0.35         # 0.5 → 7.5 /мин
 
 
 def _clicker_upgrade_cost(key, current_level):

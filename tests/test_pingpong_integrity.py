@@ -89,10 +89,10 @@ def test_pingpong_valid_result_is_awarded_once(pingpong_api):
     response = _claim(client, token)
 
     assert response.status_code == 200
-    assert response.json()["reward"] == arcade.FIRST_WIN_REWARD
-    assert _balance(sessions) == 100 + arcade.FIRST_WIN_REWARD
+    assert response.json()["reward"] == arcade.FIRST_WIN_REWARDS["pingpong"]
+    assert _balance(sessions) == 100 + arcade.FIRST_WIN_REWARDS["pingpong"]
     assert _claim(client, token).status_code == 409
-    assert _balance(sessions) == 100 + arcade.FIRST_WIN_REWARD
+    assert _balance(sessions) == 100 + arcade.FIRST_WIN_REWARDS["pingpong"]
 
 
 @pytest.mark.parametrize(
@@ -133,7 +133,7 @@ def test_pingpong_invalid_attempt_does_not_consume_round(pingpong_api):
 
     assert _claim(client, token, player_score=4).status_code == 400
     assert _claim(client, token).status_code == 200
-    assert _balance(sessions) == 100 + arcade.FIRST_WIN_REWARD
+    assert _balance(sessions) == 100 + arcade.FIRST_WIN_REWARDS["pingpong"]
 
 
 def test_pingpong_parallel_replay_cannot_double_credit(pingpong_api):
@@ -144,7 +144,7 @@ def test_pingpong_parallel_replay_cannot_double_credit(pingpong_api):
         statuses = list(pool.map(lambda _: _claim(client, token).status_code, range(2)))
 
     assert sorted(statuses) == [200, 409]
-    assert _balance(sessions) == 100 + arcade.FIRST_WIN_REWARD
+    assert _balance(sessions) == 100 + arcade.FIRST_WIN_REWARDS["pingpong"]
 
 
 @pytest.mark.parametrize("multiplier", ["NaN", "Infinity", "-Infinity"])

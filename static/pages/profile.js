@@ -1,6 +1,6 @@
-import { get, post, iconHtml, productImg, versionedAssetUrl } from "/static/api.js?v=282";
+import { get, post, iconHtml, productImg, versionedAssetUrl } from "/static/api.js?v=284";
 
-import { playUISound, getSettings, playManagedMedia } from "/static/pages/settings.js?v=274";
+import { playUISound, getSettings, playManagedMedia } from "/static/pages/settings.js?v=284";
 import { mountCharacterCard } from "/static/pages/character.js?v=274";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -1321,14 +1321,10 @@ function showLootboxChest(result) {
     }
 
     hint.textContent = "Особая награда…";
-    const soundStarted = await playAudio(specialSound);
-    const durationMs = Number.isFinite(specialSound.duration) && specialSound.duration > 1
-      ? specialSound.duration * 1000
-      : 9576;
-    const revealDelay = soundStarted
-      ? Math.max(2200, Math.min(8500, durationMs - 1200))
-      : 1200;
-    await wait(window.matchMedia("(prefers-reduced-motion: reduce)").matches ? Math.min(1200, revealDelay) : revealDelay);
+    await playAudio(specialSound);
+    // The reveal is synchronized to the beginning of the special-reward
+    // sound, not its end: the white suspense card always lasts three seconds.
+    await wait(3000);
     if (!document.body.contains(overlay)) return;
     card.classList.remove("is-special-pending");
     void card.offsetWidth;

@@ -171,7 +171,7 @@ def test_each_arcade_first_win_requires_round_and_is_daily(game_api, game):
         json={"game": game, "round_token": token, **result},
         headers=_headers(),
     )
-    assert first.status_code == 200 and first.json()["reward"] == arcade.FIRST_WIN_REWARD
+    assert first.status_code == 200 and first.json()["reward"] == arcade.FIRST_WIN_REWARDS[game]
     token2 = client.post("/api/arcade/round/start", json={"game": game}, headers=_headers()).json()["token"]
     with sessions() as db:
         row = db.query(models.ArcadeRound).filter_by(token=token2).one()
@@ -207,7 +207,7 @@ def test_first_win_parallel_request_cannot_double_credit(game_api):
     with ThreadPoolExecutor(max_workers=2) as pool:
         statuses = list(pool.map(claim, range(2)))
     assert sorted(statuses) == [200, 409]
-    assert _balance(sessions) == before + arcade.FIRST_WIN_REWARD
+    assert _balance(sessions) == before + arcade.FIRST_WIN_REWARDS["minesweeper"]
 
 
 def test_fragment_assembly_and_parallel_safety(game_api):
@@ -231,23 +231,25 @@ def test_fragment_assembly_and_parallel_safety(game_api):
 
 def test_clicker_is_open_for_all_players(game_api):
     client, sessions = game_api
-    for user_id in (1, 2, 3, 4):
+    for user_id in (1, 2):
         assert client.get("/api/arcade/clicker/state", headers=_headers(user_id)).status_code == 200
         with sessions() as db:
             assert access.can_use_clicker(db.get(models.User, user_id)) is True
+    for user_id in (3, 4):
+        assert client.get("/api/arcade/clicker/state", headers=_headers(user_id)).status_code == 503
     assert client.post("/api/arcade/round/start", json={"game": "clicker"}, headers=_headers(2)).status_code == 400
 
 
-def test_clicker_progression_caps_are_40_to_100_kovbucks(game_api, monkeypatch):
+def test_clicker_progression_caps_reach_300_kovbucks(game_api, monkeypatch):
     client, sessions = game_api
     clock = [datetime(2026, 7, 1, 9, 0, 0)]
     monkeypatch.setattr(arcade.models, "now_utc", lambda: clock[0])
 
     first = client.get("/api/arcade/clicker/state", headers=_headers()).json()
     assert first["progression_day"] == 1
-    assert first["daily_cap"] == 8_000
+    assert first["daily_cap"] == 10_000
 
-    expected = [10_000, 12_000, 14_000, 16_000, 18_000, 20_000, 20_000]
+    expected = [13_000, 16_000, 20_000, 24_000, 27_000, 30_000, 30_000]
     for offset, cap in enumerate(expected, start=1):
         with sessions() as db:
             state = db.query(models.ClickerState).filter_by(user_id=1).one()
@@ -257,7 +259,7 @@ def test_clicker_progression_caps_are_40_to_100_kovbucks(game_api, monkeypatch):
         snapshot = client.get("/api/arcade/clicker/state", headers=_headers()).json()
         assert snapshot["daily_cap"] == cap
         assert snapshot["progression_day"] == min(7, offset + 1)
-        assert snapshot["daily_cap"] // snapshot["cashout_rate"] <= 10
+        assert snapshot["daily_cap"] // snapshot["cashout_rate"] <= 300
 
 
 def test_clicker_flood_is_locked_without_energy_or_income(game_api, monkeypatch):
@@ -289,9 +291,9 @@ def test_clicker_passive_income_has_hard_daily_subcap(game_api, monkeypatch):
         state.kovcoins = 0
         db.commit()
     snapshot = client.get("/api/arcade/clicker/state", headers=_headers()).json()
-    assert snapshot["passive_earned_today"] == 800
-    assert snapshot["passive_daily_cap"] == 800
-    assert client.get("/api/arcade/clicker/state", headers=_headers()).json()["kovcoins"] == 800
+    assert snapshot["passive_earned_today"] == 1_000
+    assert snapshot["passive_daily_cap"] == 1_000
+    assert client.get("/api/arcade/clicker/state", headers=_headers()).json()["kovcoins"] == 1_000
 
 
 def test_clicker_cashout_uses_safe_rate(game_api, monkeypatch):
@@ -306,8 +308,8 @@ def test_clicker_cashout_uses_safe_rate(game_api, monkeypatch):
     before = _balance(sessions)
     response = client.post("/api/arcade/clicker/cashout", json={}, headers=_headers())
     assert response.status_code == 200
-    assert response.json()["cashed_out"] == 20
-    assert _balance(sessions) == before + 20
+    assert response.json()["cashed_out"] == 40
+    assert _balance(sessions) == before + 40
 
 
 def test_shop_restock_request_is_limited_to_one_per_day(game_api):
@@ -368,6 +370,29 @@ def test_roulette_is_atomic_idempotent_and_awards_failure_fragment(game_api, mon
     assert replay.status_code == 200
     assert replay.json()["replayed"] is True
     assert _balance(sessions) == 10
+    with sessions() as db:
+        fragment = db.query(models.Item).filter_by(code="failure_fragment").one()
+        assert db.query(models.InventoryItem).filter_by(user_id=1, item_id=fragment.id).one().quantity == 1
+
+
+def test_casino_loss_awards_failure_fragment_on_settlement(game_api, monkeypatch):
+    client, sessions = game_api
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 100)
+    started = client.post(
+        "/api/arcade/casino/start",
+        json={"game": "slots", "amount": 100},
+        headers=_headers(),
+    )
+    assert started.status_code == 200, started.text
+    settled = client.post(
+        "/api/arcade/casino/settle",
+        json={"token": started.json()["token"]},
+        headers=_headers(),
+    )
+    assert settled.status_code == 200, settled.text
+    assert settled.json()["payout"] == 0
+    assert settled.json()["failure_fragment_awarded"] == 1
+    assert settled.json()["failure_fragment_count"] == 1
     with sessions() as db:
         fragment = db.query(models.Item).filter_by(code="failure_fragment").one()
         assert db.query(models.InventoryItem).filter_by(user_id=1, item_id=fragment.id).one().quantity == 1
