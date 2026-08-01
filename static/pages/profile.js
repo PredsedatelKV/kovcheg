@@ -1251,11 +1251,10 @@ function showLootboxChest(result) {
   const starsEl = overlay.querySelector("#lootbox-stars");
   const stage = overlay.querySelector("#lootbox-reward-stage");
   const chestButton = overlay.querySelector("#lootbox-chest-button");
-  const chestImage = overlay.querySelector("#lootbox-chest-image");
   const hint = overlay.querySelector("#lootbox-chest-hint");
   const done = overlay.querySelector("#lootbox-chest-done");
-  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=282");
-  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=282`));
+  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=283");
+  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=283`));
   const allSounds = [specialSound, ...bonusSounds];
   allSounds.forEach((audio) => {
     audio.preload = "auto";
@@ -1265,12 +1264,6 @@ function showLootboxChest(result) {
   async function playAudio(audio) {
     const settings = getSettings();
     if (!settings.uiSounds) return false;
-    allSounds.forEach((sound) => {
-      if (sound !== audio) {
-        sound.pause();
-        sound.currentTime = 0;
-      }
-    });
     try {
       return await playManagedMedia(audio, settings.uiSoundsVolume);
     } catch (_) {
@@ -1278,21 +1271,7 @@ function showLootboxChest(result) {
     }
   }
 
-  function playAudioAndWait(audio, maxWait) {
-    return new Promise((resolve) => {
-      let settled = false;
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        resolve();
-      };
-      audio.addEventListener("ended", finish, { once:true });
-      playAudio(audio).then((started) => {
-        if (!started) finish();
-      });
-      setTimeout(finish, maxWait);
-    });
-  }
+  const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
   function renderStars(animateFrom = stars) {
     starsEl.innerHTML = Array.from({ length:4 }, (_, index) => {
@@ -1303,10 +1282,11 @@ function showLootboxChest(result) {
     starsEl.setAttribute("aria-label", `${stars} из 4 звёзд`);
   }
 
-  function makeRewardCard() {
+  function makeRewardCard(suspense = false) {
     const tier = reward.item?.lootbox_reward_tier || "normal";
     const card = document.createElement("article");
-    card.className = `lootbox-reward-card reward-${reward.presentation_kind || "item"} is-visible reward-tier-${tier}`;
+    card.className = `lootbox-reward-card reward-${reward.presentation_kind || "item"} is-visible reward-tier-${tier}${suspense ? " is-special-pending" : ""}`;
+    if (suspense) card.setAttribute("aria-label", "Особая награда открывается");
     card.innerHTML = `
       <img src="${escapeHtml(reward.icon || "/static/img/ui/box.svg")}" alt=""/>
       <strong>${escapeHtml(reward.label || "Награда")}</strong>
@@ -1314,24 +1294,47 @@ function showLootboxChest(result) {
     return card;
   }
 
-  async function revealReward() {
-    chestButton.classList.remove("is-star-tap");
-    void chestButton.offsetWidth;
-    chestButton.classList.add("is-opening");
-    hint.textContent = "Награда открывается…";
-    await new Promise((resolve) => setTimeout(resolve, 720));
-    if (!document.body.contains(overlay)) return;
-    chestButton.hidden = true;
-    overlay.classList.add("is-reward-revealed");
-    const tier = reward.item?.lootbox_reward_tier || "normal";
-    if (tier === "special" || tier === "super_special") playAudio(specialSound);
-    const card = makeRewardCard();
-    stage.replaceChildren(card);
+  function completeReward() {
     hint.textContent = "Награда получена";
     done.hidden = false;
     finished = true;
     _updateSections(["inventory", "balance"]);
     try { window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success"); } catch (_) {}
+  }
+
+  async function revealReward() {
+    chestButton.classList.remove("is-star-tap");
+    void chestButton.offsetWidth;
+    chestButton.classList.add("is-opening");
+    hint.textContent = "Награда открывается…";
+    await wait(window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 80 : 280);
+    if (!document.body.contains(overlay)) return;
+    chestButton.hidden = true;
+    overlay.classList.add("is-reward-revealed");
+    const tier = reward.item?.lootbox_reward_tier || "normal";
+    const suspense = tier === "special" || tier === "super_special";
+    const card = makeRewardCard(suspense);
+    stage.replaceChildren(card);
+    if (!suspense) {
+      completeReward();
+      return;
+    }
+
+    hint.textContent = "Особая награда…";
+    const soundStarted = await playAudio(specialSound);
+    const durationMs = Number.isFinite(specialSound.duration) && specialSound.duration > 1
+      ? specialSound.duration * 1000
+      : 9576;
+    const revealDelay = soundStarted
+      ? Math.max(2200, Math.min(8500, durationMs - 1200))
+      : 1200;
+    await wait(window.matchMedia("(prefers-reduced-motion: reduce)").matches ? Math.min(1200, revealDelay) : revealDelay);
+    if (!document.body.contains(overlay)) return;
+    card.classList.remove("is-special-pending");
+    void card.offsetWidth;
+    card.classList.add("is-special-disclosed");
+    card.removeAttribute("aria-label");
+    completeReward();
   }
 
   chestButton.addEventListener("click", async () => {
@@ -1343,16 +1346,18 @@ function showLootboxChest(result) {
     chestButton.classList.remove("is-star-tap");
     void chestButton.offsetWidth;
     chestButton.classList.add("is-star-tap");
-    await playAudioAndWait(bonusSounds[Math.min(tapIndex, 2)], 3200);
-    renderStars(previousStars);
+    void playAudio(bonusSounds[Math.min(tapIndex, 2)]);
     tapIndex += 1;
+    await wait(window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 40 : 120);
+    if (!document.body.contains(overlay)) return;
+    renderStars(previousStars);
     try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(stars > previousStars ? "heavy" : "medium"); } catch (_) {}
     if (tapIndex >= sequence.length) {
-      await new Promise((resolve) => setTimeout(resolve, 260));
       await revealReward();
       return;
     }
     hint.textContent = `Нажмите на ковбокс · ${tapIndex + 1} из ${sequence.length}`;
+    await wait(40);
     locked = false;
     chestButton.disabled = false;
   });

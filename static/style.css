@@ -3955,7 +3955,14 @@ html.dark .lootbox-title { color:#e8f0ff; }
 .lootbox-chest-done[hidden] { display:none; }
 .lootbox-star-opening {
   grid-template-columns:minmax(0,1fr);
-  grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-rows:minmax(84px,auto) minmax(0,1fr) minmax(44px,auto);
+  gap:4px;
+}
+.lootbox-star-opening .lootbox-chest-head {
+  grid-row:1;
+  align-self:start;
+  min-height:0;
+  z-index:5;
 }
 .lootbox-star-opening .lootbox-reward-stage {
   grid-column:1;
@@ -3968,7 +3975,8 @@ html.dark .lootbox-title { color:#e8f0ff; }
 .lootbox-star-opening .lootbox-chest-floor {
   grid-column:1;
   grid-row:2;
-  align-self:center;
+  align-self:stretch;
+  justify-content:center;
   position:relative;
   z-index:2;
 }
@@ -3977,7 +3985,8 @@ html.dark .lootbox-title { color:#e8f0ff; }
   align-self:center;
 }
 .lootbox-star-opening .lootbox-chest-button {
-  width:min(88vw,420px);
+  width:min(78vw,360px);
+  max-height:min(45vh,310px);
   height:auto;
   aspect-ratio:3 / 2;
   align-items:center;
@@ -4034,27 +4043,87 @@ html.dark .lootbox-title { color:#e8f0ff; }
   background:
     linear-gradient(155deg,rgba(255,255,255,.93),rgba(232,239,255,.93)) padding-box,
     linear-gradient(110deg,#ff3b30,#ffcc00,#34c759,#32ade6,#af52de,#ff2d8d) border-box;
-  background-size:100% 100%,300% 300%;
+  background-size:100% 100%;
   animation:lootbox-reward-jump .52s cubic-bezier(.18,.89,.32,1.35) forwards,
-    lootbox-rainbow 2.2s linear infinite;
+    lootbox-special-color 2.8s ease-in-out infinite alternate;
 }
 .lootbox-reward-card.reward-tier-super_special {
   border-color:transparent;
   color:#172033;
   background:
-    linear-gradient(120deg,rgba(255,80,120,.90),rgba(255,218,45,.90),rgba(65,220,145,.90),rgba(69,168,255,.90),rgba(183,85,255,.90)) padding-box,
-    linear-gradient(110deg,#fff,#ffcc00,#34c759,#32ade6,#af52de,#fff) border-box;
-  background-size:320% 320%;
+    radial-gradient(circle at 18% 18%,rgba(255,92,143,.95),transparent 46%) padding-box,
+    radial-gradient(circle at 82% 20%,rgba(255,222,70,.92),transparent 48%) padding-box,
+    radial-gradient(circle at 25% 84%,rgba(67,220,156,.92),transparent 48%) padding-box,
+    radial-gradient(circle at 82% 82%,rgba(92,126,255,.94),transparent 50%) padding-box,
+    linear-gradient(145deg,rgba(255,255,255,.9),rgba(188,96,255,.86)) padding-box,
+    conic-gradient(from 20deg,#fff,#ffcc00,#34c759,#32ade6,#af52de,#ff4f94,#fff) border-box;
+  background-size:100% 100%;
   box-shadow:0 0 26px rgba(255,255,255,.86),0 0 70px rgba(185,92,255,.72),0 20px 50px rgba(0,0,0,.3);
   animation:lootbox-reward-jump .52s cubic-bezier(.18,.89,.32,1.35) forwards,
-    lootbox-super-glow 2.4s linear infinite;
+    lootbox-super-glow 2.8s ease-in-out infinite alternate;
 }
 .lootbox-reward-card.reward-tier-special strong,
 .lootbox-reward-card.reward-tier-special span,
 .lootbox-reward-card.reward-tier-super_special strong,
 .lootbox-reward-card.reward-tier-super_special span { color:#172033; }
 @keyframes lootbox-super-glow {
-  to { background-position:320% 0; filter:hue-rotate(360deg); }
+  0% { filter:hue-rotate(-8deg) saturate(1.05); box-shadow:0 0 24px rgba(255,255,255,.82),0 0 58px rgba(103,181,255,.62),0 20px 50px rgba(0,0,0,.3); }
+  100% { filter:hue-rotate(22deg) saturate(1.2); box-shadow:0 0 34px rgba(255,255,255,.98),0 0 84px rgba(226,83,255,.78),0 20px 50px rgba(0,0,0,.3); }
+}
+@keyframes lootbox-special-color {
+  0% { filter:hue-rotate(-12deg); box-shadow:0 0 30px rgba(255,255,255,.7),0 20px 50px rgba(0,0,0,.3); }
+  100% { filter:hue-rotate(18deg); box-shadow:0 0 48px rgba(255,255,255,.94),0 20px 50px rgba(0,0,0,.3); }
+}
+.lootbox-reward-card.is-special-pending,
+.lootbox-reward-card.reward-tier-special.is-special-pending,
+.lootbox-reward-card.reward-tier-super_special.is-special-pending {
+  overflow:hidden;
+  border-color:rgba(255,255,255,.96);
+  background:
+    radial-gradient(circle at 50% 45%,#fff 0 22%,rgba(255,255,255,.96) 46%,rgba(224,236,255,.94) 100%);
+  box-shadow:0 0 28px #fff,0 0 78px rgba(255,255,255,.92),0 20px 50px rgba(0,0,0,.28);
+  opacity:1;
+  animation:lootbox-special-suspense .18s ease-in-out infinite alternate,
+    lootbox-special-pulse 1.15s ease-in-out infinite alternate;
+}
+.lootbox-reward-card.is-special-pending::before,
+.lootbox-reward-card.is-special-pending::after {
+  content:"";
+  position:absolute;
+  inset:8%;
+  pointer-events:none;
+  background:
+    radial-gradient(circle at 20% 26%,#fff 0 2px,transparent 4px),
+    radial-gradient(circle at 78% 22%,#fff 0 3px,transparent 5px),
+    radial-gradient(circle at 30% 78%,#fff 0 2px,transparent 4px),
+    radial-gradient(circle at 82% 72%,#fff 0 2px,transparent 4px);
+  animation:lootbox-special-sparkle 1.05s ease-in-out infinite alternate;
+}
+.lootbox-reward-card.is-special-pending::after {
+  inset:18%;
+  transform:rotate(35deg) scale(.82);
+  animation-delay:.35s;
+}
+.lootbox-reward-card.is-special-pending > * {
+  opacity:0;
+  transform:scale(.78);
+}
+.lootbox-reward-card.is-special-disclosed > * {
+  opacity:1;
+  transform:none;
+  transition:opacity .34s ease,transform .46s cubic-bezier(.18,.89,.32,1.3);
+}
+@keyframes lootbox-special-suspense {
+  from { transform:translate3d(-2px,-1px,0) rotate(-.5deg); }
+  to { transform:translate3d(2px,1px,0) rotate(.5deg); }
+}
+@keyframes lootbox-special-pulse {
+  from { filter:brightness(1); }
+  to { filter:brightness(1.14); }
+}
+@keyframes lootbox-special-sparkle {
+  from { opacity:.35; transform:scale(.86) rotate(-6deg); }
+  to { opacity:1; transform:scale(1.08) rotate(5deg); }
 }
 
 @media (max-height:690px) {
@@ -4066,14 +4135,23 @@ html.dark .lootbox-title { color:#e8f0ff; }
   .lootbox-reward-card img { width:70px; height:70px; }
   .lootbox-chest-button { height:145px; }
   .lootbox-star-opening .lootbox-chest-button {
-    width:min(72vw,330px);
+    width:min(66vw,300px);
+    max-height:36vh;
     height:auto;
   }
+  .lootbox-chest-overlay.lootbox-star-opening {
+    grid-template-rows:minmax(68px,auto) minmax(0,1fr) minmax(40px,auto);
+    gap:2px;
+  }
+  .lootbox-star-opening .lootbox-stars { min-height:30px; margin-top:3px; }
+  .lootbox-star-opening .lootbox-star { font-size:26px; }
+  .lootbox-star-opening .lootbox-chest-head h2 { margin-top:1px; font-size:clamp(18px,5vw,24px); }
 }
 @media (prefers-reduced-motion: reduce) {
   .lootbox-chest-rays, .lootbox-remaining.is-rainbow { animation:none; }
   .lootbox-reward-card.is-visible { animation-duration:.08s; }
   .lootbox-chest-button.is-bumping { animation-duration:.08s; }
+  .lootbox-reward-card.is-special-pending { animation:none; transform:none; }
 }
 .game-answer-btn:hover { background: var(--primary); color: #fff; }
 
