@@ -903,7 +903,12 @@ function showMegaLootboxChoices(result) {
       const settings = getSettings();
       if (!settings.uiSounds) return false;
       allSounds.forEach((sound) => { if (sound !== audio) { sound.pause(); sound.currentTime = 0; } });
-      return await playManagedMedia(audio, settings.uiSoundsVolume);
+      const managedStart = playManagedMedia(audio, settings.uiSoundsVolume, false);
+      audio.pause();
+      try { audio.currentTime = 0; } catch (_) {}
+      await audio.play();
+      await managedStart;
+      return true;
     } catch (_) {
       return false;
     }
@@ -1063,7 +1068,12 @@ function showLootboxChestLegacy(result) {
       const settings = getSettings();
       if (!settings.uiSounds) return false;
       allSounds.forEach((sound) => { if (sound !== audio) { sound.pause(); sound.currentTime = 0; } });
-      return await playManagedMedia(audio, settings.uiSoundsVolume);
+      const managedStart = playManagedMedia(audio, settings.uiSoundsVolume, false);
+      audio.pause();
+      try { audio.currentTime = 0; } catch (_) {}
+      await audio.play();
+      await managedStart;
+      return true;
     } catch (_) {
       return false;
     }
@@ -1273,7 +1283,18 @@ function showLootboxChest(result) {
     const settings = getSettings();
     if (!settings.uiSounds) return false;
     try {
-      return await playManagedMedia(audio, settings.uiSoundsVolume);
+      allSounds.forEach((sound) => {
+        if (sound !== audio) {
+          sound.pause();
+          try { sound.currentTime = 0; } catch (_) {}
+        }
+      });
+      const managedStart = playManagedMedia(audio, settings.uiSoundsVolume, false);
+      audio.pause();
+      try { audio.currentTime = 0; } catch (_) {}
+      await audio.play();
+      await managedStart;
+      return true;
     } catch (_) {
       return false;
     }

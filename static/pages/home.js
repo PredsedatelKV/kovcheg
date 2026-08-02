@@ -536,6 +536,15 @@ function kovbaksWord(n) {
   return "ковбаксов";
 }
 
+function daysWord(n) {
+  var abs = Math.abs(n) % 100;
+  var last = abs % 10;
+  if (abs > 10 && abs < 20) return "дней";
+  if (last === 1) return "день";
+  if (last >= 2 && last <= 4) return "дня";
+  return "дней";
+}
+
 async function loadDailyReward(root, force) {
   var card = root.querySelector("#daily-reward-card");
   if (!card) return;
@@ -562,8 +571,8 @@ async function loadDailyReward(root, force) {
       fire.className = "daily-streak-fire streak-" + tier;
       fire.style.setProperty("--streak-scale", String(1 + Math.min(effectiveStreak - 1, 30) * 0.018));
       fire.style.setProperty("--streak-glow", String(Math.min(10 + effectiveStreak * 1.2, 42)) + "px");
-      fire.setAttribute("aria-label", "Серия: " + effectiveStreak + " дн.");
-      fire.title = "Серия: " + effectiveStreak + " дн.";
+      fire.setAttribute("aria-label", "Серия: " + effectiveStreak + " " + daysWord(effectiveStreak));
+      fire.title = "Серия: " + effectiveStreak + " " + daysWord(effectiveStreak);
     }
 
     // Seven reward steps; the seventh value remains the maximum afterwards.
@@ -582,8 +591,7 @@ async function loadDailyReward(root, force) {
     if (dr.claimed_today) {
       btn.disabled = true;
       btn.textContent = "Получено";
-      var nextReward = rewards[Math.min(dr.streak, 6)];
-      desc.textContent = "Серия: " + dr.streak + " дн. · завтра +" + nextReward + " " + kovbaksWord(nextReward);
+      desc.textContent = "Серия: " + dr.streak + " " + daysWord(dr.streak);
     } else {
       btn.disabled = false;
       btn.textContent = "Забрать";
@@ -594,7 +602,7 @@ async function loadDailyReward(root, force) {
         btn.textContent = "Получаем…";
         try {
           var res = await post("/api/home/daily-reward/claim");
-          window.kov.toast("+" + res.reward + " " + kovbaksWord(res.reward) + "! Серия: " + res.streak + " дн.");
+          window.kov.toast("+" + res.reward + " " + kovbaksWord(res.reward) + "! Серия: " + res.streak + " " + daysWord(res.streak));
           if (window.kov.me) window.kov.me.balance = res.balance;
           if (window.kov.emit) window.kov.emit("balance:update", { balance: res.balance });
           loadDailyReward(root);
