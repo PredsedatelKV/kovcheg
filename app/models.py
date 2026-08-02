@@ -272,6 +272,25 @@ class ShopRestockRequest(Base):
     user: Mapped[User] = relationship("User")
 
 
+class ItemClaimRequest(Base):
+    """A physical-item claim reserved from a player's inventory for admin delivery."""
+
+    __tablename__ = "item_claim_requests"
+    __table_args__ = (
+        UniqueConstraint("user_id", "item_id", name="uq_item_claim_request_user_item"),
+        CheckConstraint("quantity > 0", name="ck_item_claim_request_quantity_positive"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id"), index=True, nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+    user: Mapped[User] = relationship("User")
+    item: Mapped[Item] = relationship("Item")
+
+
 class MarketListing(Base):
     __tablename__ = "market_listings"
 

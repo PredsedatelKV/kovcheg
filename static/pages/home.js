@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=286";
+import { get, post, iconHtml } from "/static/api.js?v=287";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=286";
+import { openAssistantChat } from "/static/pages/assistant.js?v=287";
 
-import { playUISound } from "/static/pages/settings.js?v=286";
+import { playUISound } from "/static/pages/settings.js?v=287";
 
 
 const escapeHtml = (s = "") =>
@@ -169,7 +169,7 @@ export async function renderHome(root) {
         <h1>${welcome}</h1>
         <div class="subtitle" id="home-clock">${escapeHtml(data.server_time_msk)} мск</div>
       </div>
-      <div class="hero-art home-cube-art" title="Ковчег"><img src="/static/img/ui/home_cube.png?v=286" alt="Ковчег" class="hero-img"/></div>
+      <div class="hero-art home-cube-art" title="Ковчег"><img src="/static/img/ui/home_cube.png?v=287" alt="Ковчег" class="hero-img"/></div>
     </section>
 
 ${bannerCarousel(data.banners)}
@@ -183,7 +183,7 @@ ${bannerCarousel(data.banners)}
 
     <div class="card daily-reward-card" id="daily-reward-card" aria-busy="true">
       <div class="daily-reward-head">
-        <img src="/static/img/ui/kovbaks.png" alt="" class="daily-reward-icon"/>
+        <div class="daily-streak-fire streak-normal" id="daily-streak-fire" role="img" aria-label="Серия: 1 день">🔥</div>
         <div class="daily-reward-meta">
           <div class="daily-reward-title">Ежедневная награда</div>
           <div class="daily-reward-desc" id="daily-reward-desc">Загружаем статус…</div>
@@ -191,7 +191,7 @@ ${bannerCarousel(data.banners)}
         <button class="btn btn-sm" id="daily-reward-btn" disabled>Загрузка…</button>
       </div>
       <div class="daily-streak-dots" id="daily-streak-dots">
-        ${[1, 2, 3, 4, 5, 6, 7].map((day) => `<span class="daily-dot"><b>${day}</b></span>`).join("")}
+        ${[5, 10, 15, 20, 25, 30, 50].map((reward) => `<span class="daily-dot"><b>${reward}</b></span>`).join("")}
       </div>
     </div>
 
@@ -470,7 +470,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=286").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=287").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {
@@ -549,12 +549,28 @@ async function loadDailyReward(root, force) {
     var desc = root.querySelector("#daily-reward-desc");
     var btn = root.querySelector("#daily-reward-btn");
     var dots = root.querySelector("#daily-streak-dots");
+    var fire = root.querySelector("#daily-streak-fire");
+    var rewards = [5, 10, 15, 20, 25, 30, 50];
+    var effectiveStreak = Math.max(1, Number(dr.effective_streak || dr.streak || 1));
 
-    // Полоски серии (7 дней). Награда за день N = N ковбаксов (макс 7).
+    if (fire) {
+      var tier = effectiveStreak >= 21 ? "blue"
+        : effectiveStreak >= 16 ? "purple"
+          : effectiveStreak >= 11 ? "red"
+            : effectiveStreak >= 5 ? "orange"
+              : "normal";
+      fire.className = "daily-streak-fire streak-" + tier;
+      fire.style.setProperty("--streak-scale", String(1 + Math.min(effectiveStreak - 1, 30) * 0.018));
+      fire.style.setProperty("--streak-glow", String(Math.min(10 + effectiveStreak * 1.2, 42)) + "px");
+      fire.setAttribute("aria-label", "Серия: " + effectiveStreak + " дн.");
+      fire.title = "Серия: " + effectiveStreak + " дн.";
+    }
+
+    // Seven reward steps; the seventh value remains the maximum afterwards.
     var dotsHtml = "";
     for (var i = 1; i <= 7; i++) {
-      var filled = i <= dr.streak;
-      dotsHtml += '<span class="daily-dot ' + (filled ? 'filled' : '') + '"><b>' + i + '</b></span>';
+      var filled = i <= Math.min(effectiveStreak, 7);
+      dotsHtml += '<span class="daily-dot ' + (filled ? 'filled' : '') + '"><b>' + rewards[i - 1] + '</b></span>';
     }
     dots.innerHTML = dotsHtml;
 
@@ -566,13 +582,13 @@ async function loadDailyReward(root, force) {
     if (dr.claimed_today) {
       btn.disabled = true;
       btn.textContent = "Получено";
-      var next = Math.min(dr.streak + 1, 7);
-      desc.textContent = "Серия: " + dr.streak + " дн. · завтра " + next + " " + kovbaksWord(next);
+      var nextReward = rewards[Math.min(dr.streak, 6)];
+      desc.textContent = "Серия: " + dr.streak + " дн. · завтра +" + nextReward + " " + kovbaksWord(nextReward);
     } else {
       btn.disabled = false;
       btn.textContent = "Забрать";
       var reward = dr.reward;
-      desc.textContent = "День " + reward + " · +" + reward + " " + kovbaksWord(reward);
+      desc.textContent = "День серии " + effectiveStreak + " · +" + reward + " " + kovbaksWord(reward);
       btn.addEventListener("click", async function() {
         btn.disabled = true;
         btn.textContent = "Получаем…";

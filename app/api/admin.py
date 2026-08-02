@@ -799,6 +799,78 @@ def delete_shop_restock_request(request_id: int, db: Session = Depends(get_db)) 
     return {"ok": True}
 
 
+def _item_claim_request_out(row: models.ItemClaimRequest) -> schemas.ItemClaimRequestAdminOut:
+    return schemas.ItemClaimRequestAdminOut(
+        id=row.id,
+        user_id=row.user_id,
+        user_name=row.user.first_name if row.user else f"Игрок #{row.user_id}",
+        item_id=row.item_id,
+        item_name=row.item.name if row.item else f"Предмет #{row.item_id}",
+        item_icon=(row.item.image_url or row.item.icon) if row.item else "",
+        quantity=row.quantity,
+        created_at=row.created_at,
+    )
+
+
+@router.get("/shop/item-claim-requests", response_model=list[schemas.ItemClaimRequestAdminOut])
+def list_item_claim_requests(db: Session = Depends(get_db)) -> list[schemas.ItemClaimRequestAdminOut]:
+    rows = db.query(models.ItemClaimRequest).order_by(
+        models.ItemClaimRequest.created_at.desc(),
+        models.ItemClaimRequest.id.desc(),
+    ).all()
+    return [_item_claim_request_out(row) for row in rows]
+
+
+def _get_item_claim_request(db: Session, request_id: int) -> models.ItemClaimRequest:
+    row = db.query(models.ItemClaimRequest).filter(models.ItemClaimRequest.id == request_id).one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    return row
+
+
+@router.post("/shop/item-claim-requests/{request_id}/fulfill")
+def fulfill_item_claim_request(request_id: int, db: Session = Depends(get_db)) -> dict:
+    begin_game_write(db)
+    row = _get_item_claim_request(db, request_id)
+    player_name = row.user.first_name if row.user else f"Игрок #{row.user_id}"
+    item_name = row.item.name if row.item else f"Предмет #{row.item_id}"
+    quantity = row.quantity
+    db.delete(row)
+    db.commit()
+    from app.notify import log_player_action
+    log_player_action("Предмет выдан", player_name, f"{item_name} ×{quantity}")
+    return {"ok": True}
+
+
+@router.post("/shop/item-claim-requests/{request_id}/cancel")
+def cancel_item_claim_request(request_id: int, db: Session = Depends(get_db)) -> dict:
+    begin_game_write(db)
+    row = _get_item_claim_request(db, request_id)
+    inventory = (
+        db.query(models.InventoryItem)
+        .filter(models.InventoryItem.user_id == row.user_id, models.InventoryItem.item_id == row.item_id)
+        .one_or_none()
+    )
+    if inventory is None:
+        db.add(models.InventoryItem(user_id=row.user_id, item_id=row.item_id, quantity=row.quantity))
+    else:
+        if inventory.quantity > 2_000_000_000 - row.quantity:
+            raise HTTPException(status_code=409, detail="Стак предмета достиг максимума")
+        inventory.quantity += row.quantity
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/shop/item-claim-requests/{request_id}")
+def delete_item_claim_request(request_id: int, db: Session = Depends(get_db)) -> dict:
+    begin_game_write(db)
+    row = _get_item_claim_request(db, request_id)
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/shop", response_model=schemas.ShopProductOut)
 def create_shop(body: schemas.AdminShopProductBody, db: Session = Depends(get_db)) -> schemas.ShopProductOut:
     begin_game_write(db)

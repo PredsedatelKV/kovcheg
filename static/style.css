@@ -184,19 +184,6 @@ body {
   object-fit: contain;
   display: block;
 }
-.page-header .hero-art.home-cube-art {
-  flex-basis: 74px;
-  width: 74px;
-  height: 74px;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  overflow: visible;
-}
-.page-header .hero-art.home-cube-art .hero-img {
-  width: 74px;
-  height: 74px;
-}
 /* Cards */
 .card {
   background: var(--surface);
@@ -1428,6 +1415,7 @@ html.dark .admin-tab.active {
   max-width:78px;
   height:78px;
   margin:0;
+  transform:translateX(-3px);
 }
 .inv-cell.item-box_fragment .img-frame-lg,
 .inv-cell.item-failure_fragment .img-frame-lg {
@@ -4654,7 +4642,25 @@ html.dark .clicker-screen {
 
 /* --- Задача 12: карточка «Ежедневная награда» --- */
 .daily-reward-head { display: flex; align-items: center; gap: 12px; }
-.daily-reward-icon { width: 36px; height: 36px; flex-shrink: 0; }
+.daily-streak-fire {
+  --streak-scale: 1;
+  --streak-glow: 12px;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  display: grid;
+  place-items: center;
+  font-size: 31px;
+  line-height: 1;
+  transform: scale(var(--streak-scale));
+  transform-origin: center;
+  filter: drop-shadow(0 0 var(--streak-glow) rgba(255, 173, 31, .42));
+  transition: transform .35s ease, filter .35s ease;
+}
+.daily-streak-fire.streak-orange { filter: saturate(1.35) drop-shadow(0 0 var(--streak-glow) rgba(255, 117, 18, .68)); }
+.daily-streak-fire.streak-red { filter: hue-rotate(-28deg) saturate(1.8) drop-shadow(0 0 var(--streak-glow) rgba(255, 36, 36, .7)); }
+.daily-streak-fire.streak-purple { filter: hue-rotate(245deg) saturate(1.75) drop-shadow(0 0 var(--streak-glow) rgba(164, 71, 255, .78)); }
+.daily-streak-fire.streak-blue { filter: hue-rotate(175deg) saturate(1.7) drop-shadow(0 0 var(--streak-glow) rgba(39, 148, 255, .82)); }
 .daily-reward-meta { flex: 1; min-width: 0; }
 .daily-reward-title { font-weight: 700; font-size: 15px; }
 .daily-reward-desc { font-size: 13px; color: var(--text-soft); margin-top: 2px; }

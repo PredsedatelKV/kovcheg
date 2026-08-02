@@ -153,6 +153,17 @@ class ShopRestockRequestAdminOut(BaseModel):
     created_at: datetime
 
 
+class ItemClaimRequestAdminOut(BaseModel):
+    id: int
+    user_id: int
+    user_name: str
+    item_id: int
+    item_name: str
+    item_icon: str
+    quantity: int
+    created_at: datetime
+
+
 class ListRequest(BaseModel):
     item_id: StrictInt = Field(gt=0)
     quantity: StrictInt = Field(ge=1, le=1_000_000)

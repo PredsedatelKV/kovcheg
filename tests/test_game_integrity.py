@@ -112,11 +112,11 @@ def test_battlepass_parallel_claim_only_once(game_api):
     assert _balance(sessions) == before + 7
 
 
-def test_daily_reward_streak_reset_and_cap(game_api, monkeypatch):
+def test_daily_reward_streak_reset_and_schedule(game_api, monkeypatch):
     client, sessions = game_api
     monkeypatch.setattr(home, "_today_str", lambda: "2026-07-01")
     monkeypatch.setattr(home, "_yesterday_str", lambda: "2026-06-30")
-    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 10
+    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 5
     with sessions() as db:
         row = db.query(models.DailyReward).filter_by(user_id=1).one()
         row.streak = 7
@@ -124,10 +124,12 @@ def test_daily_reward_streak_reset_and_cap(game_api, monkeypatch):
         db.commit()
     monkeypatch.setattr(home, "_today_str", lambda: "2026-07-02")
     monkeypatch.setattr(home, "_yesterday_str", lambda: "2026-07-01")
-    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 70
+    second = client.post("/api/home/daily-reward/claim", headers=_headers()).json()
+    assert second["reward"] == 50
+    assert second["streak"] == 8
     monkeypatch.setattr(home, "_today_str", lambda: "2026-07-04")
     monkeypatch.setattr(home, "_yesterday_str", lambda: "2026-07-03")
-    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 10
+    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 5
 
 
 def test_daily_reward_parallel_claim_only_once(game_api, monkeypatch):
@@ -138,7 +140,7 @@ def test_daily_reward_parallel_claim_only_once(game_api, monkeypatch):
     with ThreadPoolExecutor(max_workers=2) as pool:
         statuses = list(pool.map(lambda _: client.post("/api/home/daily-reward/claim", headers=_headers()).status_code, range(2)))
     assert sorted(statuses) == [200, 409]
-    assert _balance(sessions) == before + 10
+    assert _balance(sessions) == before + 5
 
 
 @pytest.mark.parametrize("game", sorted(arcade.FIRST_WIN_GAMES))

@@ -1,7 +1,7 @@
-import { get, post, iconHtml, productImg, versionedAssetUrl } from "/static/api.js?v=286";
+import { get, post, iconHtml, productImg, versionedAssetUrl } from "/static/api.js?v=287";
 
-import { playUISound, getSettings, playManagedMedia } from "/static/pages/settings.js?v=286";
-import { mountCharacterCard } from "/static/pages/character.js?v=286";
+import { playUISound, getSettings, playManagedMedia } from "/static/pages/settings.js?v=287";
+import { mountCharacterCard } from "/static/pages/character.js?v=287";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -39,6 +39,13 @@ function invCell(row) {
       ${productImg(row.item, "lg")}
       <div class="name">${escapeHtml(row.item.name)}</div>
     </div>`;
+}
+
+function rewardTierLabel(reward) {
+  const tier = reward?.item?.lootbox_reward_tier || "normal";
+  if (tier === "super_special") return "Сверхособая награда";
+  if (tier === "special") return "Особая награда";
+  return reward?.presentation_kind === "item" ? (reward.rarity || "Предмет") : "Награда";
 }
 
 function taskRewardsHtml(t) {
@@ -495,7 +502,8 @@ function openItemActionsDialog(row, options = {}) {
   const isFailureFragment = item.code === "failure_fragment";
   const isFragment = isBoxFragment || isFailureFragment;
   const activeFragmentCost = isFailureFragment ? (_profileData?.failure_fragment_cost || 10) : assemblyCost;
-  const canActivate = !item.lootbox_pool_code && (item.can_activate || isFragment);
+  const canRequestDelivery = !item.lootbox_pool_code && !isFragment && !item.skin_slot;
+  const canActivate = isFragment || canRequestDelivery;
   const activationLocked = isFragment && row.quantity < activeFragmentCost;
   const openRequestId = makeLootboxRequestId();
   const modal = window.kov.showModal(`
@@ -512,7 +520,7 @@ function openItemActionsDialog(row, options = {}) {
       </button>
       ${canActivate ? `<button class="btn btn-outline" id="ia-activate" ${activationLocked ? "disabled" : ""} title="${activationLocked ? `Нужно ${activeFragmentCost} фрагментов` : ""}">
         <img src="/static/img/ui/spark.svg" alt="" class="icon icon-md"/>
-        <span>${isFragment ? (activationLocked ? `Активировать · нужно ${activeFragmentCost}` : `Активировать · ×${activeFragmentCost}`) : "Активировать"}</span>
+        <span>${isFragment ? (activationLocked ? `Собрать · нужно ${activeFragmentCost}` : `Собрать · ×${activeFragmentCost}`) : "Получить"}</span>
       </button>` : ""}
       ${row.item.skin_slot ? `<button class="btn btn-outline" id="ia-equip">
         <img src="/static/img/ui/spark.svg" alt="" class="icon icon-md"/>
@@ -568,8 +576,8 @@ function openItemActionsDialog(row, options = {}) {
           : "/api/profile/inventory/assemble-fragments");
         window.kov.toast("🎁 Вы получили: " + assembled.item_name);
       } else {
-        await post("/api/profile/inventory/activate", { item_id: item.id, recipient: "", quantity: 1 });
-        window.kov.toast(`✨ «${item.name}» активирован`);
+        await post("/api/profile/inventory/request-item", { item_id: item.id, recipient: "", quantity: 1 });
+        window.kov.toast(`Заявка на «${item.name}» отправлена`);
       }
       window.closeModal();
       _updateSections(["inventory", "balance", "character"]);
@@ -904,7 +912,7 @@ function showMegaLootboxChoices(result) {
   function rewardCard(reward) {
     const card = document.createElement("article");
     card.className = `lootbox-reward-card reward-${reward.presentation_kind || "item"} is-summary-visible`;
-    card.innerHTML = `<img src="${escapeHtml(reward.icon || "/static/img/ui/box.svg")}" alt=""/><strong>${escapeHtml(reward.label || "Награда")}</strong><span>${escapeHtml(reward.rarity || "Награда")}</span>`;
+    card.innerHTML = `<img src="${escapeHtml(reward.icon || "/static/img/ui/box.svg")}" alt=""/><strong>${escapeHtml(reward.label || "Награда")}</strong><span>${escapeHtml(rewardTierLabel(reward))}</span>`;
     return card;
   }
 
@@ -1094,7 +1102,7 @@ function showLootboxChestLegacy(result) {
     const title = document.createElement("strong");
     title.textContent = reward.label;
     const type = document.createElement("span");
-    type.textContent = reward.presentation_kind === "item" ? (reward.rarity || "Предмет") : "Награда";
+    type.textContent = rewardTierLabel(reward);
     card.append(image, title, type);
     return card;
   }
@@ -1290,7 +1298,7 @@ function showLootboxChest(result) {
     card.innerHTML = `
       <img src="${escapeHtml(reward.icon || "/static/img/ui/box.svg")}" alt=""/>
       <strong>${escapeHtml(reward.label || "Награда")}</strong>
-      <span>${escapeHtml(reward.rarity || "Награда")}</span>`;
+      <span>${escapeHtml(rewardTierLabel(reward))}</span>`;
     return card;
   }
 
@@ -1324,8 +1332,8 @@ function showLootboxChest(result) {
     hint.textContent = "Особая награда…";
     await playAudio(specialSound);
     // The reveal is synchronized to the beginning of the special-reward
-    // sound, not its end: the white suspense card always lasts four seconds.
-    await wait(4000);
+    // sound, not its end: the white suspense card stays visible for 4.3 s.
+    await wait(4300);
     if (!document.body.contains(overlay)) return;
     card.classList.remove("is-special-pending");
     void card.offsetWidth;
@@ -1345,12 +1353,13 @@ function showLootboxChest(result) {
     chestButton.classList.add("is-star-tap");
     void playAudio(bonusSounds[Math.min(tapIndex, 2)]);
     tapIndex += 1;
-    // A stable one-second cadence prevents accidental double taps and gives
-    // every star sound enough time to play without being clipped.
-    await wait(1000);
-    if (!document.body.contains(overlay)) return;
     renderStars(previousStars);
     try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(stars > previousStars ? "heavy" : "medium"); } catch (_) {}
+    // Sound, haptic feedback, chest bump and star update begin together. The
+    // half-second input lock filters accidental double taps without making the
+    // three-step opening feel sluggish.
+    await wait(500);
+    if (!document.body.contains(overlay)) return;
     if (tapIndex >= sequence.length) {
       await revealReward();
       return;

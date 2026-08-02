@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=286";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=287";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -664,9 +664,10 @@ async function renderWheel(body) {
 
 // ---------- SHOP ----------
 async function renderShop(body) {
-  const [rows, restockRequests] = await Promise.all([
+  const [rows, restockRequests, claimRequests] = await Promise.all([
     get("/api/admin/shop"),
     get("/api/admin/shop/restock-requests"),
+    get("/api/admin/shop/item-claim-requests"),
   ]);
   body.innerHTML = `
     ${cardBlock(
@@ -682,6 +683,29 @@ async function renderShop(body) {
               <h3 class="admin-card-title">${escapeHtml(request.text)}</h3>
               <div class="admin-sub">${escapeHtml(request.user_name)} · ${escapeHtml(request.request_date)}</div>
               <button class="btn btn-sm btn-danger" data-action="delete-restock" style="margin-top:9px">Удалить</button>
+            </div>`).join("")}
+      </div>`,
+    )}
+    ${cardBlock(
+      "Заявки на получение",
+      `<button class="btn btn-outline" id="claim-requests-toggle">
+        Заявки игроков${claimRequests.length ? ` · ${claimRequests.length}` : ""}
+      </button>
+      <div id="claim-requests-list" hidden>
+        ${claimRequests.length === 0
+          ? '<div class="admin-sub" style="margin-top:12px">Новых заявок пока нет</div>'
+          : claimRequests.map((request) => `
+            <div class="admin-card admin-item-claim-request" data-claim-id="${request.id}">
+              <h3 class="admin-card-title">
+                ${request.item_icon ? `<img src="${escapeHtml(request.item_icon)}" class="icon icon-sm" alt=""/>` : ""}
+                ${escapeHtml(request.item_name)} ×${request.quantity}
+              </h3>
+              <div class="admin-sub">${escapeHtml(request.user_name)}</div>
+              <div class="row gap" style="margin-top:9px;flex-wrap:wrap">
+                <button class="btn btn-sm" data-action="fulfill-claim">Выдать</button>
+                <button class="btn btn-sm btn-outline" data-action="cancel-claim">Отменить</button>
+                <button class="btn btn-sm btn-danger" data-action="delete-claim">Удалить</button>
+              </div>
             </div>`).join("")}
       </div>`,
     )}
@@ -726,6 +750,36 @@ async function renderShop(body) {
         renderShop(body);
       });
     });
+  });
+  const claimRequestsToggle = body.querySelector("#claim-requests-toggle");
+  const claimRequestsList = body.querySelector("#claim-requests-list");
+  claimRequestsToggle.addEventListener("click", () => {
+    claimRequestsList.hidden = !claimRequestsList.hidden;
+    claimRequestsToggle.classList.toggle("active", !claimRequestsList.hidden);
+  });
+  body.querySelectorAll("[data-claim-id]").forEach((card) => {
+    const requestId = card.dataset.claimId;
+    card.querySelector("[data-action='fulfill-claim']").addEventListener("click", () =>
+      confirmAction("Подтвердить выдачу предмета?", async () => {
+        await post(`/api/admin/shop/item-claim-requests/${requestId}/fulfill`, {});
+        window.kov.toast("Выдача подтверждена");
+        renderShop(body);
+      }),
+    );
+    card.querySelector("[data-action='cancel-claim']").addEventListener("click", () =>
+      confirmAction("Отменить заявку и вернуть предмет игроку?", async () => {
+        await post(`/api/admin/shop/item-claim-requests/${requestId}/cancel`, {});
+        window.kov.toast("Предмет возвращён игроку");
+        renderShop(body);
+      }),
+    );
+    card.querySelector("[data-action='delete-claim']").addEventListener("click", () =>
+      confirmAction("Удалить заявку без возврата предмета?", async () => {
+        await del(`/api/admin/shop/item-claim-requests/${requestId}`);
+        window.kov.toast("Заявка удалена");
+        renderShop(body);
+      }),
+    );
   });
   body.querySelector("#s-create").addEventListener("click", async () => {
     const payload = {

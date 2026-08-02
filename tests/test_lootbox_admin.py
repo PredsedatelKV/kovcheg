@@ -74,6 +74,59 @@ def _headers(user_id=1):
     return {"X-Test-User": str(user_id)}
 
 
+def test_inventory_item_claim_request_lifecycle(lootbox_api):
+    client, sessions = lootbox_api
+    with sessions() as db:
+        snack = models.Item(
+            code="claim_snack",
+            name="Тестовый снек",
+            icon="/static/img/items/snack.png",
+            category="Снеки",
+            can_activate=False,
+        )
+        db.add(snack)
+        db.flush()
+        snack_id = snack.id
+        db.add(models.InventoryItem(user_id=1, item_id=snack_id, quantity=3))
+        db.commit()
+
+    payload = {"item_id": snack_id, "recipient": "", "quantity": 1}
+    first = client.post("/api/profile/inventory/request-item", json=payload, headers=_headers())
+    assert first.status_code == 200, first.text
+    assert client.post("/api/profile/inventory/request-item", json=payload, headers=_headers()).status_code == 409
+    with sessions() as db:
+        assert db.query(models.InventoryItem).filter_by(user_id=1, item_id=snack_id).one().quantity == 2
+
+    admin_headers = _headers(2)
+    requests = client.get("/api/admin/shop/item-claim-requests", headers=admin_headers)
+    assert requests.status_code == 200
+    request_id = requests.json()[0]["id"]
+    assert requests.json()[0]["item_name"] == "Тестовый снек"
+
+    assert client.post(
+        f"/api/admin/shop/item-claim-requests/{request_id}/cancel", headers=admin_headers,
+    ).status_code == 200
+    with sessions() as db:
+        assert db.query(models.InventoryItem).filter_by(user_id=1, item_id=snack_id).one().quantity == 3
+
+    client.post("/api/profile/inventory/request-item", json=payload, headers=_headers())
+    request_id = client.get("/api/admin/shop/item-claim-requests", headers=admin_headers).json()[0]["id"]
+    assert client.post(
+        f"/api/admin/shop/item-claim-requests/{request_id}/fulfill", headers=admin_headers,
+    ).status_code == 200
+    with sessions() as db:
+        assert db.query(models.InventoryItem).filter_by(user_id=1, item_id=snack_id).one().quantity == 2
+
+    client.post("/api/profile/inventory/request-item", json=payload, headers=_headers())
+    request_id = client.get("/api/admin/shop/item-claim-requests", headers=admin_headers).json()[0]["id"]
+    assert client.delete(
+        f"/api/admin/shop/item-claim-requests/{request_id}", headers=admin_headers,
+    ).status_code == 200
+    with sessions() as db:
+        assert db.query(models.InventoryItem).filter_by(user_id=1, item_id=snack_id).one().quantity == 1
+        assert db.query(models.ItemClaimRequest).count() == 0
+
+
 def _box_payload(
     prize_id: int,
     *,

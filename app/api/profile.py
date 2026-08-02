@@ -609,6 +609,44 @@ def activate_item(
     return me(user=user, db=db)
 
 
+@router.post("/inventory/request-item", response_model=schemas.ProfilePayload)
+def request_inventory_item(
+    payload: schemas.GiftRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> schemas.ProfilePayload:
+    """Reserve one physical item until an administrator processes delivery."""
+    begin_game_write(db)
+    inv = (
+        db.query(models.InventoryItem)
+        .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == payload.item_id)
+        .one_or_none()
+    )
+    if inv is None or inv.quantity < 1:
+        raise HTTPException(status_code=400, detail="Нет предмета")
+    item = inv.item
+    if item.lootbox_pool_code or item.code in {"box_fragment", "failure_fragment"} or item.skin_slot:
+        raise HTTPException(status_code=400, detail="Этот предмет нельзя получить через заявку")
+    pending = (
+        db.query(models.ItemClaimRequest.id)
+        .filter(models.ItemClaimRequest.user_id == user.id, models.ItemClaimRequest.item_id == item.id)
+        .first()
+    )
+    if pending:
+        raise HTTPException(status_code=409, detail="Заявка на этот предмет уже отправлена")
+
+    item_name = item.name
+    inv.quantity -= 1
+    if inv.quantity == 0:
+        db.delete(inv)
+    db.add(models.ItemClaimRequest(user_id=user.id, item_id=item.id, quantity=1))
+    db.commit()
+    db.refresh(user)
+    from app.notify import log_player_action
+    log_player_action("Заявка на получение", user.first_name, f"{item_name} ×1")
+    return me(user=user, db=db)
+
+
 def _weighted_pick(rows, weight_attr: str = "weight"):
     total = sum(getattr(row, weight_attr) for row in rows)
     if total <= 0:
