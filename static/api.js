@@ -1,6 +1,6 @@
 const tg = window.Telegram && window.Telegram.WebApp;
 const DEFAULT_ITEM_ICON = "/static/img/ui/box.svg";
-const LOOTBOX_ASSET_VERSION = "284";
+const LOOTBOX_ASSET_VERSION = "286";
 
 export function versionedAssetUrl(value) {
   const src = String(value ?? "").trim();
@@ -314,6 +314,12 @@ function mutate(path, options) {
     .then((result) => {
       recentMutationKeys.delete(fingerprint);
       invalidateForMutation(path);
+      // One authoritative mutation signal keeps every mounted tab in sync.
+      // The shell updates global balance immediately and marks hidden tabs for
+      // an automatic fresh render before they become visible.
+      window.dispatchEvent(new CustomEvent("kov:data-mutated", {
+        detail: { path: normalizedPath(path), method, result },
+      }));
       return result;
     })
     .catch((error) => {

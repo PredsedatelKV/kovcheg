@@ -1,7 +1,7 @@
-import { get, post, iconHtml, productImg, versionedAssetUrl } from "/static/api.js?v=284";
+import { get, post, iconHtml, productImg, versionedAssetUrl } from "/static/api.js?v=286";
 
-import { playUISound, getSettings, playManagedMedia } from "/static/pages/settings.js?v=284";
-import { mountCharacterCard } from "/static/pages/character.js?v=274";
+import { playUISound, getSettings, playManagedMedia } from "/static/pages/settings.js?v=286";
+import { mountCharacterCard } from "/static/pages/character.js?v=286";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -878,8 +878,8 @@ function showMegaLootboxChoices(result) {
   const chestImage = overlay.querySelector("#mega-chest-image");
   const hint = overlay.querySelector("#mega-choice-hint");
   const done = overlay.querySelector("#mega-choice-done");
-  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=264");
-  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=264`));
+  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=286");
+  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=286`));
   const allSounds = [openSound, ...bonusSounds];
   allSounds.forEach((audio) => {
     audio.preload = "auto";
@@ -1042,9 +1042,9 @@ function showLootboxChestLegacy(result) {
   let locked = false;
   let previousReward = null;
   let finished = false;
-  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=264");
-  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=264");
-  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=264`));
+  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=286");
+  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=286");
+  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=286`));
   const allSounds = [openSound, specialSound, ...bonusSounds];
   allSounds.forEach((audio) => {
     audio.preload = "auto";
@@ -1253,8 +1253,8 @@ function showLootboxChest(result) {
   const chestButton = overlay.querySelector("#lootbox-chest-button");
   const hint = overlay.querySelector("#lootbox-chest-hint");
   const done = overlay.querySelector("#lootbox-chest-done");
-  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=283");
-  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=283`));
+  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=286");
+  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=286`));
   const allSounds = [specialSound, ...bonusSounds];
   allSounds.forEach((audio) => {
     audio.preload = "auto";
@@ -1316,6 +1316,7 @@ function showLootboxChest(result) {
     const card = makeRewardCard(suspense);
     stage.replaceChildren(card);
     if (!suspense) {
+      playUISound("win");
       completeReward();
       return;
     }
@@ -1323,8 +1324,8 @@ function showLootboxChest(result) {
     hint.textContent = "Особая награда…";
     await playAudio(specialSound);
     // The reveal is synchronized to the beginning of the special-reward
-    // sound, not its end: the white suspense card always lasts three seconds.
-    await wait(3000);
+    // sound, not its end: the white suspense card always lasts four seconds.
+    await wait(4000);
     if (!document.body.contains(overlay)) return;
     card.classList.remove("is-special-pending");
     void card.offsetWidth;
@@ -1344,7 +1345,9 @@ function showLootboxChest(result) {
     chestButton.classList.add("is-star-tap");
     void playAudio(bonusSounds[Math.min(tapIndex, 2)]);
     tapIndex += 1;
-    await wait(window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 40 : 120);
+    // A stable one-second cadence prevents accidental double taps and gives
+    // every star sound enough time to play without being clipped.
+    await wait(1000);
     if (!document.body.contains(overlay)) return;
     renderStars(previousStars);
     try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(stars > previousStars ? "heavy" : "medium"); } catch (_) {}
@@ -1353,7 +1356,6 @@ function showLootboxChest(result) {
       return;
     }
     hint.textContent = `Нажмите на ковбокс · ${tapIndex + 1} из ${sequence.length}`;
-    await wait(40);
     locked = false;
     chestButton.disabled = false;
   });

@@ -1452,6 +1452,18 @@ def _lootbox_item_code(code: str) -> str:
 CANONICAL_CHEST_CODES = {
     "common", "rare", "epic", "seasonal",
 }
+CANONICAL_REWARD_ORDERS = {
+    (1, "xp"): 101,
+    (1, "fragment"): 102,
+    (2, "xp"): 201,
+    (2, "fragment"): 202,
+}
+CANONICAL_REWARD_DEFAULTS = {
+    (1, "xp"): (8, 12),
+    (1, "fragment"): (1, 1),
+    (2, "xp"): (18, 25),
+    (2, "fragment"): (2, 2),
+}
 
 
 def _validate_managed_lootbox_mode(code: str, opening_mode: str) -> None:
@@ -1513,6 +1525,12 @@ def _lootbox_out(db: Session, pool: models.LootboxPool) -> schemas.AdminLootboxO
             sort_order=entry.sort_order,
         ))
     item = _ensure_lootbox_item_link(db, pool)
+    canonical_ranges = dict(CANONICAL_REWARD_DEFAULTS)
+    for entry in pool.entries:
+        for key, order in CANONICAL_REWARD_ORDERS.items():
+            expected_kind = "xp" if key[1] == "xp" else "item"
+            if entry.sort_order == order and entry.reward_kind == expected_kind:
+                canonical_ranges[key] = (entry.amount_min, entry.amount_max)
     return schemas.AdminLootboxOut(
         id=pool.id,
         item_id=item.id,
@@ -1527,6 +1545,17 @@ def _lootbox_out(db: Session, pool: models.LootboxPool) -> schemas.AdminLootboxO
         bonus_item_chance=pool.bonus_item_chance,
         special_item_chance=pool.special_item_chance,
         super_special_item_chance=pool.super_special_item_chance,
+        star1_xp_min=canonical_ranges[(1, "xp")][0],
+        star1_xp_max=canonical_ranges[(1, "xp")][1],
+        star1_fragment_min=canonical_ranges[(1, "fragment")][0],
+        star1_fragment_max=canonical_ranges[(1, "fragment")][1],
+        star2_xp_min=canonical_ranges[(2, "xp")][0],
+        star2_xp_max=canonical_ranges[(2, "xp")][1],
+        star2_fragment_min=canonical_ranges[(2, "fragment")][0],
+        star2_fragment_max=canonical_ranges[(2, "fragment")][1],
+        star1_upgrade_chance=pool.bonus_item_chance,
+        star2_upgrade_chance=pool.special_item_chance,
+        star3_upgrade_chance=pool.super_special_item_chance,
         is_active=pool.is_active,
         is_droppable=pool.is_droppable,
         is_archived=pool.is_archived,
@@ -1623,7 +1652,30 @@ def _replace_lootbox_entries(
     db: Session,
     pool: models.LootboxPool,
     entries: list[schemas.AdminLootboxEntryBody],
+    body: schemas.AdminLootboxBody | None = None,
 ) -> None:
+    if pool.code in CANONICAL_CHEST_CODES and body is not None:
+        fragment = db.query(models.Item).filter(models.Item.code == "box_fragment").one_or_none()
+        if fragment is None:
+            raise HTTPException(409, "Фрагмент ковбокса не настроен")
+        pool.entries.clear()
+        for star, kind, low, high in (
+            (1, "xp", body.star1_xp_min, body.star1_xp_max),
+            (1, "fragment", body.star1_fragment_min, body.star1_fragment_max),
+            (2, "xp", body.star2_xp_min, body.star2_xp_max),
+            (2, "fragment", body.star2_fragment_min, body.star2_fragment_max),
+        ):
+            pool.entries.append(models.LootboxPoolEntry(
+                reward_kind="xp" if kind == "xp" else "item",
+                item_id=None if kind == "xp" else fragment.id,
+                amount_min=low,
+                amount_max=high,
+                weight=100,
+                is_guaranteed=True,
+                is_active=True,
+                sort_order=CANONICAL_REWARD_ORDERS[(star, kind)],
+            ))
+        return
     _validate_lootbox_entries(db, entries)
     pool.entries.clear()
     for entry in entries:
@@ -1645,12 +1697,17 @@ def _apply_lootbox_body(pool: models.LootboxPool, body: schemas.AdminLootboxBody
         pool.open_image_url = body.image_url
     if pool.code in CANONICAL_CHEST_CODES:
         pool.open_image_url = body.image_url
-    if body.bonus_item_chance is not None:
-        pool.bonus_item_chance = body.bonus_item_chance
-    if body.special_item_chance is not None:
-        pool.special_item_chance = body.special_item_chance
-    if body.super_special_item_chance is not None:
-        pool.super_special_item_chance = body.super_special_item_chance
+    if pool.code in CANONICAL_CHEST_CODES:
+        pool.bonus_item_chance = body.star1_upgrade_chance
+        pool.special_item_chance = body.star2_upgrade_chance
+        pool.super_special_item_chance = body.star3_upgrade_chance
+    else:
+        if body.bonus_item_chance is not None:
+            pool.bonus_item_chance = body.bonus_item_chance
+        if body.special_item_chance is not None:
+            pool.special_item_chance = body.special_item_chance
+        if body.super_special_item_chance is not None:
+            pool.super_special_item_chance = body.super_special_item_chance
     pool.description = ""
     pool.starts_at = _naive_utc(body.starts_at)
     pool.ends_at = _naive_utc(body.ends_at)
@@ -1725,7 +1782,7 @@ def admin_create_lootbox(
     item.category = "Ковбоксы"
     item.lootbox_pool_code = body.code
     sync_lootbox_shop_product(db, pool)
-    _replace_lootbox_entries(db, pool, body.entries)
+    _replace_lootbox_entries(db, pool, body.entries, body)
     try:
         db.commit()
     except Exception as exc:
@@ -1744,6 +1801,8 @@ def admin_update_lootbox(
     pool = db.query(models.LootboxPool).filter(models.LootboxPool.id == pool_id).first()
     if pool is None:
         raise HTTPException(404, "Ковбокс не найден")
+    if pool.code == "consolation":
+        raise HTTPException(400, "Утешительный ковбокс автоматически повторяет настройки бронзового")
     if body.code != pool.code:
         raise HTTPException(400, "Внутренний ID нельзя менять; используйте дублирование")
     effective_mode = body.opening_mode or pool.opening_mode
@@ -1783,7 +1842,7 @@ def admin_update_lootbox(
     pool.item.lootbox_pool_code = pool.code
     sync_lootbox_shop_product(db, pool)
     pool.version += 1
-    _replace_lootbox_entries(db, pool, body.entries)
+    _replace_lootbox_entries(db, pool, body.entries, body)
     db.commit()
     return _lootbox_out(db, pool)
 

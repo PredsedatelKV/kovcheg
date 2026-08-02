@@ -922,11 +922,12 @@ html.dark .chat-message.user .chat-bubble {
   padding: 8px 4px 10px;
   text-align: center;
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  display: grid;
+  grid-template-rows: 82px 32px;
+  justify-items: center;
+  align-content: start;
   min-width: 0;
-  min-height: 108px;
+  min-height: 126px;
   overflow: hidden;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
@@ -944,8 +945,10 @@ html.dark .chat-message.user .chat-bubble {
 }
 .inv-cell .ic { font-size: 32px; }
 .inv-cell .name {
+  grid-row: 2;
+  width: 100%;
   height: 28px;
-  margin-top: 6px;
+  margin-top: 2px;
   display:-webkit-box;
   overflow:hidden;
   -webkit-box-orient:vertical;
@@ -1168,6 +1171,13 @@ html.dark .chat-message.user .chat-bubble {
   cursor: pointer;
   min-height: 64px;
 }
+.lootbox-simple-editor { padding-top:18px; }
+.lootbox-simple-head { display:flex;align-items:center;gap:14px;margin:4px 0 14px; }
+.lootbox-simple-head img { width:86px;height:70px;object-fit:contain;flex:0 0 auto; }
+.lootbox-simple-head h3 { margin:0 0 4px; }
+.lootbox-config-card { margin:10px 0;padding:14px; }
+.lootbox-config-card h4 { margin:0 0 6px;font-size:15px; }
+.lootbox-config-card .admin-form-grid { margin-top:10px; }
 .admin-tab img {
   filter: brightness(1.1);
 }
@@ -1395,12 +1405,18 @@ html.dark .admin-tab.active {
 .product .img-frame-xl {
   width: 100%;
   max-width: none;
+  height: 124px;
+  aspect-ratio: auto;
+  margin: 0 auto 8px;
 }
 .inv-cell .img-frame-lg {
   width: 56px;
   max-width: 56px;
   height: 56px;
-  margin: 0 auto;
+  grid-row:1;
+  align-self:center;
+  justify-self:center;
+  margin:0;
 }
 .inv-cell[class*="item-lootbox_"] .img-frame img {
   padding:4%;
@@ -1411,7 +1427,7 @@ html.dark .admin-tab.active {
   width:78px;
   max-width:78px;
   height:78px;
-  margin:10px auto 0;
+  margin:0;
 }
 .inv-cell.item-box_fragment .img-frame-lg,
 .inv-cell.item-failure_fragment .img-frame-lg {

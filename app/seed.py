@@ -1433,6 +1433,46 @@ def seed(db: Session) -> None:
         )
         db.flush()
 
+    # Canonical four-box editor: independent low-star ranges and per-transition
+    # star-upgrade chances. The rows are server-owned configuration records;
+    # the player still receives exactly one reward per opening.
+    star_editor_key = "2026-08-02-kovbox-star-editor-v1"
+    star_editor_done = db.execute(
+        text("SELECT 1 FROM maintenance_migrations WHERE key = :key"),
+        {"key": star_editor_key},
+    ).first()
+    if star_editor_done is None:
+        for code in ("common", "rare", "epic", "seasonal"):
+            pool = pools[code]
+            pool.bonus_item_chance = 50
+            pool.special_item_chance = 4
+            pool.super_special_item_chance = 1
+            pool.entries.clear()
+            pool.entries.extend([
+                models.LootboxPoolEntry(
+                    reward_kind="xp", amount_min=8, amount_max=12,
+                    weight=100, is_guaranteed=True, is_active=True, sort_order=101,
+                ),
+                models.LootboxPoolEntry(
+                    reward_kind="item", item_id=fragment.id, amount_min=1, amount_max=1,
+                    weight=100, is_guaranteed=True, is_active=True, sort_order=102,
+                ),
+                models.LootboxPoolEntry(
+                    reward_kind="xp", amount_min=18, amount_max=25,
+                    weight=100, is_guaranteed=True, is_active=True, sort_order=201,
+                ),
+                models.LootboxPoolEntry(
+                    reward_kind="item", item_id=fragment.id, amount_min=2, amount_max=2,
+                    weight=100, is_guaranteed=True, is_active=True, sort_order=202,
+                ),
+            ])
+            pool.version += 1
+        db.execute(
+            text("INSERT INTO maintenance_migrations(key) VALUES (:key)"),
+            {"key": star_editor_key},
+        )
+        db.flush()
+
     # Remove obsolete editor-created duplicates. The live data is checked
     # before this migration: these pools/items have no inventory, listings,
     # shop rows, pass rewards or opening history.

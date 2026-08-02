@@ -808,6 +808,17 @@ class AdminLootboxBody(BaseModel):
     bonus_item_chance: StrictInt | None = Field(default=None, ge=0, le=100)
     special_item_chance: StrictInt | None = Field(default=None, ge=0, le=100)
     super_special_item_chance: StrictInt | None = Field(default=None, ge=0, le=100)
+    star1_xp_min: StrictInt = Field(default=8, ge=1, le=1_000_000)
+    star1_xp_max: StrictInt = Field(default=12, ge=1, le=1_000_000)
+    star1_fragment_min: StrictInt = Field(default=1, ge=1, le=1_000_000)
+    star1_fragment_max: StrictInt = Field(default=1, ge=1, le=1_000_000)
+    star2_xp_min: StrictInt = Field(default=18, ge=1, le=1_000_000)
+    star2_xp_max: StrictInt = Field(default=25, ge=1, le=1_000_000)
+    star2_fragment_min: StrictInt = Field(default=2, ge=1, le=1_000_000)
+    star2_fragment_max: StrictInt = Field(default=2, ge=1, le=1_000_000)
+    star1_upgrade_chance: StrictInt = Field(default=50, ge=0, le=100)
+    star2_upgrade_chance: StrictInt = Field(default=4, ge=0, le=100)
+    star3_upgrade_chance: StrictInt = Field(default=1, ge=0, le=100)
     is_active: bool = True
     is_droppable: bool = True
     is_archived: bool = False
@@ -828,6 +839,14 @@ class AdminLootboxBody(BaseModel):
 
     @model_validator(mode="after")
     def validate_config(self):
+        for low, high, label in (
+            (self.star1_xp_min, self.star1_xp_max, "XP за 1 звезду"),
+            (self.star1_fragment_min, self.star1_fragment_max, "фрагменты за 1 звезду"),
+            (self.star2_xp_min, self.star2_xp_max, "XP за 2 звезды"),
+            (self.star2_fragment_min, self.star2_fragment_max, "фрагменты за 2 звезды"),
+        ):
+            if high < low:
+                raise ValueError(f"Максимум ({label}) не может быть меньше минимума")
         if self.min_user_level is not None and self.max_user_level is not None:
             if self.max_user_level < self.min_user_level:
                 raise ValueError("Максимальный уровень не может быть меньше минимального")
@@ -845,7 +864,7 @@ class AdminLootboxBody(BaseModel):
                 + (self.special_item_chance or 0)
                 + (self.super_special_item_chance or 0)
             )
-            if pool_total > 100:
+            if self.code not in {"common", "rare", "epic", "seasonal", "consolation"} and pool_total > 100:
                 raise ValueError(f"Сумма шансов пулов не может превышать 100% (сейчас {pool_total}%)")
         elif self.is_active and random_total != 100:
             raise ValueError(f"Сумма шансов обычных наград должна быть ровно 100% (сейчас {random_total}%)")
@@ -902,6 +921,17 @@ class AdminLootboxOut(BaseModel):
     bonus_item_chance: int
     special_item_chance: int
     super_special_item_chance: int
+    star1_xp_min: int
+    star1_xp_max: int
+    star1_fragment_min: int
+    star1_fragment_max: int
+    star2_xp_min: int
+    star2_xp_max: int
+    star2_fragment_min: int
+    star2_fragment_max: int
+    star1_upgrade_chance: int
+    star2_upgrade_chance: int
+    star3_upgrade_chance: int
     is_active: bool
     is_droppable: bool
     is_archived: bool

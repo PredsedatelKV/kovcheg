@@ -136,7 +136,7 @@ function saveSettings(s) {
 }
 
 const TRACKS = [
-  { id: "golden-deck", name: "Фоновая музыка", url: "/static/audio/background/golden-deck.mp3?v=264" },
+  { id: "golden-deck", name: "Фоновая музыка", url: "/static/audio/background/golden-deck.mp3?v=286" },
 ];
 
 function stopMusic() {

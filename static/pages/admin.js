@@ -1,4 +1,4 @@
-import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=284";
+import { get, post, patch, del, iconHtml, productImg, uploadImage } from "/static/api.js?v=286";
 
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -20,18 +20,18 @@ function slugify(s = "") {
 }
 
 const SECTIONS = [
-  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=255" },
-  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=255" },
-  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=255" },
-  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=255" },
-  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=255" },
-  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=255" },
-  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=255" },
-  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=255" },
-  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=255" },
-  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=255" },
-  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=255" },
-  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=255" },
+  { id: "users", label: "Игроки", icon: "/static/img/admin/users.png?v=286" },
+  { id: "news", label: "Новости", icon: "/static/img/admin/news.png?v=286" },
+  { id: "banners", label: "Карусель", icon: "/static/img/admin/banners.png?v=286" },
+  { id: "wheel", label: "Колесо", icon: "/static/img/admin/wheel.png?v=286" },
+  { id: "shop", label: "Магазин", icon: "/static/img/admin/shop.png?v=286" },
+  { id: "market", label: "Рынок", icon: "/static/img/admin/market.png?v=286" },
+  { id: "tasks", label: "Задания", icon: "/static/img/admin/tasks.png?v=286" },
+  { id: "quizzes", label: "Тесты", icon: "/static/img/admin/quizzes.png?v=286" },
+  { id: "items", label: "Предметы", icon: "/static/img/admin/items.png?v=286" },
+  { id: "lootboxes", label: "Ковбоксы", icon: "/static/img/admin/lootboxes.png?v=286" },
+  { id: "legal", label: "Тексты", icon: "/static/img/admin/legal.png?v=286" },
+  { id: "battlepass", label: "Пропуск", icon: "/static/img/admin/battlepass.png?v=286" },
 ];
 
 let META = { items: [], users: [], categories: [] };
@@ -1579,9 +1579,9 @@ function openQuestionEditor(body, quizId, existing) {
 }
 
 // ---------- KOVBOX EDITOR ----------
-const LOOTBOX_RARITIES = ["Бронзовый", "Серебряный", "Золотой", "Сезонный", "Утешительный"];
-const EDITABLE_LOOTBOX_CODES = ["common", "rare", "epic", "seasonal", "consolation"];
-const LOOTBOX_START_STARS = { common:1, rare:2, epic:3, seasonal:4, consolation:1 };
+const LOOTBOX_RARITIES = ["Бронзовый", "Серебряный", "Золотой", "Сезонный"];
+const EDITABLE_LOOTBOX_CODES = ["common", "rare", "epic", "seasonal"];
+const LOOTBOX_START_STARS = { common:1, rare:2, epic:3, seasonal:4 };
 const LOOTBOX_REWARD_LABELS = {
   item: "Предмет",
   kovbucks: "Ковбаксы",
@@ -1911,9 +1911,97 @@ function openLootboxEditor(body, existing = null) {
   });
 }
 
+function openCanonicalLootboxEditor(body, box) {
+  const fragment = META.items.find((item) => item.code === "box_fragment");
+  if (!fragment) return window.kov.toast("Фрагмент ковбокса не найден");
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `<div class="modal lootbox-simple-editor" style="max-width:720px;max-height:92vh;overflow:auto">
+    <button class="close" id="lb-simple-close" type="button">×</button>
+    <div class="lootbox-simple-head"><img src="${escapeHtml(box.image_url)}" alt=""/><div><h3>${escapeHtml(box.name)}</h3><div class="admin-sub">Старт: ${LOOTBOX_START_STARS[box.code]} ★ · три нажатия</div></div></div>
+    <section class="admin-card lootbox-config-card"><h4>Продажа</h4><div class="admin-form-grid">
+      ${field("Цена в ковбаксах", `<input class="input" id="lb-simple-price" type="number" min="1" max="1000000000" value="${box.sale_price ?? ""}"/>`)}
+      ${field("Доступен игрокам", `<select class="input" id="lb-simple-active"><option value="true" ${box.is_active ? "selected" : ""}>Да</option><option value="false" ${!box.is_active ? "selected" : ""}>Нет</option></select>`)}
+    </div></section>${canonicalRangeFields(box)}
+    <div class="row gap"><button class="btn" id="lb-simple-save">Сохранить</button><button class="btn btn-secondary" id="lb-simple-cancel">Отмена</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector("#lb-simple-close").onclick = close;
+  overlay.querySelector("#lb-simple-cancel").onclick = close;
+  overlay.addEventListener("click", (event) => { if (event.target === overlay) close(); });
+  overlay.querySelector("#lb-simple-save").onclick = () => saveCanonicalLootboxEditor(body, box, fragment, overlay, close);
+}
+
+function canonicalRangeFields(box) {
+  const input = (label, id, value, max = 1000000) => field(label, `<input class="input" id="${id}" type="number" min="0" max="${max}" value="${Number(value)}"/>`);
+  return `
+    <section class="admin-card lootbox-config-card"><h4>Награда за 1 звезду</h4><div class="admin-sub">XP — 70%, фрагменты — 30%.</div><div class="admin-form-grid">
+      ${input("XP от", "lb-s1-xp-min", box.star1_xp_min)}${input("XP до", "lb-s1-xp-max", box.star1_xp_max)}
+      ${input("Фрагменты от", "lb-s1-fr-min", box.star1_fragment_min)}${input("Фрагменты до", "lb-s1-fr-max", box.star1_fragment_max)}
+    </div></section>
+    <section class="admin-card lootbox-config-card"><h4>Награда за 2 звезды</h4><div class="admin-sub">XP — 70%, фрагменты — 30%.</div><div class="admin-form-grid">
+      ${input("XP от", "lb-s2-xp-min", box.star2_xp_min)}${input("XP до", "lb-s2-xp-max", box.star2_xp_max)}
+      ${input("Фрагменты от", "lb-s2-fr-min", box.star2_fragment_min)}${input("Фрагменты до", "lb-s2-fr-max", box.star2_fragment_max)}
+    </div></section>
+    <section class="admin-card lootbox-config-card"><h4>Повышение звёзд</h4><div class="admin-sub">Каждый шанс применяется отдельно.</div><div class="admin-form-grid">
+      ${input("1 ★ → 2 ★, %", "lb-upgrade-1", box.star1_upgrade_chance, 100)}
+      ${input("2 ★ → 3 ★, %", "lb-upgrade-2", box.star2_upgrade_chance, 100)}
+      ${input("3 ★ → 4 ★, %", "lb-upgrade-3", box.star3_upgrade_chance, 100)}
+    </div><div class="admin-sub">3 ★ — особая, 4 ★ — сверхособая награда.</div></section>`;
+}
+
+async function saveCanonicalLootboxEditor(body, box, fragment, overlay, close) {
+  const value = (id) => Number(overlay.querySelector(`#${id}`).value);
+  const ranges = {
+    star1_xp_min:value("lb-s1-xp-min"), star1_xp_max:value("lb-s1-xp-max"),
+    star1_fragment_min:value("lb-s1-fr-min"), star1_fragment_max:value("lb-s1-fr-max"),
+    star2_xp_min:value("lb-s2-xp-min"), star2_xp_max:value("lb-s2-xp-max"),
+    star2_fragment_min:value("lb-s2-fr-min"), star2_fragment_max:value("lb-s2-fr-max"),
+  };
+  if (Object.values(ranges).some((number) => !Number.isInteger(number) || number < 1)) return window.kov.toast("Диапазоны должны быть целыми положительными числами");
+  if (ranges.star1_xp_max < ranges.star1_xp_min || ranges.star1_fragment_max < ranges.star1_fragment_min || ranges.star2_xp_max < ranges.star2_xp_min || ranges.star2_fragment_max < ranges.star2_fragment_min) return window.kov.toast("Значение «до» не может быть меньше значения «от»");
+  const chances = [value("lb-upgrade-1"), value("lb-upgrade-2"), value("lb-upgrade-3")];
+  if (chances.some((number) => !Number.isInteger(number) || number < 0 || number > 100)) return window.kov.toast("Каждый шанс должен быть от 0 до 100%");
+  const price = value("lb-simple-price");
+  if (!Number.isInteger(price) || price < 1) return window.kov.toast("Укажите корректную цену");
+  const rewardRows = [
+    ["xp", null, ranges.star1_xp_min, ranges.star1_xp_max, 101],
+    ["item", fragment.id, ranges.star1_fragment_min, ranges.star1_fragment_max, 102],
+    ["xp", null, ranges.star2_xp_min, ranges.star2_xp_max, 201],
+    ["item", fragment.id, ranges.star2_fragment_min, ranges.star2_fragment_max, 202],
+  ].map(([reward_kind,item_id,amount_min,amount_max,sort_order]) => ({ reward_kind,item_id,amount_min,amount_max,sort_order,weight:100,is_guaranteed:true,is_active:true }));
+  const payload = {
+    code:box.code, name:box.name, rarity:box.rarity, image_url:box.image_url,
+    open_image_url:box.image_url, opening_mode:"chest_v2", ...ranges,
+    bonus_item_chance:chances[0], special_item_chance:chances[1], super_special_item_chance:chances[2],
+    star1_upgrade_chance:chances[0], star2_upgrade_chance:chances[1], star3_upgrade_chance:chances[2],
+    is_active:overlay.querySelector("#lb-simple-active").value === "true",
+    is_droppable:box.is_droppable, is_archived:false, assembly_weight:box.assembly_weight,
+    sale_price:price, sale_currency:"kovbucks", min_user_level:box.min_user_level,
+    max_user_level:box.max_user_level, sort_order:box.sort_order, starts_at:box.starts_at,
+    ends_at:box.ends_at, daily_open_limit:box.daily_open_limit, guaranteed_slots:1,
+    allow_duplicates:false, entries:rewardRows,
+  };
+  const save = overlay.querySelector("#lb-simple-save");
+  save.disabled = true;
+  save.textContent = "Сохраняем…";
+  try {
+    await patch(`/api/admin/lootboxes/${box.id}`, payload);
+    close();
+    window.kov.toast("Настройки ковбокса сохранены");
+    await renderLootboxes(body);
+  } catch (error) {
+    save.disabled = false;
+    save.textContent = "Сохранить";
+    window.kov.toast(error.message);
+  }
+}
+
 async function renderLootboxes(body) {
   const allRows = await get("/api/admin/lootboxes");
-  // Core shop Kovboxes plus the secret consolation box are editable here.
+  // The consolation box intentionally stays out of the editor and always
+  // follows the Bronze mechanics on the server.
   const rows = EDITABLE_LOOTBOX_CODES
     .map((code) => allRows.find((row) => row.code === code))
     .filter(Boolean);
@@ -1925,7 +2013,7 @@ async function renderLootboxes(body) {
         <select class="input input-sm" id="lb-active-filter"><option value="">Все статусы</option><option value="active">Активные</option><option value="inactive">Отключённые</option><option value="archived">Архив</option></select>
         <select class="input input-sm" id="lb-rarity-filter"><option value="">Все редкости</option>${rarities.map((rarity) => `<option>${escapeHtml(rarity)}</option>`).join("")}</select>
       </div>
-      <div class="admin-sub" style="margin-top:8px">Три нажатия, максимум четыре звезды. 1–2 ★ дают XP или фрагменты, 3 ★ — особую награду, 4 ★ — сверхособую.</div>
+      <div class="admin-sub" style="margin-top:8px">Настройте цену, диапазоны XP и фрагментов и шанс повышения каждой звезды. Утешительный ковбокс автоматически повторяет бронзовый.</div>
     </div>
     <div id="lb-list"></div>`;
 
@@ -1960,7 +2048,7 @@ async function renderLootboxes(body) {
 
     list.querySelectorAll("[data-lb-id]").forEach((card) => {
       const row = rows.find((value) => value.id === Number(card.dataset.lbId));
-      card.querySelector('[data-lb-action="edit"]').addEventListener("click", () => openLootboxEditor(body, row));
+      card.querySelector('[data-lb-action="edit"]').addEventListener("click", () => openCanonicalLootboxEditor(body, row));
       card.querySelector('[data-lb-action="archive"]')?.addEventListener("click", (event) => {
         const button = event.currentTarget;
         if (button.disabled) return;

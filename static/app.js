@@ -1,12 +1,12 @@
-import { renderHome } from "/static/pages/home.js?v=282";
-import { renderProfile } from "/static/pages/profile.js?v=284";
-import { renderKoverna } from "/static/pages/koverna.js?v=282";
-import { renderArcade } from "/static/pages/arcade.js?v=284";
-import { renderAdmin } from "/static/pages/admin.js?v=284";
-import { renderBattlePass } from "/static/pages/battlepass.js?v=282";
-import { initSettings, playUISound } from "/static/pages/settings.js?v=284";
-import { initMultiplayer } from "/static/pages/multiplayer.js?v=274";
-import { get, post, prefetch, peekCached } from "/static/api.js?v=284";
+import { renderHome } from "/static/pages/home.js?v=286";
+import { renderProfile } from "/static/pages/profile.js?v=286";
+import { renderKoverna } from "/static/pages/koverna.js?v=286";
+import { renderArcade } from "/static/pages/arcade.js?v=286";
+import { renderAdmin } from "/static/pages/admin.js?v=286";
+import { renderBattlePass } from "/static/pages/battlepass.js?v=286";
+import { initSettings, playUISound } from "/static/pages/settings.js?v=286";
+import { initMultiplayer } from "/static/pages/multiplayer.js?v=286";
+import { get, post, prefetch, peekCached } from "/static/api.js?v=286";
 
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) {
@@ -428,6 +428,50 @@ window.kov.emit = function (event, data) {
   var list = _listeners[event];
   if (list) list.forEach(function(fn) { fn(data); });
 };
+
+function mutationAffectedTabs(path) {
+  // Chat messages, multiplayer moves and authentication do not mutate the
+  // player's economy/profile. Every actual game mutation refreshes every
+  // player tab so balances, XP, pass progress, inventory and stock cannot
+  // remain stale in an already-mounted view.
+  if (path.startsWith("/api/chat") || path.startsWith("/api/game") || path.startsWith("/api/assistant") || path.startsWith("/auth/")) return [];
+  if (path.startsWith("/api/admin/")) return Object.keys(RENDERERS);
+  return Object.keys(RENDERERS).filter((name) => name !== "admin");
+}
+
+function mutationBalance(result) {
+  if (Number.isFinite(Number(result?.balance))) return Number(result.balance);
+  if (Number.isFinite(Number(result?.user?.balance))) return Number(result.user.balance);
+  return null;
+}
+
+window.addEventListener("kov:data-mutated", (event) => {
+  const detail = event.detail || {};
+  const result = detail.result || {};
+  if (result.user && window.kov.me) Object.assign(window.kov.me, result.user);
+  const balance = mutationBalance(result);
+  if (balance != null && window.kov.me) {
+    window.kov.me.balance = balance;
+    window.kov.emit("balance:update", { balance });
+  }
+  const path = String(detail.path || "");
+  const highFrequency = path.startsWith("/api/arcade/clicker/tap");
+  mutationAffectedTabs(path).forEach((name) => {
+    const state = getTabState(name);
+    state.needsRefresh = true;
+    if (!highFrequency && state.rendered && name !== currentTab) {
+      setTimeout(() => {
+        if (!state.needsRefresh || name === currentTab) return;
+        state.needsRefresh = false;
+        refreshTab(name).catch((error) => {
+          state.needsRefresh = true;
+          console.warn("Не удалось обновить скрытую вкладку", error);
+        });
+      }, 120);
+    }
+  });
+  window.kov.emit("data:mutated", detail);
+});
 
 // Live-update balance display anywhere on the page
 window.kov.on("balance:update", function(data) {

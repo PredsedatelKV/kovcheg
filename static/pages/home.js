@@ -1,8 +1,8 @@
-import { get, post, iconHtml } from "/static/api.js?v=284";
+import { get, post, iconHtml } from "/static/api.js?v=286";
 
-import { openAssistantChat } from "/static/pages/assistant.js?v=264";
+import { openAssistantChat } from "/static/pages/assistant.js?v=286";
 
-import { playUISound } from "/static/pages/settings.js?v=284";
+import { playUISound } from "/static/pages/settings.js?v=286";
 
 
 const escapeHtml = (s = "") =>
@@ -169,7 +169,7 @@ export async function renderHome(root) {
         <h1>${welcome}</h1>
         <div class="subtitle" id="home-clock">${escapeHtml(data.server_time_msk)} мск</div>
       </div>
-      <div class="hero-art home-cube-art" title="Ковчег"><img src="/static/img/ui/home_cube.png?v=266" alt="Ковчег" class="hero-img"/></div>
+      <div class="hero-art home-cube-art" title="Ковчег"><img src="/static/img/ui/home_cube.png?v=286" alt="Ковчег" class="hero-img"/></div>
     </section>
 
 ${bannerCarousel(data.banners)}
@@ -470,7 +470,7 @@ ${bannerCarousel(data.banners)}
   const settingsBtn = root.querySelector('[data-action="settings"]');
   if (settingsBtn) settingsBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    import("/static/pages/settings.js?v=284").then((m) => m.openSettings()).catch(function() {});
+    import("/static/pages/settings.js?v=286").then((m) => m.openSettings()).catch(function() {});
   });
   const channelBtn = root.querySelector('[data-action="channel"]');
   if (channelBtn) channelBtn.addEventListener("click", () => {

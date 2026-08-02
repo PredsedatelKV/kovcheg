@@ -905,3 +905,55 @@ def test_same_open_request_is_parallel_idempotent(lootbox_api):
     assert [response.status_code for response in responses] == [200, 200]
     assert sorted(response.json()["replayed"] for response in responses) == [False, True]
     assert _quantity(sessions, "prize") == 1
+
+
+def test_canonical_editor_persists_star_ranges_chances_and_price(lootbox_api):
+    client, sessions = lootbox_api
+    with sessions() as db:
+        prize_id = db.query(models.Item).filter_by(code="prize").one().id
+        fragment_id = db.query(models.Item).filter_by(code="box_fragment").one().id
+    payload = _box_payload(prize_id, code="common", sale_price=100)
+    payload.update({
+        "opening_mode": "chest_v2",
+        "star1_xp_min": 6,
+        "star1_xp_max": 9,
+        "star1_fragment_min": 1,
+        "star1_fragment_max": 2,
+        "star2_xp_min": 14,
+        "star2_xp_max": 20,
+        "star2_fragment_min": 2,
+        "star2_fragment_max": 4,
+        "star1_upgrade_chance": 61,
+        "star2_upgrade_chance": 17,
+        "star3_upgrade_chance": 3,
+    })
+    created = client.post("/api/admin/lootboxes", json=payload, headers=_headers(2))
+    assert created.status_code == 200, created.text
+    data = created.json()
+    assert data["sale_price"] == 100
+    assert data["star1_xp_min"] == 6
+    assert data["star1_xp_max"] == 9
+    assert data["star2_fragment_min"] == 2
+    assert data["star2_fragment_max"] == 4
+    assert [data[f"star{index}_upgrade_chance"] for index in range(1, 4)] == [61, 17, 3]
+
+    by_order = {entry["sort_order"]: entry for entry in data["entries"]}
+    assert set(by_order) == {101, 102, 201, 202}
+    assert (by_order[101]["reward_kind"], by_order[101]["amount_min"], by_order[101]["amount_max"]) == ("xp", 6, 9)
+    assert (by_order[102]["item_id"], by_order[102]["amount_min"], by_order[102]["amount_max"]) == (fragment_id, 1, 2)
+
+    with sessions() as db:
+        pool = db.query(models.LootboxPool).filter_by(code="common").one()
+        assert (pool.bonus_item_chance, pool.special_item_chance, pool.super_special_item_chance) == (61, 17, 3)
+
+
+def test_consolation_editor_is_server_managed(lootbox_api):
+    client, sessions = lootbox_api
+    box, payload = _create_box(client, sessions, code="consolation")
+    response = client.patch(
+        f"/api/admin/lootboxes/{box['id']}",
+        json=payload,
+        headers=_headers(2),
+    )
+    assert response.status_code == 400
+    assert "бронзового" in response.json()["detail"].lower()

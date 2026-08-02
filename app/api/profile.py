@@ -902,12 +902,27 @@ def _lootbox_starting_stars(pool: models.LootboxPool) -> int:
     return 1
 
 
+def _lootbox_upgrade_percent(pool: models.LootboxPool, stars: int) -> int:
+    if pool.code in {"common", "rare", "epic", "seasonal"}:
+        configured = {
+            1: pool.bonus_item_chance,
+            2: pool.special_item_chance,
+            3: pool.super_special_item_chance,
+            4: 0,
+        }
+        value = configured.get(stars)
+        if value is None:
+            value = LOOTBOX_STAR_UPGRADE_PERCENT.get(stars, 0)
+        return max(0, min(100, int(value)))
+    return LOOTBOX_STAR_UPGRADE_PERCENT.get(stars, 0)
+
+
 def _roll_lootbox_stars(pool: models.LootboxPool) -> tuple[int, list[int]]:
     starting = _lootbox_starting_stars(pool)
     stars = starting
     sequence: list[int] = []
     for _ in range(LOOTBOX_TAPS):
-        if stars < 4 and secrets.randbelow(100) < LOOTBOX_STAR_UPGRADE_PERCENT[stars]:
+        if stars < 4 and secrets.randbelow(100) < _lootbox_upgrade_percent(pool, stars):
             stars += 1
         sequence.append(stars)
     return starting, sequence
@@ -926,7 +941,26 @@ def _roll_single_chest_reward(
             fragment = db.query(models.Item).filter(models.Item.code == "box_fragment").one_or_none()
             if fragment is None:
                 raise HTTPException(409, "Фрагмент ковбокса не настроен")
-            config = LOOTBOX_LOW_STAR_REWARDS[final_stars]
+            config = dict(LOOTBOX_LOW_STAR_REWARDS[final_stars])
+            configured_orders = {
+                "xp": final_stars * 100 + 1,
+                "fragment": final_stars * 100 + 2,
+            }
+            xp_entry = next((entry for entry in entries if (
+                entry.is_active
+                and entry.reward_kind == "xp"
+                and entry.sort_order == configured_orders["xp"]
+            )), None)
+            fragment_entry = next((entry for entry in entries if (
+                entry.is_active
+                and entry.reward_kind == "item"
+                and entry.item_id == fragment.id
+                and entry.sort_order == configured_orders["fragment"]
+            )), None)
+            if xp_entry is not None:
+                config["xp"] = (xp_entry.amount_min, xp_entry.amount_max, 70)
+            if fragment_entry is not None:
+                config["fragment"] = (fragment_entry.amount_min, fragment_entry.amount_max, 30)
             roll = secrets.randbelow(100)
             xp_low, xp_high, xp_weight = config["xp"]
             if roll < xp_weight:
@@ -1290,9 +1324,31 @@ def open_lootbox_for_user(
     if inventory is None or inventory.quantity < 1:
         raise HTTPException(409, "У вас нет этого ковбокса")
 
-    starting_stars, star_sequence = _roll_lootbox_stars(pool)
+    mechanics_pool = pool
+    if pool.code == "consolation":
+        bronze = db.query(models.LootboxPool).filter(models.LootboxPool.code == "common").one_or_none()
+        if bronze is not None:
+            mechanics_pool = bronze
+    if pool.code == "consolation":
+        # The consolation box always starts with one star, but every upgrade
+        # chance and low-star range comes directly from the Bronze box.
+        starting_stars = _lootbox_starting_stars(pool)
+        stars = starting_stars
+        star_sequence = []
+        for _ in range(LOOTBOX_TAPS):
+            if stars < 4 and secrets.randbelow(100) < _lootbox_upgrade_percent(mechanics_pool, stars):
+                stars += 1
+            star_sequence.append(stars)
+    else:
+        starting_stars, star_sequence = _roll_lootbox_stars(mechanics_pool)
     final_stars = star_sequence[-1] if star_sequence else starting_stars
-    reward_spec = _roll_single_chest_reward(db, user, pool, entries, final_stars)
+    reward_spec = _roll_single_chest_reward(
+        db,
+        user,
+        mechanics_pool,
+        list(mechanics_pool.entries) if mechanics_pool is not pool else entries,
+        final_stars,
+    )
     star_plan = {
         "starting_stars": starting_stars,
         "star_sequence": star_sequence,

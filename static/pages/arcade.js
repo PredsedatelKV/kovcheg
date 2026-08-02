@@ -1,6 +1,6 @@
-import { post, get } from "/static/api.js?v=284";
+import { post, get } from "/static/api.js?v=286";
 
-import { playUISound } from "/static/pages/settings.js?v=284";
+import { playUISound } from "/static/pages/settings.js?v=286";
 const escapeHtml = (s = "") =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -2023,7 +2023,7 @@ function gameClicker(hostRoot = null) {
   let passiveUntil = 0;      // ms-таймстамп конца буста пассива
   let lockedUntil = 0;       // ms-таймстамп конца блокировки анти-фрода
 
-  const COIN = "/static/img/ui/clicker_coin.png?v=264";
+  const COIN = "/static/img/ui/clicker_coin.png?v=286";
   const content = `
     <div class="clicker-screen-head">
       ${hostRoot ? '<button class="clicker-back" id="clicker-back" type="button" aria-label="Вернуться в Аркаду">←</button>' : '<button class="close" onclick="closeModal()">×</button>'}
@@ -2531,7 +2531,7 @@ function gameClicker(hostRoot = null) {
 // ============ RENDER ============
 
 function arcadeIcon(name) {
-  return `<div class="game-tile-icon arcade-icon-frame"><img class="arcade-icon-img" src="/static/img/ui/arcade/${name}.png?v=264" alt="" draggable="false" decoding="async"></div>`;
+  return `<div class="game-tile-icon arcade-icon-frame"><img class="arcade-icon-img" src="/static/img/ui/arcade/${name}.png?v=286" alt="" draggable="false" decoding="async"></div>`;
 }
 
 export async function renderArcade(root) {
