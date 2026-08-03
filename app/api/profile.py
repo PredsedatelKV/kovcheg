@@ -916,10 +916,12 @@ LOOTBOX_STARTING_STARS = {
     "seasonal": 4,
     "consolation": 1,
 }
-FRAGMENT_ASSEMBLY_WEIGHTS = {"common": 50, "rare": 30, "epic": 15, "seasonal": 5}
+# Ten fragments assemble into a Kovbox with these explicit, player-facing
+# probabilities: Bronze 40%, Silver 30%, Gold 20%, Seasonal 10%.
+FRAGMENT_ASSEMBLY_WEIGHTS = {"common": 40, "rare": 30, "epic": 20, "seasonal": 10}
 LOOTBOX_TAPS = 3
-# Direct per-tap probabilities. After three taps, Bronze finishes at
-# 1/2/3/4 stars with about 12.50/82.58/4.90/0.02 percent respectively.
+# Fallback per-tap probabilities for historical/custom pools. Canonical
+# Kovboxes use the administrator-configured per-transition values in the DB.
 LOOTBOX_STAR_UPGRADE_PERCENT = {1: 50, 2: 4, 3: 1, 4: 0}
 LOOTBOX_LOW_STAR_REWARDS = {
     1: {"xp": (8, 12, 70), "fragment": (1, 1, 30)},

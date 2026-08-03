@@ -1473,6 +1473,68 @@ def seed(db: Session) -> None:
         )
         db.flush()
 
+    # Economy calibration for the canonical four Kovboxes. Rewards are valued
+    # around 600 K for a special item and 1,000 K for a super-special one.
+    # Bronze and Silver remain affordable, so their paths to high tiers are
+    # deliberately rarer; Gold and Seasonal retain premium pricing.
+    # This one-time migration preserves later administrator edits.
+    balanced_kovboxes_key = "2026-08-03-balanced-kovboxes-v1"
+    balanced_kovboxes_done = db.execute(
+        text("SELECT 1 FROM maintenance_migrations WHERE key = :key"),
+        {"key": balanced_kovboxes_key},
+    ).first()
+    if balanced_kovboxes_done is None:
+        balanced_kovboxes = {
+            "common": {
+                "price": 85,
+                "upgrades": (30, 7, 1),
+                "ranges": {101: (5, 10), 102: (1, 2), 201: (12, 20), 202: (2, 3)},
+            },
+            "rare": {
+                "price": 275,
+                "upgrades": (0, 10, 1),
+                "ranges": {101: (5, 10), 102: (1, 2), 201: (15, 25), 202: (2, 4)},
+            },
+            "epic": {
+                "price": 1100,
+                "upgrades": (0, 0, 8),
+                "ranges": {101: (5, 10), 102: (1, 2), 201: (15, 25), 202: (2, 4)},
+            },
+            "seasonal": {
+                "price": 1550,
+                "upgrades": (0, 0, 0),
+                "ranges": {101: (5, 10), 102: (1, 2), 201: (15, 25), 202: (2, 4)},
+            },
+        }
+        for code, config in balanced_kovboxes.items():
+            pool = pools.get(code)
+            if pool is None:
+                continue
+            pool.sale_price = config["price"]
+            (
+                pool.bonus_item_chance,
+                pool.special_item_chance,
+                pool.super_special_item_chance,
+            ) = config["upgrades"]
+            entries_by_order = {entry.sort_order: entry for entry in pool.entries}
+            for sort_order, (amount_min, amount_max) in config["ranges"].items():
+                entry = entries_by_order.get(sort_order)
+                if entry is not None:
+                    entry.amount_min = amount_min
+                    entry.amount_max = amount_max
+            if pool.item is not None:
+                product = db.query(models.ShopProduct).filter(
+                    models.ShopProduct.item_id == pool.item.id,
+                ).one_or_none()
+                if product is not None:
+                    product.price = config["price"]
+            pool.version += 1
+        db.execute(
+            text("INSERT INTO maintenance_migrations(key) VALUES (:key)"),
+            {"key": balanced_kovboxes_key},
+        )
+        db.flush()
+
     # Remove obsolete editor-created duplicates. The live data is checked
     # before this migration: these pools/items have no inventory, listings,
     # shop rows, pass rewards or opening history.
