@@ -10,6 +10,38 @@ const GAME_META = {
   checkers:  { name: "Шашки",           icon: "/static/img/ui/checkers.svg" },
   pingpong:  { name: "Пинг-понг",       icon: "/static/img/ui/pingpong.svg" },
 };
+
+// Prepare the Kovbox sounds as soon as the profile module is loaded. Creating
+// Audio elements only after the opening API response caused the first tap to
+// wait for media loading/decoding in iOS Telegram WebView.
+const LOOTBOX_OPEN_SOUND = new Audio("/static/audio/lootbox/open.mp3?v=286");
+const LOOTBOX_SPECIAL_SOUND = new Audio("/static/audio/lootbox/special.mp3?v=286");
+const LOOTBOX_BONUS_SOUNDS = [1, 2, 3].map(
+  (number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=286`),
+);
+const LOOTBOX_AUDIO_BANK = [LOOTBOX_OPEN_SOUND, LOOTBOX_SPECIAL_SOUND, ...LOOTBOX_BONUS_SOUNDS];
+
+function prepareLootboxAudio(audio) {
+  audio.preload = "auto";
+  if (audio.readyState >= 3) return Promise.resolve();
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      audio.removeEventListener("canplay", done);
+      audio.removeEventListener("error", done);
+      resolve();
+    };
+    audio.addEventListener("canplay", done, { once: true });
+    audio.addEventListener("error", done, { once: true });
+    try { audio.load(); } catch (_) { done(); }
+    setTimeout(done, 1500);
+  });
+}
+
+const LOOTBOX_AUDIO_READY = LOOTBOX_AUDIO_BANK.map(prepareLootboxAudio);
+const LOOTBOX_FIRST_TAP_READY = Promise.all(LOOTBOX_AUDIO_READY.slice(2));
 let _profileRoot = null;
 let _profileData = null;
 
@@ -886,13 +918,9 @@ function showMegaLootboxChoices(result) {
   const chestImage = overlay.querySelector("#mega-chest-image");
   const hint = overlay.querySelector("#mega-choice-hint");
   const done = overlay.querySelector("#mega-choice-done");
-  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=286");
-  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=286`));
+  const openSound = LOOTBOX_OPEN_SOUND;
+  const bonusSounds = LOOTBOX_BONUS_SOUNDS;
   const allSounds = [openSound, ...bonusSounds];
-  allSounds.forEach((audio) => {
-    audio.preload = "auto";
-    try { audio.load(); } catch (_) {}
-  });
   const choices = [];
   let index = 0;
   let locked = false;
@@ -902,7 +930,6 @@ function showMegaLootboxChoices(result) {
     try {
       const settings = getSettings();
       if (!settings.uiSounds) return false;
-      allSounds.forEach((sound) => { if (sound !== audio) { sound.pause(); sound.currentTime = 0; } });
       const managedStart = playManagedMedia(audio, settings.uiSoundsVolume, false);
       audio.pause();
       try { audio.currentTime = 0; } catch (_) {}
@@ -1055,19 +1082,14 @@ function showLootboxChestLegacy(result) {
   let locked = false;
   let previousReward = null;
   let finished = false;
-  const openSound = new Audio("/static/audio/lootbox/open.mp3?v=286");
-  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=286");
-  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=286`));
+  const openSound = LOOTBOX_OPEN_SOUND;
+  const specialSound = LOOTBOX_SPECIAL_SOUND;
+  const bonusSounds = LOOTBOX_BONUS_SOUNDS;
   const allSounds = [openSound, specialSound, ...bonusSounds];
-  allSounds.forEach((audio) => {
-    audio.preload = "auto";
-    try { audio.load(); } catch (_) {}
-  });
   async function playAudio(audio) {
     try {
       const settings = getSettings();
       if (!settings.uiSounds) return false;
-      allSounds.forEach((sound) => { if (sound !== audio) { sound.pause(); sound.currentTime = 0; } });
       const managedStart = playManagedMedia(audio, settings.uiSoundsVolume, false);
       audio.pause();
       try { audio.currentTime = 0; } catch (_) {}
@@ -1271,24 +1293,23 @@ function showLootboxChest(result) {
   const chestButton = overlay.querySelector("#lootbox-chest-button");
   const hint = overlay.querySelector("#lootbox-chest-hint");
   const done = overlay.querySelector("#lootbox-chest-done");
-  const specialSound = new Audio("/static/audio/lootbox/special.mp3?v=286");
-  const bonusSounds = [1, 2, 3].map((number) => new Audio(`/static/audio/lootbox/bonus_${number}.ogg?v=286`));
+  const specialSound = LOOTBOX_SPECIAL_SOUND;
+  const bonusSounds = LOOTBOX_BONUS_SOUNDS;
   const allSounds = [specialSound, ...bonusSounds];
-  allSounds.forEach((audio) => {
-    audio.preload = "auto";
-    try { audio.load(); } catch (_) {}
+  let firstTapSoundReady = false;
+  chestButton.disabled = true;
+  hint.textContent = "Подготовка…";
+  LOOTBOX_FIRST_TAP_READY.finally(() => {
+    firstTapSoundReady = true;
+    if (!document.body.contains(overlay) || finished) return;
+    chestButton.disabled = false;
+    hint.textContent = "Нажмите на ковбокс · 1 из 3";
   });
 
   async function playAudio(audio) {
     const settings = getSettings();
     if (!settings.uiSounds) return false;
     try {
-      allSounds.forEach((sound) => {
-        if (sound !== audio) {
-          sound.pause();
-          try { sound.currentTime = 0; } catch (_) {}
-        }
-      });
       const managedStart = playManagedMedia(audio, settings.uiSoundsVolume, false);
       audio.pause();
       try { audio.currentTime = 0; } catch (_) {}
@@ -1364,7 +1385,7 @@ function showLootboxChest(result) {
   }
 
   chestButton.addEventListener("click", async () => {
-    if (locked || finished || tapIndex >= sequence.length) return;
+    if (!firstTapSoundReady || locked || finished || tapIndex >= sequence.length) return;
     locked = true;
     chestButton.disabled = true;
     const previousStars = stars;
