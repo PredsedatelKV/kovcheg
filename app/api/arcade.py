@@ -50,12 +50,12 @@ def arcade_win(
 # Награда за первую победу дня в мини-игре (в ковбаксах). Только для 6 мини-игр Аркады.
 FIRST_WIN_GAMES = {"moshonka", "tictactoe", "minesweeper", "harvest", "checkers", "pingpong"}
 FIRST_WIN_REWARDS = {
-    "moshonka": 10,
-    "tictactoe": 10,
-    "harvest": 10,
-    "checkers": 20,
-    "pingpong": 20,
-    "minesweeper": 30,
+    "moshonka": 40,
+    "tictactoe": 40,
+    "harvest": 50,
+    "checkers": 75,
+    "pingpong": 75,
+    "minesweeper": 120,
 }
 # Kept for old integrations; new clients use the per-game table above.
 FIRST_WIN_REWARD = min(FIRST_WIN_REWARDS.values())
@@ -719,9 +719,11 @@ CLICKER_CASHOUT_MIN = 100
 CLICKER_CASHOUT_KOVBUCKS = 1
 
 # --- Дневной лимит заработка ---
-# Семь активных дней: максимум 100, 130, 160, 200, 240, 270 и 300 ковбаксов.
+# Seven active days: 150–350 K from Clicker. Together with the daily streak,
+# daily wheel and all validated arcade wins this stays in the 1,000–1,500 K
+# target range instead of becoming an unlimited faucet.
 # Активный и пассивный доход расходуют один общий серверный лимит.
-CLICKER_DAILY_CAPS = (10_000, 13_000, 16_000, 20_000, 24_000, 27_000, 30_000)
+CLICKER_DAILY_CAPS = (15_000, 18_000, 22_000, 26_000, 30_000, 33_000, 35_000)
 
 # --- Активные бусты (бесплатные, с дневным лимитом) ---
 CLICKER_TURBO_SECONDS = 30

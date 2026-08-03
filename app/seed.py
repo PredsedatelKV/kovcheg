@@ -1535,6 +1535,99 @@ def seed(db: Session) -> None:
         )
         db.flush()
 
+    # The public price ladder and all canonical star chances are intentionally
+    # recalibrated together. It avoids a cheap box becoming a positive-value
+    # route to special rewards when its price changes independently.
+    economy_v2_key = "2026-08-03-kovbox-economy-v2"
+    economy_v2_done = db.execute(
+        text("SELECT 1 FROM maintenance_migrations WHERE key = :key"),
+        {"key": economy_v2_key},
+    ).first()
+    if economy_v2_done is None:
+        economy_v2 = {
+            "common": {
+                "price": 100,
+                "upgrades": (30, 10, 1),
+                "ranges": {101: (5, 10), 102: (1, 2), 201: (12, 20), 202: (2, 3)},
+            },
+            "rare": {
+                "price": 250,
+                "upgrades": (0, 8, 1),
+                "ranges": {101: (5, 10), 102: (1, 2), 201: (15, 25), 202: (2, 4)},
+            },
+            "epic": {
+                "price": 1000,
+                "upgrades": (0, 0, 5),
+                "ranges": {101: (5, 10), 102: (1, 2), 201: (15, 25), 202: (2, 4)},
+            },
+            # Seasonal begins at four stars, so its guaranteed super-special
+            # reward remains the explicit exception to the 65% target return.
+            "seasonal": {
+                "price": 1500,
+                "upgrades": (0, 0, 0),
+                "ranges": {101: (5, 10), 102: (1, 2), 201: (15, 25), 202: (2, 4)},
+            },
+        }
+        for code, config in economy_v2.items():
+            pool = pools.get(code)
+            if pool is None:
+                continue
+            pool.sale_price = config["price"]
+            (
+                pool.bonus_item_chance,
+                pool.special_item_chance,
+                pool.super_special_item_chance,
+            ) = config["upgrades"]
+            entries_by_order = {entry.sort_order: entry for entry in pool.entries}
+            for sort_order, (amount_min, amount_max) in config["ranges"].items():
+                entry = entries_by_order.get(sort_order)
+                if entry is not None:
+                    entry.amount_min = amount_min
+                    entry.amount_max = amount_max
+            if pool.item is not None:
+                product = db.query(models.ShopProduct).filter(
+                    models.ShopProduct.item_id == pool.item.id,
+                ).one_or_none()
+                if product is not None:
+                    product.price = config["price"]
+            pool.version += 1
+
+        # One daily wheel spin averages about 200 K. The two low-probability
+        # item sectors are deliberately capped at one Bronze box / fragment.
+        wheel_specs = (
+            ("100 Ковбаксов", "coins", 100, None, 25),
+            ("150 Ковбаксов", "coins", 150, None, 25),
+            ("200 Ковбаксов", "coins", 200, None, 25),
+            ("300 Ковбаксов", "coins", 300, None, 15),
+            ("500 Ковбаксов", "coins", 500, None, 8),
+            ("Бронзовый ковбокс", "item", 1, "lootbox_common", 1),
+            ("Фрагмент ковбокса", "item", 1, "box_fragment", 1),
+        )
+        wheel_rows = db.query(models.WheelPrize).order_by(
+            models.WheelPrize.sort_order, models.WheelPrize.id
+        ).all()
+        for index, (label, kind, value, item_code, weight) in enumerate(wheel_specs):
+            if index < len(wheel_rows):
+                prize = wheel_rows[index]
+            else:
+                prize = models.WheelPrize()
+                db.add(prize)
+            prize.label = label
+            prize.kind = kind
+            prize.value = value
+            prize.item_code = item_code
+            prize.weight = weight
+            prize.sort_order = index
+            prize.is_active = True
+        for prize in wheel_rows[len(wheel_specs):]:
+            prize.is_active = False
+
+        db.execute(
+            text("INSERT INTO maintenance_migrations(key) VALUES (:key)"),
+            {"key": economy_v2_key},
+        )
+        db.flush()
+
     # Remove obsolete editor-created duplicates. The live data is checked
     # before this migration: these pools/items have no inventory, listings,
     # shop rows, pass rewards or opening history.

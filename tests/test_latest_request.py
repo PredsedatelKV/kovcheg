@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from app import models
 from app.access import can_use_clicker, maintenance_sections
 from app.api._helpers import award_xp
+from app.api import arcade, home, profile
 from app.db import Base
 
 
@@ -69,3 +70,14 @@ def test_quiz_reward_json_supports_each_grade(tmp_path):
         assert quiz_rewards_out(db, quiz, "bad")[0].kind == "xp"
         assert quiz_rewards_out(db, quiz, "good")[0].kind == "kovbucks"
         assert quiz_rewards_out(db, quiz, "excellent")[0].item_id == item.id
+
+
+def test_daily_economy_has_a_bounded_weekly_target():
+    assert home.DAILY_REWARDS == (100, 150, 200, 250, 300, 350, 500)
+    assert sum(arcade.FIRST_WIN_REWARDS.values()) == 400
+    assert arcade.CLICKER_DAILY_CAPS == (15_000, 18_000, 22_000, 26_000, 30_000, 33_000, 35_000)
+    assert profile.FRAGMENT_ASSEMBLY_WEIGHTS == {
+        "common": 40, "rare": 30, "epic": 20, "seasonal": 10,
+    }
+    # Day seven: 500 K streak + 400 K arcade + ~200 K wheel + 350 K Clicker.
+    assert 1_000 <= 500 + 400 + 200 + arcade.CLICKER_DAILY_CAPS[-1] // 100 <= 1_500

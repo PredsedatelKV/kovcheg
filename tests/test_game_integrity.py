@@ -116,7 +116,7 @@ def test_daily_reward_streak_reset_and_schedule(game_api, monkeypatch):
     client, sessions = game_api
     monkeypatch.setattr(home, "_today_str", lambda: "2026-07-01")
     monkeypatch.setattr(home, "_yesterday_str", lambda: "2026-06-30")
-    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 5
+    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 100
     with sessions() as db:
         row = db.query(models.DailyReward).filter_by(user_id=1).one()
         row.streak = 7
@@ -125,11 +125,11 @@ def test_daily_reward_streak_reset_and_schedule(game_api, monkeypatch):
     monkeypatch.setattr(home, "_today_str", lambda: "2026-07-02")
     monkeypatch.setattr(home, "_yesterday_str", lambda: "2026-07-01")
     second = client.post("/api/home/daily-reward/claim", headers=_headers()).json()
-    assert second["reward"] == 50
+    assert second["reward"] == 500
     assert second["streak"] == 8
     monkeypatch.setattr(home, "_today_str", lambda: "2026-07-04")
     monkeypatch.setattr(home, "_yesterday_str", lambda: "2026-07-03")
-    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 5
+    assert client.post("/api/home/daily-reward/claim", headers=_headers()).json()["reward"] == 100
 
 
 def test_daily_reward_parallel_claim_only_once(game_api, monkeypatch):
@@ -140,7 +140,7 @@ def test_daily_reward_parallel_claim_only_once(game_api, monkeypatch):
     with ThreadPoolExecutor(max_workers=2) as pool:
         statuses = list(pool.map(lambda _: client.post("/api/home/daily-reward/claim", headers=_headers()).status_code, range(2)))
     assert sorted(statuses) == [200, 409]
-    assert _balance(sessions) == before + 5
+    assert _balance(sessions) == before + 100
 
 
 @pytest.mark.parametrize("game", sorted(arcade.FIRST_WIN_GAMES))
@@ -242,16 +242,16 @@ def test_clicker_is_open_for_all_players(game_api):
     assert client.post("/api/arcade/round/start", json={"game": "clicker"}, headers=_headers(2)).status_code == 400
 
 
-def test_clicker_progression_caps_reach_300_kovbucks(game_api, monkeypatch):
+def test_clicker_progression_caps_reach_350_kovbucks(game_api, monkeypatch):
     client, sessions = game_api
     clock = [datetime(2026, 7, 1, 9, 0, 0)]
     monkeypatch.setattr(arcade.models, "now_utc", lambda: clock[0])
 
     first = client.get("/api/arcade/clicker/state", headers=_headers()).json()
     assert first["progression_day"] == 1
-    assert first["daily_cap"] == 10_000
+    assert first["daily_cap"] == 15_000
 
-    expected = [13_000, 16_000, 20_000, 24_000, 27_000, 30_000, 30_000]
+    expected = [18_000, 22_000, 26_000, 30_000, 33_000, 35_000, 35_000]
     for offset, cap in enumerate(expected, start=1):
         with sessions() as db:
             state = db.query(models.ClickerState).filter_by(user_id=1).one()
@@ -261,7 +261,7 @@ def test_clicker_progression_caps_reach_300_kovbucks(game_api, monkeypatch):
         snapshot = client.get("/api/arcade/clicker/state", headers=_headers()).json()
         assert snapshot["daily_cap"] == cap
         assert snapshot["progression_day"] == min(7, offset + 1)
-        assert snapshot["daily_cap"] // snapshot["cashout_rate"] <= 300
+        assert snapshot["daily_cap"] // snapshot["cashout_rate"] <= 350
 
 
 def test_clicker_flood_is_locked_without_energy_or_income(game_api, monkeypatch):
@@ -293,9 +293,9 @@ def test_clicker_passive_income_has_hard_daily_subcap(game_api, monkeypatch):
         state.kovcoins = 0
         db.commit()
     snapshot = client.get("/api/arcade/clicker/state", headers=_headers()).json()
-    assert snapshot["passive_earned_today"] == 1_000
-    assert snapshot["passive_daily_cap"] == 1_000
-    assert client.get("/api/arcade/clicker/state", headers=_headers()).json()["kovcoins"] == 1_000
+    assert snapshot["passive_earned_today"] == 1_500
+    assert snapshot["passive_daily_cap"] == 1_500
+    assert client.get("/api/arcade/clicker/state", headers=_headers()).json()["kovcoins"] == 1_500
 
 
 def test_clicker_cashout_uses_safe_rate(game_api, monkeypatch):

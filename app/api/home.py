@@ -14,7 +14,9 @@ from app.db import begin_game_write, get_db
 router = APIRouter(prefix="/api/home", tags=["home"])
 
 MSK = timezone(timedelta(hours=3))
-DAILY_REWARDS = (5, 10, 15, 20, 25, 30, 50)
+# Daily economy: a completed seven-day streak provides a meaningful, but
+# bounded, 500 K contribution to the intended 1,000–1,500 K active-day range.
+DAILY_REWARDS = (100, 150, 200, 250, 300, 350, 500)
 
 MONTHS_RU = [
     "",

@@ -559,9 +559,9 @@ def test_seed_migrates_to_four_canonical_chests_once_and_preserves_admin_edits(l
         }
         expected = {
             "common": ("Бронзовый ковбокс", 100),
-            "rare": ("Серебряный ковбокс", 150),
-            "epic": ("Золотой ковбокс", 250),
-            "seasonal": ("Сезонный ковбокс", 450),
+            "rare": ("Серебряный ковбокс", 250),
+            "epic": ("Золотой ковбокс", 1000),
+            "seasonal": ("Сезонный ковбокс", 1500),
         }
         for code, (name, price) in expected.items():
             pool = canonical[code]
@@ -906,10 +906,10 @@ def test_four_canonical_boxes_have_expected_starting_stars(code, stars):
 
 def test_fragment_assembly_uses_exact_current_box_probabilities():
     assert profile.FRAGMENT_ASSEMBLY_WEIGHTS == {
-        "common": 50,
+        "common": 40,
         "rare": 30,
-        "epic": 15,
-        "seasonal": 5,
+        "epic": 20,
+        "seasonal": 10,
     }
     assert sum(profile.FRAGMENT_ASSEMBLY_WEIGHTS.values()) == 100
 
