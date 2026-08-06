@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -1625,6 +1626,26 @@ def seed(db: Session) -> None:
         db.execute(
             text("INSERT INTO maintenance_migrations(key) VALUES (:key)"),
             {"key": economy_v2_key},
+        )
+        db.flush()
+
+    # Unlock the launch state for every player and start everyone at the
+    # seventh daily-reward day.  The migration is one-shot so later restarts
+    # never reset a player's subsequent progress.
+    daily_unlock_key = "2026-08-06-unlock-game-set-daily-streak-7"
+    daily_unlock_done = db.execute(
+        text("SELECT 1 FROM maintenance_migrations WHERE key = :key"),
+        {"key": daily_unlock_key},
+    ).first()
+    if daily_unlock_done is None:
+        moscow = timezone(timedelta(hours=3))
+        today_moscow = datetime.now(timezone.utc).astimezone(moscow).strftime("%Y-%m-%d")
+        for daily_reward in db.query(models.DailyReward).all():
+            daily_reward.streak = 7
+            daily_reward.last_claim_date = today_moscow
+        db.execute(
+            text("INSERT INTO maintenance_migrations(key) VALUES (:key)"),
+            {"key": daily_unlock_key},
         )
         db.flush()
 

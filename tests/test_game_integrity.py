@@ -238,7 +238,7 @@ def test_clicker_is_open_for_all_players(game_api):
         with sessions() as db:
             assert access.can_use_clicker(db.get(models.User, user_id)) is True
     for user_id in (3, 4):
-        assert client.get("/api/arcade/clicker/state", headers=_headers(user_id)).status_code == 503
+        assert client.get("/api/arcade/clicker/state", headers=_headers(user_id)).status_code == 200
     assert client.post("/api/arcade/round/start", json={"game": "clicker"}, headers=_headers(2)).status_code == 400
 
 
@@ -484,23 +484,18 @@ def _koverna_client(game_api_client):
     return TestClient(app)
 
 
-def test_non_admin_players_see_maintenance_in_closed_sections(game_api):
+def test_all_players_see_open_sections(game_api):
     client, sessions = game_api
     koverna = _koverna_client(client)
 
-    for user_id in MAINTENANCE_USERS:
+    for user_id in (*MAINTENANCE_USERS, *OPEN_USERS):
         headers = {"X-Test-User": user_id}
         with sessions() as db:
-            assert set(access.maintenance_sections(db.get(models.User, int(user_id)))) == {
-                "profile", "koverna", "arcade", "battlepass",
-            }
+            assert access.maintenance_sections(db.get(models.User, int(user_id))) == []
 
-        assert koverna.get("/api/shop/products", headers=headers).status_code == 503
-        assert koverna.get("/api/market/listings", headers=headers).status_code == 503
-        assert client.post(
-            "/api/arcade/casino/start", json={"game": "slots", "amount": 100}, headers=headers,
-        ).status_code == 503
-        assert client.get("/api/battlepass", headers=headers).status_code == 503
+        assert koverna.get("/api/shop/products", headers=headers).status_code == 200
+        assert koverna.get("/api/market/listings", headers=headers).status_code == 200
+        assert client.get("/api/battlepass", headers=headers).status_code == 200
 
 
 def test_open_sections_stay_open_for_everyone_else(game_api):

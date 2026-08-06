@@ -7,13 +7,10 @@ LIMITED_STOCK_LOOTBOX_TELEGRAM_IDS = frozenset({
 })
 
 
-# Sections temporarily closed for individual players while their content is
-# reworked. Keys match the client tab names in static/app.js.
+# Section keys kept for compatibility with the API. No player is currently
+# under maintenance, so all game sections are available.
 MAINTENANCE_SECTIONS = ("profile", "koverna", "arcade", "battlepass")
-MAINTENANCE_TELEGRAM_IDS = frozenset({
-    7_735_808_918,  # Ибрагим
-    837_611_803,    # Магомет
-})
+MAINTENANCE_TELEGRAM_IDS = frozenset()
 MAINTENANCE_MESSAGE = "Ведутся технические работы"
 
 
