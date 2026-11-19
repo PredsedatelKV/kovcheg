@@ -744,6 +744,11 @@ class UserSkinLoadout(Base):
     torso_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
     legs_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
     feet_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+    tree_garland_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+    tree_toys_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+    tree_snow_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+    tree_gifts_item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+
 
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 

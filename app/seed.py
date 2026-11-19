@@ -104,13 +104,13 @@ def _seed_skins(db: Session) -> None:
     Слот проставляется и существующим строкам: колонка skin_slot добавляется
     миграцией уже после того, как предметы могли быть созданы.
     """
-    _ensure_item_category(db, "Скины", 40)
+    _ensure_item_category(db, "Кастом", 40)
     for code, slot, name, rarity in SKIN_DEFINITIONS:
         item = _get_or_create_item(
             db, code,
             name=name,
             icon=SKIN_SLOT_ICONS[slot],
-            category="Скины",
+            category="Кастом",
             rarity=rarity,
             can_gift=True,
         )
@@ -240,6 +240,12 @@ def migrate_icons(db: Session) -> None:
 
 
 def migrate_schema(db: Session) -> None:
+    from sqlalchemy import inspect, text
+    columns = {c["name"] for c in inspect(db.get_bind()).get_columns("user_skin_loadouts")}
+    for slot in ("tree_garland", "tree_toys", "tree_snow", "tree_gifts"):
+        if slot + "_item_id" not in columns:
+            db.execute(text(f"ALTER TABLE user_skin_loadouts ADD COLUMN {slot}_item_id INTEGER REFERENCES items(id)"))
+
     """Lightweight in-place migrations for SQLite (add columns to existing tables)."""
     from sqlalchemy import text  # local import to keep startup cheap
 

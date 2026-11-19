@@ -234,15 +234,20 @@ class SkinLoadoutOut(BaseModel):
     torso: str | None = None
     legs: str | None = None
     feet: str | None = None
+    tree_garland: str | None = None
+    tree_toys: str | None = None
+    tree_snow: str | None = None
+    tree_gifts: str | None = None
+
 
 
 class SkinEquipRequest(BaseModel):
     item_id: StrictInt = Field(ge=1)
-    slot: Literal["head", "torso", "legs", "feet"]
+    slot: Literal["head", "torso", "legs", "feet", "tree_garland", "tree_toys", "tree_snow", "tree_gifts"]
 
 
 class SkinUnequipRequest(BaseModel):
-    slot: Literal["head", "torso", "legs", "feet"]
+    slot: Literal["head", "torso", "legs", "feet", "tree_garland", "tree_toys", "tree_snow", "tree_gifts"]
 
 
 class ProfilePayload(BaseModel):
@@ -332,7 +337,7 @@ class AdminItemBody(BaseModel):
     can_gift: bool = True
     can_activate: bool = False
     lootbox_reward_tier: Literal["normal", "special", "super_special"] = "normal"
-    skin_slot: Literal["head", "torso", "legs", "feet"] | None = None
+    skin_slot: Literal["head", "torso", "legs", "feet", "tree_garland", "tree_toys", "tree_snow", "tree_gifts"] | None = None
 
 class ItemCategoryOut(BaseModel):
     id: int

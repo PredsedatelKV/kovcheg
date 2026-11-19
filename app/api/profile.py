@@ -100,7 +100,7 @@ def _item_to_out(item: models.Item) -> schemas.ItemOut:
     )
 
 
-SKIN_SLOTS = ("head", "torso", "legs", "feet")
+SKIN_SLOTS = ("head", "torso", "legs", "feet", "tree_garland", "tree_toys", "tree_snow", "tree_gifts")
 
 
 def _get_or_create_loadout(db: Session, user_id: int) -> models.UserSkinLoadout:
@@ -130,7 +130,9 @@ def _loadout_to_out(db: Session, loadout: models.UserSkinLoadout | None) -> sche
     }
     known = {
         row.id: row.code
-        for row in db.query(models.Item).filter(
+        for row in db.query(models.Item).join(models.InventoryItem).filter(
+            models.InventoryItem.user_id == loadout.user_id,
+            models.InventoryItem.quantity > 0,
             models.Item.id.in_([i for i in item_ids.values() if i])
         ).all()
     } if any(item_ids.values()) else {}

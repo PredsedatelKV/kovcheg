@@ -115,3 +115,40 @@ def seed_winter_catalog(db: Session) -> None:
     _seed_winter_catalog_v1(db)
     db.flush()
     update_winter_shop(db)
+    seed_tree_custom(db)
+
+TREE_CUSTOM = (
+    ("tree_garland_aurora", "tree_garland", "Гирлянда «Северное сияние»", 120),
+    ("tree_toys_crystal", "tree_toys", "Ледяные игрушки", 150),
+    ("tree_snow_soft", "tree_snow", "Пушистый снег", 80),
+    ("tree_gifts_festive", "tree_gifts", "Подарки под ёлкой", 180),
+)
+
+
+def seed_tree_custom(db: Session) -> None:
+    key = "2026-11-tree-custom-v1"
+    if db.execute(text("SELECT 1 FROM maintenance_migrations WHERE key=:key"), {"key": key}).first():
+        return
+    category = db.query(models.ItemCategory).filter_by(name="Кастом").first()
+    if category is None:
+        db.add(models.ItemCategory(name="Кастом", sort_order=40))
+    for item in db.query(models.Item).filter_by(category="Скины"):
+        item.category = "Кастом"
+    old = db.query(models.ItemCategory).filter_by(name="Скины").first()
+    if old is not None:
+        db.delete(old)
+    for code, slot, name, price in TREE_CUSTOM:
+        item = db.query(models.Item).filter_by(code=code).one_or_none()
+        if item is None:
+            art = "/static/releases/winter-2026-r9/media/" + slot + ".svg"
+            item = models.Item(code=code, name=name, skin_slot=slot, category="Кастом",
+                rarity="Редкий", icon=art, image_url=art, can_gift=True, can_activate=False)
+            db.add(item)
+            db.flush()
+            db.add(models.ShopProduct(item_id=item.id, price=price, stock=-1, is_active=True))
+        # Seasonal box entries are additive, leaving current prizes available.
+        for pool in db.query(models.LootboxPool).filter(models.LootboxPool.code.in_(["winter-ice", "winter-seasonal"])):
+            if not db.query(models.LootboxPoolEntry).filter_by(pool_id=pool.id, item_id=item.id).first():
+                db.add(models.LootboxPoolEntry(pool_id=pool.id, reward_kind="item", item_id=item.id,
+                    amount_min=1, amount_max=1, weight=5))
+    db.execute(text("INSERT INTO maintenance_migrations(key) VALUES (:key)"), {"key": key})
