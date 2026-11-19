@@ -25,7 +25,7 @@ def spend_snowflakes(db: Session, user: models.User, product: models.ShopProduct
     db.add(models.SnowflakeSpend(user_id=user.id, item_id=product.item_id, amount=product.price))
 
 
-def seed_winter_catalog(db: Session) -> None:
+def _seed_winter_catalog_v1(db: Session) -> None:
     from app.api._helpers import sync_lootbox_shop_product
 
     key = "2026-11-winter-catalog-v1"
@@ -80,3 +80,38 @@ def seed_winter_catalog(db: Session) -> None:
         sync_lootbox_shop_product(db, pool)
 
     db.execute(text("INSERT INTO maintenance_migrations(key) VALUES (:key)"), {"key":key})
+
+
+WINTER_SHOP_UPDATE_KEY = "2026-11-winter-shop-v2"
+
+
+def update_winter_shop(db: Session) -> None:
+    from app.api._helpers import sync_lootbox_shop_product
+
+    if db.execute(text("SELECT 1 FROM maintenance_migrations WHERE key=:key"), {"key": WINTER_SHOP_UPDATE_KEY}).first():
+        return
+
+    for code, name, price in (
+        ("winter-ice", "Ледяной ковбокс", 50),
+        ("winter-seasonal", "Новогодний ковбокс", 100),
+    ):
+        pool = db.query(models.LootboxPool).filter_by(code=code).one_or_none()
+        if pool is None or pool.item is None:
+            raise RuntimeError(f"Winter shop pool is missing its item: {code}")
+        if pool.item.name != name:
+            previous_name = pool.item.name
+            for model in (models.WheelPrize, models.BattlePassReward):
+                for reward in db.query(model).filter_by(item_code=pool.item.code, label=previous_name):
+                    reward.label = name
+        pool.name = pool.item.name = name
+        pool.sale_price = price
+        pool.sale_currency = "snowflakes"
+        sync_lootbox_shop_product(db, pool)
+
+    db.execute(text("INSERT INTO maintenance_migrations(key) VALUES (:key)"), {"key": WINTER_SHOP_UPDATE_KEY})
+
+
+def seed_winter_catalog(db: Session) -> None:
+    _seed_winter_catalog_v1(db)
+    db.flush()
+    update_winter_shop(db)
