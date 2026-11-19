@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.access import can_use_clicker, maintenance_sections, uses_limited_lootbox_stock
 from app.api._helpers import award_xp, ensure_wallet
+from app.winter_economy import SNOWFLAKE_CODE, snowflake_balance
 from app.auth import current_user, is_admin
 from app.db import begin_game_write, get_db
 
@@ -44,6 +45,7 @@ def _user_to_out(user: models.User) -> schemas.UserOut:
         role=user.role,
         restrictions=user.restrictions,
         balance=user.wallet.balance if user.wallet else 0,
+        snowflakes=snowflake_balance(user),
         xp=user.xp,
         level=user.level,
         is_admin=is_admin(user),
@@ -592,7 +594,7 @@ def activate_item(
     )
     if inv is None or inv.quantity < 1:
         raise HTTPException(status_code=400, detail="Нет предмета")
-    if inv.item.lootbox_pool_code or inv.item.code in {"box_fragment", "failure_fragment"}:
+    if inv.item.lootbox_pool_code or inv.item.code in {"box_fragment", "failure_fragment", SNOWFLAKE_CODE}:
         raise HTTPException(status_code=400, detail="Этот предмет активируется отдельным действием")
     if not inv.item.can_activate:
         raise HTTPException(status_code=400, detail="Этот предмет нельзя активировать")
@@ -625,7 +627,7 @@ def request_inventory_item(
     if inv is None or inv.quantity < 1:
         raise HTTPException(status_code=400, detail="Нет предмета")
     item = inv.item
-    if item.lootbox_pool_code or item.code in {"box_fragment", "failure_fragment"} or item.skin_slot:
+    if item.lootbox_pool_code or item.code in {"box_fragment", "failure_fragment", SNOWFLAKE_CODE} or item.skin_slot:
         raise HTTPException(status_code=400, detail="Этот предмет нельзя получить через заявку")
     pending = (
         db.query(models.ItemClaimRequest.id)
@@ -706,8 +708,8 @@ def _validate_openable_pool(db: Session, pool: models.LootboxPool, user: models.
         for entry in entries:
             if entry.reward_kind != "item":
                 continue
-            if entry.item is None or (entry.item.code != "box_fragment" and not entry.item.skin_slot):
-                raise HTTPException(409, "Конкретной наградой сундука может быть только фрагмент или скин")
+            if entry.item is None or (entry.item.code not in {"box_fragment", SNOWFLAKE_CODE} and not entry.item.skin_slot):
+                raise HTTPException(409, "Конкретной наградой сундука может быть фрагмент, снежинки или скин")
         if random_total > 100:
             raise HTTPException(409, "Сумма шансов случайных наград превышает 100%")
     elif pool.opening_mode == "choice_v2":
@@ -784,7 +786,7 @@ def _limited_stock_product(
     if (
         item is None
         or not uses_limited_lootbox_stock(user)
-        or item.code in {"box_fragment", "failure_fragment"}
+        or item.code in {"box_fragment", "failure_fragment", SNOWFLAKE_CODE}
         or item.lootbox_pool_code
     ):
         return None
@@ -797,7 +799,7 @@ def _limited_stock_product(
 def _entry_available_for_user(db: Session, user: models.User, entry: models.LootboxPoolEntry) -> bool:
     if entry.reward_kind != "item" or entry.item is None:
         return True
-    if entry.item.code in {"box_fragment", "failure_fragment"}:
+    if entry.item.code in {"box_fragment", "failure_fragment", SNOWFLAKE_CODE}:
         return True
     product = db.query(models.ShopProduct).filter(
         models.ShopProduct.item_id == entry.item.id,
@@ -822,7 +824,7 @@ def _fallback_shop_item(
         .filter(
             models.ShopProduct.is_active.is_(True),
             models.Item.lootbox_pool_code.is_(None),
-            ~models.Item.code.in_(["box_fragment", "failure_fragment"]),
+            ~models.Item.code.in_(["box_fragment", "failure_fragment", SNOWFLAKE_CODE]),
         )
     )
     if tier is not None:
@@ -859,7 +861,7 @@ def _resolved_reward_item(
     *,
     exclude_ids: set[int] | None = None,
 ) -> models.Item:
-    if item.code in {"box_fragment", "failure_fragment"}:
+    if item.code in {"box_fragment", "failure_fragment", SNOWFLAKE_CODE}:
         return item
     product = db.query(models.ShopProduct).filter(
         models.ShopProduct.item_id == item.id,
@@ -1059,7 +1061,7 @@ def _decrement_limited_stock(
     product = _limited_stock_product(db, user, item)
     if product is None:
         if uses_limited_lootbox_stock(user) and item is not None and item.code not in {
-            "box_fragment", "failure_fragment"
+            "box_fragment", "failure_fragment", SNOWFLAKE_CODE
         } and not item.lootbox_pool_code:
             raise HTTPException(409, "Этот предмет закончился в магазине")
         return

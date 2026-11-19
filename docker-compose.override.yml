@@ -1,0 +1,7 @@
+services:
+  kovcheg:
+    image: "kovcheg-winter:${KOVCHEG_WINTER_IMAGE:-final}"
+    environment:
+      HF_HUB_OFFLINE: "1"
+    volumes:
+      - /root/kovcheg-releases/winter-2026-r2/cache/huggingface:/root/.cache/huggingface:ro

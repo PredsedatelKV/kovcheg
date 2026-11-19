@@ -15,6 +15,7 @@ class UserOut(BaseModel):
     photo_url: str | None = None
     role: str
     restrictions: str | None = None
+    snowflakes: int = 0
     balance: int
     xp: int = 0
     level: int = 1
@@ -95,6 +96,10 @@ class BannerOut(BaseModel):
     id: int
     image_url: str
     title: str
+    sort_order: int = 0
+    is_active: bool = True
+    action_type: Literal["none", "tab", "url"] = "none"
+    action_target: str = ""
 
 
 class NewsOut(BaseModel):
@@ -120,6 +125,7 @@ class HomePayload(BaseModel):
 class ShopProductOut(BaseModel):
     id: int
     item: ItemOut
+    currency: Literal["kovbucks", "snowflakes"] = "kovbucks"
     price: int
     stock: int = -1  # -1 = unlimited
 
@@ -346,10 +352,34 @@ class AdminNewsBody(BaseModel):
 
 
 class AdminBannerBody(BaseModel):
-    image_url: str
-    title: str = ""
+    image_url: str = Field(min_length=1, max_length=512)
+    title: str = Field(default="", max_length=128)
     sort_order: int = 0
     is_active: bool = True
+    action_type: Literal["none", "tab", "url"] = "none"
+    action_target: str = Field(default="", max_length=512)
+
+    @model_validator(mode="after")
+    def validate_action(self):
+        from urllib.parse import urlsplit
+
+        self.action_target = self.action_target.strip()
+        if self.action_type == "none":
+            self.action_target = ""
+        elif self.action_type == "tab":
+            if self.action_target not in {"home", "profile", "koverna", "arcade", "battlepass", "chat", "news"}:
+                raise ValueError("Выберите раздел Ковчега")
+        else:
+            try:
+                url = urlsplit(self.action_target)
+                valid = (url.scheme in {"http", "https"} and url.hostname
+                         and not url.username and not url.password
+                         and not any(c.isspace() or c == chr(92) for c in self.action_target))
+            except ValueError:
+                valid = False
+            if not valid:
+                raise ValueError("Укажите обычную ссылку http:// или https://")
+        return self
 
 
 class AdminTaskBody(BaseModel):
@@ -837,7 +867,7 @@ class AdminLootboxBody(BaseModel):
     sale_price: StrictInt | None = Field(default=None, ge=1, le=1_000_000_000)
     # The current shop spends Kovbucks; accepting a second currency here would
     # create a misleading setting that no purchase endpoint honours.
-    sale_currency: Literal["kovbucks"] = "kovbucks"
+    sale_currency: Literal["kovbucks", "snowflakes"] = "kovbucks"
     min_user_level: StrictInt | None = Field(default=None, ge=0, le=100_000)
     max_user_level: StrictInt | None = Field(default=None, ge=0, le=100_000)
     sort_order: StrictInt = Field(default=0, ge=-100_000, le=100_000)

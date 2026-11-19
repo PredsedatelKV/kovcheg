@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.access import can_use_clicker
 from app.api._helpers import ensure_wallet, require_open_section
+from app.winter_economy import credit_snowflakes, snowflake_balance
 from app.auth import current_user
 from app.db import begin_game_write, get_db
 
@@ -584,6 +585,8 @@ def roulette_spin(
             "balance": ensure_wallet(db, user).balance,
             "failure_fragment_awarded": outcome.get("failure_fragment_awarded", 0),
             "failure_fragment_count": fragment_count,
+            "snowflake_bonus": outcome.get("snowflake_bonus", 0),
+            "snowflakes": snowflake_balance(user),
         }
 
     _require_casino_access(db, user)
@@ -599,12 +602,14 @@ def roulette_spin(
         db, user, ROULETTE_FIXED_BET, payout
     )
 
+    snowflake_bonus = credit_snowflakes(db, user, 1) if secrets.randbelow(100) < 10 else 0
     balance_before = wallet.balance
     wallet.balance = wallet.balance - ROULETTE_FIXED_BET + payout
     outcome = {
         "payout_percent": payout_percent,
         "index": index,
         "failure_fragment_awarded": awarded_fragment,
+        "snowflake_bonus": snowflake_bonus,
     }
     db.add(models.CasinoRound(
         token=body.request_id, user_id=user.id, game="roulette_v2", bet=ROULETTE_FIXED_BET,
@@ -621,6 +626,8 @@ def roulette_spin(
         "payout_percent": payout_percent, "index": index, "balance": wallet.balance,
         "failure_fragment_awarded": awarded_fragment,
         "failure_fragment_count": fragment_count,
+        "snowflake_bonus": snowflake_bonus,
+        "snowflakes": snowflake_balance(user),
     }
 
 

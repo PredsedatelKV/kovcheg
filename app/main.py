@@ -33,6 +33,8 @@ from app.config import get_settings
 from app.db import Base, SessionLocal, engine, session_scope
 from app.idempotency import protect_game_mutation
 from app.seed import migrate_icons, migrate_schema, seed
+from app.winter_economy import seed_winter_catalog
+from app.winter_preview import preview_gate
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +48,7 @@ async def lifespan(app: FastAPI):
         migrate_schema(db)
         seed(db)
         migrate_icons(db)
+        seed_winter_catalog(db)
     # Warm up the embeddings model so the first assistant request isn't slow.
     try:
         from app.assistant.embedder import warmup
@@ -196,3 +199,6 @@ if STATIC_DIR.exists():
             str(STATIC_DIR / ".well-known" / "assetlinks.json"),
             media_type="application/json",
         )
+
+
+app.middleware("http")(preview_gate)

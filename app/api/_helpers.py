@@ -73,7 +73,7 @@ def sync_lootbox_shop_product(
 ) -> models.ShopProduct | None:
     """Keep the Kovbox editor's sale settings and the real shop in sync.
 
-    The shop currently spends Kovbucks only.  Existing duplicate rows are left
+    Existing duplicate rows are left
     for auditability but disabled, while one canonical row remains managed by
     the lootbox configuration.
     """
@@ -85,7 +85,7 @@ def sync_lootbox_shop_product(
     ) if pool.item_id else []
     configured = pool.sale_price is not None
     if configured and (
-        pool.sale_currency != "kovbucks"
+        pool.sale_currency not in {"kovbucks", "snowflakes"}
         or pool.sale_price < 1
         or pool.sale_price > MAX_SHOP_PRICE
     ):

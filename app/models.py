@@ -337,7 +337,20 @@ class Banner(Base):
     image_url: Mapped[str] = mapped_column(String(512), nullable=False)
     title: Mapped[str] = mapped_column(String(128), default="")
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    action_type: Mapped[str] = mapped_column(String(12), default="none", server_default="none", nullable=False)
+    action_target: Mapped[str] = mapped_column(String(512), default="", server_default="", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class SnowflakeSpend(Base):
+    __tablename__ = "snowflake_spends"
+    __table_args__ = (CheckConstraint("amount > 0", name="ck_snowflake_spend_positive"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id", ondelete="SET NULL"), nullable=True)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class News(Base):

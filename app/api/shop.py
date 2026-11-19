@@ -11,6 +11,7 @@ from app.api._helpers import ensure_wallet, require_open_section
 from app.api.profile import _item_to_out
 from app.auth import current_user
 from app.db import begin_game_write, get_db
+from app.winter_economy import spend_snowflakes
 
 router = APIRouter(prefix="/api/shop", tags=["shop"], dependencies=[Depends(require_open_section("koverna"))])
 MAX_PRODUCT_PRICE = 1_000_000_000
@@ -23,10 +24,16 @@ def list_categories(db: Session = Depends(get_db)) -> list[schemas.ItemCategoryO
     return [schemas.ItemCategoryOut(id=row.id, name=row.name, sort_order=row.sort_order) for row in rows]
 
 
+def product_currency(db: Session, product: models.ShopProduct) -> str:
+    pool = db.query(models.LootboxPool).filter_by(item_id=product.item_id).one_or_none()
+    return pool.sale_currency if pool else "kovbucks"
+
+
 @router.get("/products", response_model=list[schemas.ShopProductOut])
 def list_products(db: Session = Depends(get_db)) -> list[schemas.ShopProductOut]:
     products = db.query(models.ShopProduct).filter(models.ShopProduct.is_active.is_(True)).order_by(models.ShopProduct.id).all()
-    return [schemas.ShopProductOut(id=p.id, item=_item_to_out(p.item), price=p.price, stock=p.stock) for p in products]
+    return [schemas.ShopProductOut(id=p.id, item=_item_to_out(p.item), price=p.price,
+                                   stock=p.stock, currency=product_currency(db, p)) for p in products]
 
 
 @router.get("/restock-request/status")
@@ -87,10 +94,17 @@ def buy(
         raise HTTPException(status_code=503, detail="Товар настроен некорректно")
     if product.stock == 0:
         raise HTTPException(status_code=400, detail="Товар закончился")
-    wallet = ensure_wallet(db, user)
-    if wallet.balance < product.price:
-        raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
-    wallet.balance -= product.price
+    currency = product_currency(db, product)
+    if currency == "snowflakes":
+        spend_snowflakes(db, user, product)
+    elif currency == "kovbucks":
+        wallet = ensure_wallet(db, user)
+        if wallet.balance < product.price:
+            raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
+        wallet.balance -= product.price
+        db.add(models.Transaction(sender_id=user.id, recipient_id=None, amount=product.price, note=f"shop:{product.item.code}"))
+    else:
+        raise HTTPException(503, "Валюта товара настроена некорректно")
     inv = (
         db.query(models.InventoryItem)
         .filter(models.InventoryItem.user_id == user.id, models.InventoryItem.item_id == product.item_id)
@@ -104,7 +118,6 @@ def buy(
         inv.quantity += 1
     if product.stock > 0:
         product.stock -= 1
-    db.add(models.Transaction(sender_id=user.id, recipient_id=None, amount=product.price, note=f"shop:{product.item.code}"))
     # Сохраняем строки ДО commit (expire_on_commit аннулирует product).
     buyer_name = user.first_name
     item_name = product.item.name
@@ -117,7 +130,7 @@ def buy(
 
     log_player_action(
         "Покупка в магазине", buyer_name,
-        f"{item_name} · {product_price} ковбаксов"
+        f"{item_name} · {product_price} " + ("снежинок" if currency == "snowflakes" else "ковбаксов")
         + (f" · остаток {product_stock}" if product_stock >= 0 else ""),
     )
     return _user_to_out(user)

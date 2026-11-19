@@ -105,7 +105,7 @@ def get_home(user: models.User = Depends(current_user), db: Session = Depends(ge
         user=_user_to_out(user),
         server_time_msk=msk_now_label(),
         server_epoch_ms=int(datetime.now(timezone.utc).timestamp() * 1000),
-        banners=[schemas.BannerOut(id=b.id, image_url=b.image_url, title=b.title) for b in banners],
+        banners=[schemas.BannerOut.model_validate(b, from_attributes=True) for b in banners],
         news=[
             schemas.NewsOut(
                 id=n.id,

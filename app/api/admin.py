@@ -22,6 +22,7 @@ from app.api.quiz import quiz_rewards_out, serialize_quiz_rewards
 from app.auth import is_admin, require_admin
 from app.db import begin_game_write, get_db
 from app.models import now_utc
+from app.winter_economy import SNOWFLAKE_CODE
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -606,18 +607,16 @@ def delete_news(news_id: int, db: Session = Depends(get_db)) -> dict:
 @router.get("/banners", response_model=list[schemas.BannerOut])
 def list_banners(db: Session = Depends(get_db)) -> list[schemas.BannerOut]:
     rows = db.query(models.Banner).order_by(models.Banner.sort_order, models.Banner.id).all()
-    return [schemas.BannerOut(id=b.id, image_url=b.image_url, title=b.title) for b in rows]
+    return [schemas.BannerOut.model_validate(b, from_attributes=True) for b in rows]
 
 
 @router.post("/banners", response_model=schemas.BannerOut)
 def create_banner(body: schemas.AdminBannerBody, db: Session = Depends(get_db)) -> schemas.BannerOut:
-    b = models.Banner(
-        image_url=body.image_url, title=body.title, sort_order=body.sort_order, is_active=body.is_active
-    )
+    b = models.Banner(**body.model_dump())
     db.add(b)
     db.commit()
     db.refresh(b)
-    return schemas.BannerOut(id=b.id, image_url=b.image_url, title=b.title)
+    return schemas.BannerOut.model_validate(b, from_attributes=True)
 
 
 @router.patch("/banners/{banner_id}", response_model=schemas.BannerOut)
@@ -625,13 +624,11 @@ def update_banner(banner_id: int, body: schemas.AdminBannerBody, db: Session = D
     b = db.query(models.Banner).filter(models.Banner.id == banner_id).one_or_none()
     if b is None:
         raise HTTPException(status_code=404, detail="Баннер не найден")
-    b.image_url = body.image_url
-    b.title = body.title
-    b.sort_order = body.sort_order
-    b.is_active = body.is_active
+    for field, value in body.model_dump().items():
+        setattr(b, field, value)
     db.commit()
     db.refresh(b)
-    return schemas.BannerOut(id=b.id, image_url=b.image_url, title=b.title)
+    return schemas.BannerOut.model_validate(b, from_attributes=True)
 
 
 @router.delete("/banners/{banner_id}")
@@ -1716,8 +1713,8 @@ def _validate_lootbox_entries(
         item = item_map.get(entry.item_id)
         if item is None:
             raise HTTPException(400, "Выберите предмет награды")
-        if item.code != "box_fragment" and not item.skin_slot:
-            raise HTTPException(400, "В сундуке конкретным предметом может быть только фрагмент или скин")
+        if item.code not in {"box_fragment", SNOWFLAKE_CODE} and not item.skin_slot:
+            raise HTTPException(400, "В сундуке конкретным предметом может быть фрагмент, снежинки или скин")
 
 
 def _replace_lootbox_entries(

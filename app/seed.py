@@ -243,6 +243,13 @@ def migrate_schema(db: Session) -> None:
     """Lightweight in-place migrations for SQLite (add columns to existing tables)."""
     from sqlalchemy import text  # local import to keep startup cheap
 
+    banner_columns = {row[1] for row in db.execute(text("PRAGMA table_info(banners)"))}
+    if banner_columns:
+        if "action_type" not in banner_columns:
+            db.execute(text("ALTER TABLE banners ADD COLUMN action_type VARCHAR(12) NOT NULL DEFAULT 'none'"))
+        if "action_target" not in banner_columns:
+            db.execute(text("ALTER TABLE banners ADD COLUMN action_target VARCHAR(512) NOT NULL DEFAULT ''"))
+
     # Successful critical mutations persist their small HTTP response so a
     # client that lost the first response can safely retry without executing
     # the value-moving endpoint again.
