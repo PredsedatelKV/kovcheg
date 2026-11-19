@@ -1,0 +1,153 @@
+/* The background follows the theme. The entrance poster keeps its own canvas. */
+:root.winter {
+  --winter-sky: #fafafb url("./media/light-gradient.webp");
+  --flake-opacity: .29;
+}
+
+:root.winter.dark {
+  --winter-sky: #03041c url("./media/gradient.webp");
+  --flake-opacity: .44;
+}
+
+html.winter:not(.winter-gate) body {
+  background: var(--winter-sky) center / 100% 100% no-repeat;
+}
+
+#winter-flakes > span {
+  opacity: var(--flake-opacity);
+}
+
+#winter-flakes > span:nth-child(3n) {
+  opacity: calc(var(--flake-opacity) * .65);
+}
+
+.winter.dark #winter-flakes > span {
+  filter: brightness(0) invert(1);
+}
+
+@media (max-width: 520px) {
+  #winter-flakes > span:nth-child(n+29) { display: none; }
+}
+
+.appearance-glass-row {
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+  padding-top: 8px;
+}
+
+.appearance-glass-row #glass-toggle {
+  appearance: none;
+  width: 46px;
+  height: 26px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: grid;
+  align-items: center;
+  padding: 3px;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.appearance-glass-row #glass-toggle::before {
+  content: "";
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.appearance-glass-row #glass-toggle:checked {
+  background: var(--primary-ink);
+  border-color: transparent;
+  justify-items: end;
+}
+
+.appearance-glass-row #glass-toggle:checked::before {
+  background: var(--on-primary);
+}
+
+/* Tint and edge lighting on cards, with backdrop blur reserved for the shell. */
+:root.winter:not(.solid-surfaces, .winter-gate) {
+  --surface: #ffffffa8;
+  --surface-2: #f3f8fdbd;
+  --bg-soft: #e8f1fbd9;
+  --border: #7898c033;
+  --glass-shell: #f5faffd6;
+  --glass-dialog: #f6faffed;
+  --glass-rim: #fffdfd;
+  --glass-shadow: #42658b1a;
+  --glass-sheen: linear-gradient(135deg, #fff9 0%, transparent 57%, #acc8ee2b 100%);
+  --hero-frost: linear-gradient(90deg, #f8fbffb8, #eef6ffc4 29%, #e6f1fd80 51%, transparent 75%);
+}
+
+:root.winter.dark:not(.solid-surfaces, .winter-gate) {
+  --surface: #142344b3;
+  --surface-2: #1d3158bd;
+  --bg-soft: #263a61d9;
+  --border: #a1beef40;
+  --glass-shell: #121e3bdc;
+  --glass-dialog: #142243ef;
+  --glass-rim: #c8ddff24;
+  --glass-shadow: #0206165c;
+  --glass-sheen: linear-gradient(135deg, #7eafff1f 0%, transparent 57%, #77a5f31a 100%);
+  --hero-frost: linear-gradient(90deg, #1d3159ba, #1c315aa1 29%, #26467564 51%, transparent 75%);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) :is(
+  .card, .station-shortcut, .kovbox-shop-card, .product, .game-tile,
+  .character-card, .daily-reward-card, .winter-intro, .winter-hero, .modal
+) {
+  box-shadow: inset 0 1px 0 var(--glass-rim), 0 7px 20px -7px var(--glass-shadow);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) :is(
+  .card, .station-shortcut, .kovbox-shop-card, .kovbox-shop-item, .product:not(.product-targeted)
+) {
+  background-image: var(--glass-sheen);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .winter-hero {
+  background-color: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .winter-hero::before {
+  background: var(--hero-frost);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .winter-hero-copy p {
+  color: var(--text-soft);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) :is(.station-header, .tabbar) {
+  background: var(--glass-sheen), var(--glass-shell);
+}
+
+.winter.dark:not(.solid-surfaces, .winter-gate) .ui-icon {
+  filter: brightness(1.55) saturate(.84);
+}
+
+.winter.dark:not(.solid-surfaces, .winter-gate) .chips-row .pill.active {
+  color: var(--on-primary);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .modal-overlay {
+  background: #10274459;
+}
+
+.winter.dark:not(.solid-surfaces, .winter-gate) .modal-overlay {
+  background: #02081b84;
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .modal {
+  background: var(--glass-sheen), var(--glass-dialog);
+}
+
+@supports ((backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px))) {
+  .winter:not(.solid-surfaces, .winter-gate) :is(.station-header, .tabbar, .modal) {
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+}
