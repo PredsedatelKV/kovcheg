@@ -1,0 +1,27 @@
+/* Reserve space for the illustration above the card, with snow over the rim. */
+.winter #kovbox-showcase:not(:empty)::before {
+  content: "";
+  display: block;
+  width: min(94%, 525px);
+  aspect-ratio: 2.48;
+  margin-bottom: -16px;
+}
+
+.winter .kovbox-shop-card {
+  position: relative;
+  padding-top: clamp(22px, 6.4vw, 38px);
+  overflow: visible;
+}
+
+.winter .winter-shop-pig {
+  position: absolute;
+  right: 2%;
+  bottom: calc(100% - clamp(39px, calc(10vw + 6px), 64px));
+  z-index: 1;
+  width: min(94%, 525px);
+  height: auto;
+  max-height: none;
+  margin: 0;
+  pointer-events: none;
+  user-select: none;
+}
