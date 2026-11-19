@@ -1,0 +1,29 @@
+/* Leave room above the card for the hat while the snow sits over its rim. */
+.winter #kovbox-showcase:not(:empty)::before {
+  content: "";
+  display: block;
+  width: 100%;
+  aspect-ratio: 2.4;
+  margin-bottom: -13px;
+}
+
+.winter .kovbox-shop-card {
+  position: relative;
+  padding-top: clamp(22px, 6.4vw, 38px);
+  overflow: visible;
+}
+
+.winter .winter-shop-pig {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  /* The painted snow spans 96% of the image and lines up with the rim at this height. */
+  transform: translate(-50%, -78%);
+  z-index: 1;
+  width: 105%;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  pointer-events: none;
+  user-select: none;
+}
