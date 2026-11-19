@@ -7,11 +7,20 @@
   <title>Ковчег</title>
   <script src="https://telegram.org/js/telegram-web-app.js?56"></script>
   <link rel="stylesheet" href="/static/style.css?v=288">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r4/winter.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r4/pig-overhang.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r4/appearance.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r5/winter.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r5/pig-overhang.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r5/appearance.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r5/frozen-glass.css">
 </head>
 <body>
+  <svg class="ice-optics" width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <filter id="ice-refraction" x="-10%" y="-25%" width="120%" height="150%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency=".022 .043" numOctaves="1" seed="17" result="ice-ripples"/>
+        <feDisplacementMap in="SourceGraphic" in2="ice-ripples" scale="16" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
   <div id="app">
     <div id="winter-flakes" aria-hidden="true"></div>
     <header class="station-header" id="station-header" hidden>
@@ -27,6 +36,9 @@
     <main id="view" class="view" aria-label="Ковчег"><div class="entry-loading" role="status"><span class="entry-loader"></span>Загружаем Ковчег</div></main>
     <nav id="tabbar" class="tabbar" aria-label="Основная навигация" hidden>
       <div class="station-nav">
+        <div class="station-nav-glass" aria-hidden="true">
+          <span class="station-nav-lens" hidden><span></span></span>
+        </div>
         <button type="button" class="tabbtn" data-tab="koverna"><span data-icon="koverna"></span><span>Коверна</span></button>
         <button type="button" class="tabbtn" data-tab="profile"><span data-icon="profile"></span><span>Профиль</span></button>
         <button type="button" class="tabbtn" data-tab="home"><span data-icon="home"></span><span>Главная</span></button>
@@ -36,6 +48,6 @@
     </nav>
   </div>
   <div id="modal-root"></div>
-  <script type="module" src="/static/releases/winter-2026-r4/app.js"></script>
+  <script type="module" src="/static/releases/winter-2026-r5/app.js"></script>
 </body>
 </html>
