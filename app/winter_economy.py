@@ -6,26 +6,11 @@ from app import models
 
 SNOWFLAKE_CODE = "snowflake"
 ART = "/static/releases/winter-2026-r2/media/"
-MAX_STACK = 2_000_000_000
 
 
 def snowflake_balance(user: models.User) -> int:
     return next((row.quantity for row in user.inventory
                  if row.item is not None and row.item.code == SNOWFLAKE_CODE), 0)
-
-
-def credit_snowflakes(db: Session, user: models.User, amount: int) -> int:
-    item = db.query(models.Item).filter_by(code=SNOWFLAKE_CODE).one_or_none()
-    if item is None:
-        return 0
-    row = db.query(models.InventoryItem).filter_by(user_id=user.id, item_id=item.id).one_or_none()
-    if row is None:
-        db.add(models.InventoryItem(user_id=user.id, item_id=item.id, quantity=amount))
-        return amount
-    if not 0 <= row.quantity <= MAX_STACK - amount:
-        return 0
-    row.quantity += amount
-    return amount
 
 
 def spend_snowflakes(db: Session, user: models.User, product: models.ShopProduct) -> None:
