@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Literal
 
@@ -367,8 +368,9 @@ class AdminBannerBody(BaseModel):
         if self.action_type == "none":
             self.action_target = ""
         elif self.action_type == "tab":
-            if self.action_target not in {"home", "profile", "koverna", "arcade", "battlepass", "chat", "news"}:
-                raise ValueError("Выберите раздел Ковчега")
+            tabs = {"home", "profile", "koverna", "arcade", "battlepass", "chat", "news"}
+            if self.action_target not in tabs and not re.fullmatch(r"news:[1-9][0-9]{0,17}", self.action_target):
+                raise ValueError("Выберите раздел или новость Ковчега")
         else:
             try:
                 url = urlsplit(self.action_target)
