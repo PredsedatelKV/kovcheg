@@ -1,0 +1,1176 @@
+import { post, get } from "/static/releases/classic-2540455/api.js?v=286";
+
+import { playUISound } from "/static/releases/classic-2540455/pages/settings.js?v=286";
+const escapeHtml = (s = "") =>
+  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function kovbaksWord(n) {
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if (abs > 10 && abs < 20) return "Ковбаксов";
+  if (last === 1) return "Ковбакс";
+  if (last >= 2 && last <= 4) return "Ковбакса";
+  return "Ковбаксов";
+}
+
+let balance = 0;
+
+async function fetchBalance() {
+  try {
+    const me = await get("/api/profile/me");
+    balance = me.user.balance;
+    return balance;
+  } catch (_) {
+    return 0;
+  }
+}
+
+async function syncBalance() {
+  try {
+    const me = await get("/api/profile/me");
+    balance = me.user.balance;
+    const profileBalance = document.querySelector(".wallet-balance-value strong");
+    if (profileBalance) profileBalance.textContent = balance;
+    return balance;
+  } catch (_) {
+    return 0;
+  }
+}
+
+function updateBalanceDisplay(id, amount) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = amount;
+}
+
+function animateElement(el, animation, duration) {
+  el.style.animation = `${animation} ${duration}ms ease-out forwards`;
+}
+
+function getMaxBet() {
+  return Math.max(1, Math.floor(balance * 0.2 / 1) * 1);
+}
+
+function betInputHTML(id) {
+  const max = getMaxBet();
+  return `<div class="game-bet-custom">
+    <label>Ставка:</label>
+    <input type="number" id="${id}" value="1" min="1" max="${max}" class="input input-sm"/>
+    <span class="game-bet-hint"><img src="/static/releases/classic-2540455/img/ui/kovbaks.png" alt="" class="game-icon-sm"/> макс ${max}</span>
+  </div>`;
+}
+
+function getBetValue(id) {
+  const input = document.getElementById(id);
+  if (!input) return 0;
+  let val = Math.floor(Number(input.value));
+  const max = getMaxBet();
+  if (val < 1) val = 1;
+  if (val > max) val = max;
+  return val;
+}
+
+// ============ МИНИ-ИГРЫ ============
+
+function gameWhereIsMoshonka(container) {
+  const isInline = !!container;
+  const CUP_COUNT = 3;
+  const CUP_STEP = 72;
+  let round = 1;
+  let score = 0;
+  let villagerPhys, canClick, gameEnded;
+  let root, result, scoreEl, cupContainer;
+  let logicalOrder;
+
+  function initRound() {
+    logicalOrder = [0, 1, 2];
+    villagerPhys = Math.floor(Math.random() * CUP_COUNT);
+    canClick = false;
+    gameEnded = false;
+  }
+  initRound();
+
+  function animateSwap(i, j) {
+    return new Promise(resolve => {
+      const cups = cupContainer.querySelectorAll(".game-cup");
+      const dx = (j - i) * CUP_STEP;
+      cups[i].style.transition = "transform 0.3s ease";
+      cups[j].style.transition = "transform 0.3s ease";
+      cups[i].style.transform = `translateX(${dx}px)`;
+      cups[j].style.transform = `translateX(${-dx}px)`;
+      setTimeout(() => {
+        cups[i].style.transition = "none";
+        cups[j].style.transition = "none";
+        cups[i].style.transform = "";
+        cups[j].style.transform = "";
+        [logicalOrder[i], logicalOrder[j]] = [logicalOrder[j], logicalOrder[i]];
+        if (villagerPhys === i) villagerPhys = j;
+        else if (villagerPhys === j) villagerPhys = i;
+        resolve();
+      }, 350);
+    });
+  }
+
+  async function shuffleCups() {
+    const numSwaps = 3 + Math.floor(Math.random() * 3);
+    for (let s = 0; s < numSwaps; s++) {
+      let a = Math.floor(Math.random() * CUP_COUNT);
+      let b = Math.floor(Math.random() * CUP_COUNT);
+      if (a === b) { s--; continue; }
+      await animateSwap(a, b);
+    }
+    canClick = true;
+    result.innerHTML = `<div class="game-neutral">Где Мошонка?</div>`;
+  }
+
+  function revealAll(show) {
+    cupContainer.querySelectorAll(".game-cup").forEach((cup, physIdx) => {
+      const front = cup.querySelector(".cup-front");
+      const back = cup.querySelector(".cup-back");
+      const isVillager = physIdx === villagerPhys;
+      if (show && isVillager) {
+        front.style.display = "none";
+        back.style.display = "";
+      } else {
+        front.style.display = "";
+        back.style.display = "none";
+      }
+    });
+  }
+
+  function startRound() {
+    initRound();
+    cupContainer.querySelectorAll(".game-cup").forEach(c => {
+      c.disabled = false;
+      c.style.transition = "none";
+      c.style.transform = "";
+    });
+    result.innerHTML = "";
+    revealAll(true);
+    setTimeout(() => {
+      revealAll(false);
+      shuffleCups();
+    }, 1000);
+  }
+
+  const html = `
+    <div style="text-align:center;margin-bottom:6px">
+      <span style="font-size:13px;color:var(--text-soft)">Счёт: <span id="moshonka-score-val">0</span></span>
+    </div>
+    <div class="game-bushes" id="moshonka-cups">
+      ${Array(CUP_COUNT).fill("").map((_, i) => `
+        <button class="game-cup">
+          <div class="cup-front">
+            <img src="/static/releases/classic-2540455/img/ui/bush.svg" alt="" class="game-icon-lg"/>
+          </div>
+          <div class="cup-back" style="display:none">
+            <img src="/static/releases/classic-2540455/img/ui/villager.svg" alt="" class="game-icon-lg"/>
+          </div>
+        </button>
+      `).join("")}
+    </div>
+    <div class="game-result" id="moshonka-result" style="font-size:13px;min-height:24px"></div>
+  `;
+
+  if (isInline) {
+    root = container;
+    root.innerHTML = html;
+  } else {
+    root = window.kov.showModal(`
+      <button class="close" onclick="closeModal()">×</button>
+      <h2 style="margin:0 0 4px">Где Мошонка?</h2>
+      <p class="card-sub" style="margin:0 0 6px">Угадай, под каким кустом!</p>
+      ${html}
+    `);
+  }
+
+  result = root.querySelector("#moshonka-result");
+  cupContainer = root.querySelector("#moshonka-cups");
+  scoreEl = root.querySelector("#moshonka-score-val");
+
+  cupContainer.querySelectorAll(".game-cup").forEach((cup, physIdx) => {
+    cup.addEventListener("click", () => {
+      if (!canClick || gameEnded) return;
+      gameEnded = true;
+      canClick = false;
+
+      const isWin = physIdx === villagerPhys;
+
+      revealAll(true);
+
+      if (isWin) {
+        result.innerHTML = `<div class="game-win">Угадал! +${10 * round}</div>`;
+        playUISound("win");
+        score += 10 * round;
+        round++;
+        scoreEl.textContent = score;
+      } else {
+        result.innerHTML = `<div class="game-lose">Мимо</div>`;
+        playUISound("lose");
+        score = Math.max(0, score - 5);
+        scoreEl.textContent = score;
+      }
+
+      cupContainer.querySelectorAll(".game-cup").forEach(c => c.disabled = true);
+      setTimeout(startRound, 2500);
+    });
+  });
+
+  startRound();
+}
+
+function gameTicTacToe(container) {
+  const isInline = !!container;
+  let board = Array(9).fill(null);
+  let gameActive = true;
+  let playerTurn = true;
+  
+  let root;
+  if (isInline) {
+    root = container;
+    root.innerHTML = `
+      <h3 style="margin:0 0 6px">Крестики-нолики</h3>
+      <p class="card-sub" style="margin:0 0 10px">Играй против Мошонки!</p>
+      <div class="game-ttt-board" id="ttt-board">
+        ${Array(9).fill("").map((_, i) => `<button class="ttt-cell" data-idx="${i}"></button>`).join("")}
+      </div>
+      <div class="game-result" id="ttt-result"></div>
+      <div class="game-play-again" id="ttt-again" style="display:none">
+        <button class="btn" id="play-again-btn">Играть заново</button>
+      </div>`;
+  } else {
+    root = window.kov.showModal(`
+      <button class="close" onclick="closeModal()">×</button>
+      <h2>Крестики-нолики</h2>
+      <p class="card-sub">Играй против Мошонки!</p>
+      <div class="game-ttt-board" id="ttt-board">
+        ${Array(9).fill("").map((_, i) => `<button class="ttt-cell" data-idx="${i}"></button>`).join("")}
+      </div>
+      <div class="game-result" id="ttt-result"></div>
+      <div class="game-play-again" id="ttt-again" style="display:none">
+        <button class="btn" id="play-again-btn">Играть заново</button>
+      </div>
+    `);
+  }
+
+  const cells = root.querySelectorAll(".ttt-cell");
+  const resultEl = root.querySelector("#ttt-result");
+
+  function checkWinner(b) {
+    const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+    for (const [a, c, d] of lines) {
+      if (b[a] && b[a] === b[c] && b[a] === b[d]) return b[a];
+    }
+    return b.includes(null) ? null : "draw";
+  }
+
+  function moshonkaMove() {
+    if (!gameActive) return;
+    const empty = board.map((v, i) => v === null ? i : -1).filter(i => i >= 0);
+    if (!empty.length) return;
+    
+    for (const idx of empty) {
+      board[idx] = "O";
+      if (checkWinner(board) === "O") { board[idx] = null; return idx; }
+      board[idx] = null;
+    }
+    for (const idx of empty) {
+      board[idx] = "X";
+      if (checkWinner(board) === "X") { board[idx] = null; return idx; }
+      board[idx] = null;
+    }
+    if (board[4] === null) return 4;
+    return empty[Math.floor(Math.random() * empty.length)];
+  }
+
+  function renderBoard() {
+    cells.forEach((cell, i) => {
+      if (board[i] === "X") {
+        cell.innerHTML = '<img src="/static/releases/classic-2540455/img/ui/villager.svg" alt="X" class="ttt-icon"/>';
+        cell.classList.add("taken");
+      } else if (board[i] === "O") {
+        cell.innerHTML = '<img src="/static/releases/classic-2540455/img/ui/bush.svg" alt="O" class="ttt-icon"/>';
+        cell.classList.add("taken");
+      } else {
+        cell.innerHTML = "";
+        cell.classList.remove("taken");
+      }
+    });
+  }
+
+  function endGame() {
+    root.querySelector("#ttt-again").style.display = "block";
+  }
+
+  cells.forEach((cell) => {
+    cell.addEventListener("click", () => {
+      const idx = Number(cell.dataset.idx);
+      if (!gameActive || !playerTurn || board[idx]) return;
+      
+      board[idx] = "X";
+      playerTurn = false;
+      playUISound("click");
+      renderBoard();
+      animateElement(cell, "popIn", 300);
+      
+      const winner = checkWinner(board);
+      if (winner) {
+        gameActive = false;
+        if (winner === "X") {
+          resultEl.innerHTML = `<div class="game-win">Победа!</div>`;
+          animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
+          playUISound("win");
+        } else if (winner === "draw") {
+          resultEl.innerHTML = `<div class="game-neutral">Ничья!</div>`;
+        } else {
+          resultEl.innerHTML = `<div class="game-lose">Мошонка победил!</div>`;
+          playUISound("lose");
+        }
+        endGame();
+        return;
+      }
+      
+      setTimeout(() => {
+        const move = moshonkaMove();
+        if (move !== undefined) {
+          board[move] = "O";
+          playUISound("reveal");
+          renderBoard();
+          animateElement(cells[move], "popIn", 300);
+          
+          const w2 = checkWinner(board);
+          if (w2) {
+            gameActive = false;
+            if (w2 === "O") {
+              resultEl.innerHTML = `<div class="game-lose">Мошонка победил!</div>`;
+              playUISound("lose");
+            } else {
+              resultEl.innerHTML = `<div class="game-neutral">Ничья!</div>`;
+            }
+            endGame();
+          }
+        }
+        playerTurn = true;
+      }, 500);
+    });
+  });
+
+  root.querySelector("#play-again-btn").addEventListener("click", () => {
+    if (isInline) {
+      root.innerHTML = "";
+      gameTicTacToe(root);
+    } else {
+      closeModal();
+      setTimeout(() => gameTicTacToe(), 100);
+    }
+  });
+}
+
+function gameMinesweeper() {
+  const cols = 8, rows = 8;
+  const cellCount = cols * rows;
+  const mineCount = 10;
+  let board = Array(cellCount).fill(0);
+  let revealed = Array(cellCount).fill(false);
+  let flagged = Array(cellCount).fill(false);
+  let gameActive = true;
+  let minesPlaced = false;
+  
+  function placeMines(excludeIdx) {
+    let placed = 0;
+    while (placed < mineCount) {
+      const idx = Math.floor(Math.random() * cellCount);
+      if (idx !== excludeIdx && board[idx] !== -1) {
+        board[idx] = -1;
+        placed++;
+      }
+    }
+    for (let i = 0; i < cellCount; i++) {
+      if (board[i] === -1) continue;
+      let count = 0;
+      const r = Math.floor(i / cols), c = i % cols;
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const nr = r + dr, nc = c + dc;
+          if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+            const ni = nr * cols + nc;
+            if (board[ni] === -1) count++;
+          }
+        }
+      }
+      board[i] = count;
+    }
+    minesPlaced = true;
+  }
+  
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Сапёр</h2>
+    <p class="card-sub">Найди все безопасные клетки! 10 мин среди ${cellCount}.</p>
+    <div class="game-mine-board" id="mine-board">
+      ${Array(cellCount).fill("").map((_, i) => `<button class="mine-cell" data-idx="${i}"></button>`).join("")}
+    </div>
+    <div class="game-result" id="mine-result"></div>
+    <div class="game-play-again" id="mine-again" style="display:none">
+      <button class="btn" id="play-again-btn">Играть заново</button>
+    </div>
+  `);
+
+  const cells = modal.querySelectorAll(".mine-cell");
+  const resultEl = modal.querySelector("#mine-result");
+
+  function revealCell(idx) {
+    if (revealed[idx] || flagged[idx] || !gameActive) return;
+    if (!minesPlaced) placeMines(idx);
+    
+    revealed[idx] = true;
+    const cell = cells[idx];
+    cell.classList.add("revealed");
+    
+    if (board[idx] === -1) {
+      gameActive = false;
+      cell.classList.add("mine-hit");
+      playUISound("mine");
+      board.forEach((v, i) => {
+        if (v === -1 && i !== idx) {
+          cells[i].innerHTML = '<img src="/static/releases/classic-2540455/img/ui/mine.svg" alt="" class="mine-icon"/>';
+          cells[i].classList.add("revealed", "mine-show");
+        }
+      });
+      resultEl.innerHTML = `<div class="game-lose">Бум! Мошонка поставил мину.</div>`;
+      modal.querySelector("#mine-again").style.display = "block";
+      return;
+    }
+    
+    if (board[idx] > 0) {
+      cell.innerHTML = `<span class="mine-num mine-num-${board[idx]}">${board[idx]}</span>`;
+    } else if (board[idx] === 0) {
+      const r = Math.floor(idx / cols), c = idx % cols;
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const nr = r + dr, nc = c + dc;
+          if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+            const ni = nr * cols + nc;
+            if (!revealed[ni]) revealCell(ni);
+          }
+        }
+      }
+    }
+    
+    const safeCount = board.filter(v => v !== -1).length;
+    const revealedCount = revealed.filter(v => v).length;
+    if (revealedCount === safeCount) {
+      gameActive = false;
+      resultEl.innerHTML = `<div class="game-win">Все безопасные клетки найдены!</div>`;
+      animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
+      playUISound("win");
+      modal.querySelector("#mine-again").style.display = "block";
+    }
+  }
+
+  cells.forEach((cell) => {
+    const idx = Number(cell.dataset.idx);
+    cell.addEventListener("click", () => {
+      if (flagged[idx]) return;
+      revealCell(idx);
+    });
+    
+    cell.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      if (revealed[idx] || !gameActive) return;
+      flagged[idx] = !flagged[idx];
+      cell.classList.toggle("flagged", flagged[idx]);
+      cell.innerHTML = flagged[idx] ? '🚩' : '';
+      playUISound("flag");
+    });
+    
+    let pressTimer;
+    cell.addEventListener("touchstart", (e) => {
+      pressTimer = setTimeout(() => {
+        if (revealed[idx] || !gameActive) return;
+        flagged[idx] = !flagged[idx];
+        cell.classList.toggle("flagged", flagged[idx]);
+        cell.innerHTML = flagged[idx] ? '🚩' : '';
+        playUISound("flag");
+      }, 400);
+    });
+    cell.addEventListener("touchend", () => clearTimeout(pressTimer));
+    cell.addEventListener("touchmove", () => clearTimeout(pressTimer));
+  });
+
+  modal.querySelector("#play-again-btn").addEventListener("click", () => {
+    closeModal();
+    setTimeout(gameMinesweeper, 100);
+  });
+}
+
+function gameHarvest() {
+  let score = 0;
+  let timeLeft = 20;
+  let gameInterval;
+  let spawnInterval;
+  
+  const modal = window.kov.showModal(`
+    <button class="close" id="harvest-close-btn">×</button>
+    <h2>Собери урожай!</h2>
+    <p class="card-sub">Кликай по тыквам!</p>
+    <div class="game-stats">
+      <span><img src="/static/releases/classic-2540455/img/ui/pumpkin.svg" alt="" class="game-icon-sm"/> <span id="harvest-count">0</span></span>
+      <span>⏱️ <span id="harvest-time">${timeLeft}</span>с</span>
+    </div>
+    <div class="game-field game-field-large" id="harvest-field"></div>
+    <div class="game-result" id="harvest-result"></div>
+    <div class="game-play-again" id="harvest-again" style="display:none">
+      <button class="btn" id="play-again-btn">Играть заново</button>
+    </div>
+  `);
+
+  const field = modal.querySelector("#harvest-field");
+  const countEl = modal.querySelector("#harvest-count");
+  const timeEl = modal.querySelector("#harvest-time");
+
+  const closeBtn = modal.querySelector("#harvest-close-btn");
+  if (closeBtn) {
+    closeBtn.addEventListener("click", () => {
+      clearInterval(gameInterval);
+      clearInterval(spawnInterval);
+      closeModal();
+    });
+  }
+
+  function spawnPumpkin() {
+    if (timeLeft <= 0) return;
+    const pumpkin = document.createElement("button");
+    pumpkin.className = "game-pumpkin game-pumpkin-large";
+    pumpkin.innerHTML = '<img src="/static/releases/classic-2540455/img/ui/pumpkin.svg" alt="" class="game-icon-lg"/>';
+    pumpkin.style.left = Math.random() * 80 + "%";
+    pumpkin.style.top = Math.random() * 75 + "%";
+    pumpkin.addEventListener("click", () => {
+      score++;
+      countEl.textContent = score;
+      playUISound("reveal");
+      pumpkin.style.transform = "scale(1.3)";
+      pumpkin.style.opacity = "0";
+      setTimeout(() => pumpkin.remove(), 150);
+    });
+    field.appendChild(pumpkin);
+    setTimeout(() => {
+      if (pumpkin.parentNode) {
+        pumpkin.style.opacity = "0";
+        pumpkin.style.transform = "scale(0.5)";
+        setTimeout(() => pumpkin.remove(), 200);
+      }
+    }, 800);
+  }
+
+  spawnInterval = setInterval(spawnPumpkin, 400);
+  
+  gameInterval = setInterval(() => {
+    timeLeft--;
+    timeEl.textContent = timeLeft;
+    if (timeLeft <= 0) {
+      clearInterval(gameInterval);
+      clearInterval(spawnInterval);
+      if (score >= 10) {
+        modal.querySelector("#harvest-result").innerHTML = `<div class="game-win">Урожай собран! Тыкв: ${score}.</div>`;
+        playUISound("win");
+      } else if (score >= 5) {
+        modal.querySelector("#harvest-result").innerHTML = `<div class="game-neutral">Неплохо! Тыкв: ${score}.</div>`;
+      } else {
+        modal.querySelector("#harvest-result").innerHTML = `<div class="game-lose">Мало тыкв: ${score}. Попробуй ещё!</div>`;
+        playUISound("lose");
+      }
+      modal.querySelector("#harvest-again").style.display = "block";
+    }
+  }, 1000);
+
+  modal.querySelector("#play-again-btn").addEventListener("click", () => {
+    closeModal();
+    setTimeout(gameHarvest, 100);
+  });
+}
+
+
+
+function gameRoulette() {
+  const sectors = [
+    { label: "x0.05", color: "#E55454", weight: 40 },
+    { label: "x0.25", color: "#D32F2F", weight: 22 },
+    { label: "x0.5", color: "#FF8A65", weight: 25 },
+    { label: "x0.75", color: "#FFB74D", weight: 18 },
+    { label: "x1", color: "#F2B33C", weight: 20 },
+    { label: "x1.5", color: "#6BD995", weight: 6 },
+    { label: "x2", color: "#6CB6FB", weight: 3 },
+    { label: "x2.5", color: "#D387E5", weight: 2 },
+    { label: "x3", color: "#AB47BC", weight: 1 },
+  ];
+  
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Рулетка</h2>
+    <p class="card-sub">Крути и умножай ставку!</p>
+    <div class="game-balance">Баланс: <strong id="roulette-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
+    <div class="game-wheel-risk" id="risk-wheel">
+      ${sectors.map((s) => `<div class="risk-sector" style="background:${s.color}">${s.label}</div>`).join("")}
+    </div>
+    ${betInputHTML("roulette-bet")}
+    <button class="btn" id="roulette-spin-btn">Крутить</button>
+    <div class="game-result" id="roulette-result"></div>
+  `);
+
+  const wheel = modal.querySelector("#risk-wheel");
+  const resultEl = modal.querySelector("#roulette-result");
+  
+  modal.querySelector("#roulette-spin-btn").addEventListener("click", () => {
+    const bet = getBetValue("roulette-bet");
+    if (balance < bet) {
+      resultEl.innerHTML = `<div class="game-lose">Недостаточно K</div>`;
+      return;
+    }
+    
+    balance -= bet;
+    updateBalanceDisplay("roulette-balance", balance);
+    playUISound("bet");
+    post("/api/arcade/bet", { amount: bet }).catch(() => {});
+    const totalWeight = sectors.reduce((s, sec) => s + sec.weight, 0);
+    let rand = Math.random() * totalWeight;
+    let chosen = sectors[0];
+    for (const sec of sectors) {
+      rand -= sec.weight;
+      if (rand <= 0) { chosen = sec; break; }
+    }
+    
+    const mult = parseFloat(chosen.label.replace("x", ""));
+    const win = Math.floor(bet * mult);
+    const chosenIdx = sectors.indexOf(chosen);
+    
+    wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("active", "highlight"));
+    let currentIdx = 0;
+    let spins = 0;
+    const maxSpins = 20 + chosenIdx;
+    
+    const spinInterval = setInterval(() => {
+      wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("highlight"));
+      wheel.children[currentIdx].classList.add("highlight");
+      currentIdx = (currentIdx + 1) % sectors.length;
+      spins++;
+      if (spins % 2 === 0) playUISound("spin");
+      
+      if (spins >= maxSpins) {
+        clearInterval(spinInterval);
+        wheel.querySelectorAll(".risk-sector").forEach((s) => s.classList.remove("highlight"));
+        wheel.children[chosenIdx].classList.add("active");
+        animateElement(wheel.children[chosenIdx], "popIn", 300);
+        
+        if (mult > 1) {
+          post("/api/arcade/win", { amount: win }).catch(() => {});
+          balance += win;
+          updateBalanceDisplay("roulette-balance", balance);
+          resultEl.innerHTML = `<div class="game-win">${chosen.label}! Выигрыш: ${win} K</div>`;
+          animateElement(resultEl.querySelector(".game-win"), "popIn", 400);
+          playUISound("win");
+        } else if (mult === 1) {
+          post("/api/arcade/win", { amount: bet }).catch(() => {});
+          balance += bet;
+          updateBalanceDisplay("roulette-balance", balance);
+          resultEl.innerHTML = `<div class="game-neutral">x1. Ставка возвращена.</div>`;
+          playUISound("cashout");
+        } else {
+          resultEl.innerHTML = `<div class="game-lose">${chosen.label}. Ставка потеряна.</div>`;
+          playUISound("lose");
+        }
+        syncBalance();
+      }
+    }, 100);
+  });
+}
+
+function gameCheckers() {
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Шашки</h2>
+    <p class="card-sub">Играй против Мошонки!</p>
+    <div class="game-result" id="checkers-result"></div>
+    <div id="checkers-board" style="display:grid;grid-template-columns:repeat(8,36px);gap:1px;margin:10px auto;width:fit-content"></div>
+    <div id="checkers-status" style="text-align:center;font-weight:700;margin-top:8px">Твой ход</div>
+  `);
+  const board = modal.querySelector("#checkers-board");
+  const status = modal.querySelector("#checkers-status");
+  const resultEl = modal.querySelector("#checkers-result");
+  let state = [];
+  let selected = null;
+  let turn = "white";
+
+  function initBoard() {
+    state = Array(64).fill(null);
+    for (let i = 0; i < 64; i++) {
+      const row = Math.floor(i / 8), col = i % 8;
+      if ((row + col) % 2 === 1) {
+        if (row < 3) state[i] = { color: "black", king: false };
+        else if (row > 4) state[i] = { color: "white", king: false };
+      }
+    }
+  }
+
+  function render() {
+    board.innerHTML = "";
+    for (let i = 0; i < 64; i++) {
+      const cell = document.createElement("div");
+      const row = Math.floor(i / 8), col = i % 8;
+      cell.style.cssText = "width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;border-radius:4px;";
+      cell.style.background = (row + col) % 2 === 0 ? "#f0d9b5" : "#b58863";
+      if (selected === i) cell.style.outline = "2px solid #ffd700";
+      const p = state[i];
+      if (p) {
+        cell.textContent = p.king ? "♛" : "●";
+        cell.style.color = p.color === "white" ? "#fff" : "#333";
+        cell.style.textShadow = p.color === "white" ? "0 1px 2px rgba(0,0,0,0.5)" : "0 1px 2px rgba(255,255,255,0.3)";
+      }
+      cell.addEventListener("click", () => handleClick(i));
+      board.appendChild(cell);
+    }
+  }
+
+  function getMoves(idx) {
+    const p = state[idx];
+    if (!p) return [];
+    const row = Math.floor(idx / 8), col = idx % 8;
+    const dirs = p.king ? [[-1,-1],[-1,1],[1,-1],[1,1]] : (p.color === "white" ? [[-1,-1],[-1,1]] : [[1,-1],[1,1]]);
+    const moves = [], jumps = [];
+    for (const [dr, dc] of dirs) {
+      const r1 = row + dr, c1 = col + dc;
+      if (r1 >= 0 && r1 < 8 && c1 >= 0 && c1 < 8) {
+        const ni = r1 * 8 + c1;
+        if (!state[ni]) { moves.push(ni); }
+        else if (state[ni].color !== p.color) {
+          const r2 = r1 + dr, c2 = c1 + dc;
+          if (r2 >= 0 && r2 < 8 && c2 >= 0 && c2 < 8) {
+            const ni2 = r2 * 8 + c2;
+            if (!state[ni2]) jumps.push({ to: ni2, cap: ni });
+          }
+        }
+      }
+    }
+    return jumps.length > 0 ? jumps.map(j => j.to) : moves;
+  }
+
+  function handleClick(idx) {
+    if (turn !== "white") return;
+    const p = state[idx];
+    if (selected !== null && selected !== idx) {
+      const moves = getMoves(selected);
+      if (moves.includes(idx)) {
+        state[idx] = state[selected];
+        state[selected] = null;
+        const sr = Math.floor(selected / 8), sc = selected % 8;
+        const dr = Math.floor(idx / 8), dc = idx % 8;
+        if (Math.abs(dr - sr) === 2) {
+          state[((sr + dr) / 2) * 8 + ((sc + dc) / 2)] = null;
+        }
+        if ((state[idx].color === "white" && Math.floor(idx / 8) === 0) || (state[idx].color === "black" && Math.floor(idx / 8) === 7)) {
+          state[idx].king = true;
+        }
+        selected = null;
+        turn = "black";
+        render();
+        checkWin();
+        if (turn === "black") setTimeout(aiMove, 500);
+        return;
+      }
+    }
+    selected = (p && p.color === "white") ? idx : null;
+    render();
+  }
+
+  function aiMove() {
+    const pieces = [];
+    for (let i = 0; i < 64; i++) {
+      if (state[i] && state[i].color === "black") {
+        const moves = getMoves(i);
+        moves.forEach(m => pieces.push({ from: i, to: m }));
+      }
+    }
+    if (pieces.length === 0) { resultEl.innerHTML = '<div class="game-win">Ты победил!</div>'; return; }
+    const move = pieces[Math.floor(Math.random() * pieces.length)];
+    state[move.to] = state[move.from];
+    state[move.from] = null;
+    const sr = Math.floor(move.from / 8), sc = move.from % 8;
+    const dr = Math.floor(move.to / 8), dc = move.to % 8;
+    if (Math.abs(dr - sr) === 2) {
+      state[((sr + dr) / 2) * 8 + ((sc + dc) / 2)] = null;
+    }
+    if (Math.floor(move.to / 8) === 7) state[move.to].king = true;
+    turn = "white";
+    render();
+    checkWin();
+  }
+
+  function checkWin() {
+    let w = 0, b = 0;
+    for (let i = 0; i < 64; i++) {
+      if (state[i]) { if (state[i].color === "white") w++; else b++; }
+    }
+    if (w === 0) { resultEl.innerHTML = '<div class="game-lose">Мошонка победил!</div>'; }
+    else if (b === 0) { resultEl.innerHTML = '<div class="game-win">Ты победил!</div>'; post("/api/arcade/win", { amount: 50 }).catch(() => {}); balance += 50; syncBalance(); }
+    status.textContent = turn === "white" ? "Твой ход" : "Ход Мошонки...";
+  }
+
+  initBoard();
+  render();
+}
+
+function gamePingPong() {
+  const W = 300, H = 400, PW = 60, PH = 10, BS = 8;
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Пинг-понг</h2>
+    <p class="card-sub">Игра до 5 очков</p>
+    <canvas id="pp-canvas" width="${W}" height="${H}" style="background:#1a1a2e;border-radius:8px;display:block;margin:10px auto;touch-action:none"></canvas>
+    <div id="pp-score" style="text-align:center;font-weight:700;font-size:18px">0 : 0</div>
+    <div class="game-result" id="pp-result"></div>
+  `);
+  const canvas = modal.querySelector("#pp-canvas");
+  const ctx = canvas.getContext("2d");
+  const scoreEl = modal.querySelector("#pp-score");
+  const resultEl = modal.querySelector("#pp-result");
+  let px = W / 2 - PW / 2, ai = W / 2 - PW / 2;
+  let bx = W / 2, by = H - 30, bvx = 3, bvy = -3;
+  let ps = 0, as = 0, running = true;
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#6cb6fb";
+    ctx.fillRect(px, H - 20, PW, PH);
+    ctx.fillStyle = "#e55454";
+    ctx.fillRect(ai, 10, PW, PH);
+    ctx.fillStyle = "#ffd700";
+    ctx.beginPath(); ctx.arc(bx, by, BS, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function update() {
+    if (!running) return;
+    bx += bvx; by += bvy;
+    if (bx < BS || bx > W - BS) bvx = -bvx;
+    if (by < 10 + PH + BS && bx > ai && bx < ai + PW) { bvy = Math.abs(bvy); bvx += (bx - (ai + PW / 2)) * 0.1; }
+    if (by > H - 20 - BS && bx > px && bx < px + PW) { bvy = -Math.abs(bvy); bvx += (bx - (px + PW / 2)) * 0.1; }
+    if (by < 0) { ps++; scoreEl.textContent = ps + " : " + as; resetBall(); if (ps >= 5) { running = false; resultEl.innerHTML = '<div class="game-win">Ты победил! +30K</div>'; post("/api/arcade/win", { amount: 30 }).catch(() => {}); balance += 30; syncBalance(); return; } }
+    if (by > H) { as++; scoreEl.textContent = ps + " : " + as; resetBall(); if (as >= 5) { running = false; resultEl.innerHTML = '<div class="game-lose">Мошонка победил</div>'; return; } }
+    const target = bx - PW / 2;
+    ai += (target - ai) * 0.06;
+    draw();
+    requestAnimationFrame(update);
+  }
+
+  function resetBall() { bx = W / 2; by = H / 2; bvx = (Math.random() > 0.5 ? 1 : -1) * 3; bvy = -3; }
+
+  canvas.addEventListener("touchmove", e => { e.preventDefault(); px = e.touches[0].clientX - canvas.getBoundingClientRect().left - PW / 2; px = Math.max(0, Math.min(W - PW, px)); });
+  canvas.addEventListener("mousemove", e => { px = e.offsetX - PW / 2; px = Math.max(0, Math.min(W - PW, px)); });
+
+  draw();
+  update();
+}
+
+function gameSlots() {
+  const symbols = ["🍒", "🍋", "🍊", "🍇", "⭐", "💎", "7️⃣"];
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Слоты</h2>
+    <p class="card-sub">3 одинаковых = x200</p>
+    <div class="game-balance">Баланс: <strong id="slots-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
+    <div id="slots-reels" style="display:flex;gap:8px;justify-content:center;margin:16px 0;font-size:36px;min-height:50px">
+      <span id="s1" style="background:rgba(255,255,255,0.05);padding:8px 16px;border-radius:8px;min-width:50px;text-align:center">?</span>
+      <span id="s2" style="background:rgba(255,255,255,0.05);padding:8px 16px;border-radius:8px;min-width:50px;text-align:center">?</span>
+      <span id="s3" style="background:rgba(255,255,255,0.05);padding:8px 16px;border-radius:8px;min-width:50px;text-align:center">?</span>
+    </div>
+    ${betInputHTML("slots-bet")}
+    <button class="btn" id="slots-spin">Крутить!</button>
+    <div class="game-result" id="slots-result"></div>
+  `);
+  const resultEl = modal.querySelector("#slots-result");
+  const spinBtn = modal.querySelector("#slots-spin");
+  spinBtn.addEventListener("click", () => {
+    if (spinBtn.disabled) return;
+    spinBtn.disabled = true;
+    const bet = getBetValue("slots-bet");
+    if (balance < bet) { resultEl.innerHTML = '<div class="game-lose">Недостаточно K</div>'; spinBtn.disabled = false; return; }
+    balance -= bet;
+    updateBalanceDisplay("slots-balance", balance);
+    post("/api/arcade/bet", { amount: bet }).catch(() => {});
+    playUISound("spin");
+    const r1 = symbols[Math.floor(Math.random() * symbols.length)];
+    const r2 = symbols[Math.floor(Math.random() * symbols.length)];
+    const r3 = symbols[Math.floor(Math.random() * symbols.length)];
+    let spins = 0;
+    const si = setInterval(() => {
+      modal.querySelector("#s1").textContent = symbols[Math.floor(Math.random() * symbols.length)];
+      modal.querySelector("#s2").textContent = symbols[Math.floor(Math.random() * symbols.length)];
+      modal.querySelector("#s3").textContent = symbols[Math.floor(Math.random() * symbols.length)];
+      spins++;
+      if (spins > 15) {
+        clearInterval(si);
+        modal.querySelector("#s1").textContent = r1;
+        modal.querySelector("#s2").textContent = r2;
+        modal.querySelector("#s3").textContent = r3;
+        spinBtn.disabled = false;
+        if (r1 === r2 && r2 === r3) {
+          const win = Math.floor(bet * 200);
+          balance += win;
+          updateBalanceDisplay("slots-balance", balance);
+          post("/api/arcade/win", { amount: win }).catch(() => {});
+          resultEl.innerHTML = '<div class="game-win">ДЖЕКПОТ! +' + win + ' K</div>';
+          playUISound("win");
+        } else if (r1 === r2 || r2 === r3 || r1 === r3) {
+          const win = Math.floor(bet * 2);
+          balance += win;
+          updateBalanceDisplay("slots-balance", balance);
+          post("/api/arcade/win", { amount: win }).catch(() => {});
+          resultEl.innerHTML = '<div class="game-win">Пара! +' + win + ' K</div>';
+          playUISound("cashout");
+        } else {
+          resultEl.innerHTML = '<div class="game-lose">Мимо</div>';
+          playUISound("lose");
+        }
+        syncBalance();
+      }
+    }, 80);
+  });
+}
+
+function gameRocket() {
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Ракета</h2>
+    <p class="card-sub">Забери выигрыш до взрыва!</p>
+    <div class="game-balance">Баланс: <strong id="rocket-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
+    <div id="rocket-mult" style="font-size:48px;font-weight:900;text-align:center;margin:20px 0;color:#6cb6fb">x1.00</div>
+    ${betInputHTML("rocket-bet")}
+    <button class="btn" id="rocket-start">Запустить!</button>
+    <button class="btn btn-secondary" id="rocket-cashout" style="display:none">Забрать</button>
+    <div class="game-result" id="rocket-result"></div>
+  `);
+  const multEl = modal.querySelector("#rocket-mult");
+  const resultEl = modal.querySelector("#rocket-result");
+  const startBtn = modal.querySelector("#rocket-start");
+  const cashBtn = modal.querySelector("#rocket-cashout");
+  let mult = 1, running = false, crashed = false, bet = 0, timer;
+
+  startBtn.addEventListener("click", () => {
+    if (running) return;
+    bet = getBetValue("rocket-bet");
+    if (balance < bet) { resultEl.innerHTML = '<div class="game-lose">Недостаточно K</div>'; return; }
+    balance -= bet;
+    updateBalanceDisplay("rocket-balance", balance);
+    post("/api/arcade/bet", { amount: bet }).catch(() => {});
+    mult = 1; running = true; crashed = false;
+    startBtn.style.display = "none"; cashBtn.style.display = "";
+    multEl.style.color = "#6cb6fb";
+    resultEl.innerHTML = "";
+
+    timer = setInterval(() => {
+      mult += 0.02 + Math.random() * 0.03;
+      multEl.textContent = "x" + mult.toFixed(2);
+      if (Math.random() < 0.013 * mult) {
+        clearInterval(timer); running = false; crashed = true;
+        multEl.style.color = "#e55454";
+        multEl.textContent = "💥 ВЗРЫВ";
+        resultEl.innerHTML = '<div class="game-lose">Ракета взорвалась на x' + mult.toFixed(2) + '</div>';
+        cashBtn.style.display = "none"; startBtn.style.display = "";
+        playUISound("lose");
+        syncBalance();
+      }
+    }, 100);
+  });
+
+  cashBtn.addEventListener("click", () => {
+    if (!running) return;
+    clearInterval(timer); running = false;
+    const win = Math.floor(bet * mult);
+    balance += win;
+    updateBalanceDisplay("rocket-balance", balance);
+    post("/api/arcade/win", { amount: win }).catch(() => {});
+    multEl.style.color = "#6bd995";
+    resultEl.innerHTML = '<div class="game-win">Забрал x' + mult.toFixed(2) + '! +' + win + ' K</div>';
+    cashBtn.style.display = "none"; startBtn.style.display = "";
+    playUISound("win");
+    syncBalance();
+  });
+}
+
+function gameDice() {
+  const diceSVG = [
+    '<svg viewBox="0 0 36 36" width="48" height="48"><rect width="36" height="36" rx="6" fill="#fff" stroke="#ccc"/><circle cx="18" cy="18" r="3" fill="#333"/></svg>',
+    '<svg viewBox="0 0 36 36" width="48" height="48"><rect width="36" height="36" rx="6" fill="#fff" stroke="#ccc"/><circle cx="10" cy="10" r="3" fill="#333"/><circle cx="26" cy="26" r="3" fill="#333"/></svg>',
+    '<svg viewBox="0 0 36 36" width="48" height="48"><rect width="36" height="36" rx="6" fill="#fff" stroke="#ccc"/><circle cx="10" cy="10" r="3" fill="#333"/><circle cx="18" cy="18" r="3" fill="#333"/><circle cx="26" cy="26" r="3" fill="#333"/></svg>',
+    '<svg viewBox="0 0 36 36" width="48" height="48"><rect width="36" height="36" rx="6" fill="#fff" stroke="#ccc"/><circle cx="10" cy="10" r="3" fill="#333"/><circle cx="26" cy="10" r="3" fill="#333"/><circle cx="10" cy="26" r="3" fill="#333"/><circle cx="26" cy="26" r="3" fill="#333"/></svg>',
+    '<svg viewBox="0 0 36 36" width="48" height="48"><rect width="36" height="36" rx="6" fill="#fff" stroke="#ccc"/><circle cx="10" cy="10" r="3" fill="#333"/><circle cx="26" cy="10" r="3" fill="#333"/><circle cx="18" cy="18" r="3" fill="#333"/><circle cx="10" cy="26" r="3" fill="#333"/><circle cx="26" cy="26" r="3" fill="#333"/></svg>',
+    '<svg viewBox="0 0 36 36" width="48" height="48"><rect width="36" height="36" rx="6" fill="#fff" stroke="#ccc"/><circle cx="10" cy="10" r="3" fill="#333"/><circle cx="26" cy="10" r="3" fill="#333"/><circle cx="10" cy="18" r="3" fill="#333"/><circle cx="26" cy="18" r="3" fill="#333"/><circle cx="10" cy="26" r="3" fill="#333"/><circle cx="26" cy="26" r="3" fill="#333"/></svg>',
+  ];
+  const modal = window.kov.showModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Кости</h2>
+    <p class="card-sub">Брось кубик и угадай!</p>
+    <div class="game-balance">Баланс: <strong id="dice-balance">${balance}</strong> ${kovbaksWord(balance)}</div>
+    <div id="dice-result" style="text-align:center;margin:20px 0">${diceSVG[0]}</div>
+    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:8px 0">
+      <button class="btn btn-sm dice-pick" data-pick="odd">Нечёт (x1.8)</button>
+      <button class="btn btn-sm dice-pick" data-pick="even">Чёт (x1.8)</button>
+    </div>
+    <div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin:8px 0">
+      <button class="btn btn-sm dice-pick" data-pick="1">1 (x5)</button>
+      <button class="btn btn-sm dice-pick" data-pick="2">2 (x5)</button>
+      <button class="btn btn-sm dice-pick" data-pick="3">3 (x5)</button>
+      <button class="btn btn-sm dice-pick" data-pick="4">4 (x5)</button>
+      <button class="btn btn-sm dice-pick" data-pick="5">5 (x5)</button>
+      <button class="btn btn-sm dice-pick" data-pick="6">6 (x5)</button>
+    </div>
+    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:8px 0">
+      <button class="btn btn-sm dice-pick" data-pick="low">1-3 (x1.8)</button>
+      <button class="btn btn-sm dice-pick" data-pick="high">4-6 (x1.8)</button>
+    </div>
+    ${betInputHTML("dice-bet")}
+    <div class="game-result" id="dice-res"></div>
+  `);
+  const diceEl = modal.querySelector("#dice-result");
+  const resEl = modal.querySelector("#dice-res");
+  let rolling = false;
+
+  modal.querySelectorAll(".dice-pick").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (rolling) return;
+      const bet = getBetValue("dice-bet");
+      if (balance < bet) { resEl.innerHTML = '<div class="game-lose">Недостаточно K</div>'; return; }
+      balance -= bet;
+      updateBalanceDisplay("dice-balance", balance);
+      post("/api/arcade/bet", { amount: bet }).catch(() => {});
+      rolling = true;
+      const roll = Math.floor(Math.random() * 6) + 1;
+      let spins = 0;
+      const si = setInterval(() => {
+        diceEl.innerHTML = diceSVG[Math.floor(Math.random() * 6)];
+        spins++;
+        if (spins > 15) {
+          clearInterval(si);
+          diceEl.innerHTML = diceSVG[roll - 1];
+          const pick = btn.dataset.pick;
+          let win = 0;
+          if (pick === "odd" && roll % 2 === 1) win = Math.floor(bet * 1.7);
+          else if (pick === "even" && roll % 2 === 0) win = Math.floor(bet * 1.7);
+          else if (pick === "low" && roll <= 3) win = Math.floor(bet * 1.7);
+          else if (pick === "high" && roll >= 4) win = Math.floor(bet * 1.7);
+          else if (pick === String(roll)) win = bet * 4;
+          if (win > 0) {
+            balance += win;
+            updateBalanceDisplay("dice-balance", balance);
+            post("/api/arcade/win", { amount: win }).catch(() => {});
+            resEl.innerHTML = '<div class="game-win">Выпало ' + roll + '! +' + win + ' K</div>';
+            playUISound("win");
+          } else {
+            resEl.innerHTML = '<div class="game-lose">Выпало ' + roll + '. Мимо</div>';
+            playUISound("lose");
+          }
+          syncBalance();
+          rolling = false;
+        }
+      }, 80);
+    });
+  });
+}
+
+// ============ RENDER ============
+
+export async function renderArcade(root) {
+  root.innerHTML = `<div class="card"><p>Загрузка…</p></div>`;
+  try {
+    await fetchBalance();
+  } catch (_) {}
+  
+  root.innerHTML = `
+    <section class="page-header">
+      <div>
+        <h1>Аркада</h1>
+        <div class="subtitle">Игры и развлечения Ковчега</div>
+      </div>
+      <div class="hero-art" title="Аркада"><img src="/static/releases/classic-2540455/img/tabs/arcade.svg" alt="Аркада" class="hero-img"/></div>
+    </section>
+
+    <h2 class="section-title">Мини-игры</h2>
+    
+    <div class="game-grid">
+      <div class="game-tile" data-game="moshonka">
+        <div class="game-tile-icon"><img src="/static/releases/classic-2540455/img/ui/bush.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-title">Где Мошонка?</div>
+        <div class="game-tile-desc">Угадай, где спрятался житель</div>
+      </div>
+      <div class="game-tile" data-game="tictactoe">
+        <div class="game-tile-icon"><img src="/static/releases/classic-2540455/img/ui/tictactoe.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-title">Крестики-нолики</div>
+        <div class="game-tile-desc">Играй против Мошонки</div>
+      </div>
+      <div class="game-tile" data-game="minesweeper">
+        <div class="game-tile-icon"><img src="/static/releases/classic-2540455/img/ui/stone_block.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-title">Сапёр</div>
+        <div class="game-tile-desc">Найди безопасные клетки</div>
+      </div>
+      <div class="game-tile" data-game="harvest">
+        <div class="game-tile-icon"><img src="/static/releases/classic-2540455/img/ui/harvest.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-title">Собери урожай</div>
+        <div class="game-tile-desc">Собирай тыквы за время</div>
+      </div>
+      <div class="game-tile" data-game="checkers">
+        <div class="game-tile-icon"><img src="/static/releases/classic-2540455/img/ui/checkers.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-title">Шашки</div>
+        <div class="game-tile-desc">3 уровня сложности</div>
+      </div>
+      <div class="game-tile" data-game="pingpong">
+        <div class="game-tile-icon"><img src="/static/releases/classic-2540455/img/ui/pingpong.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-title">Пинг-понг</div>
+        <div class="game-tile-desc">Игра до 5 очков</div>
+      </div>
+    </div>
+
+    <h2 class="section-title">Казино</h2>
+    <div class="game-grid">
+      <div class="game-tile casino" data-game="slots">
+        <div class="game-tile-icon"><img src="/static/releases/classic-2540455/img/ui/slots.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-title">Слоты</div>
+        <div class="game-tile-desc">3 одинаковых = x200</div>
+      </div>
+      <div class="game-tile casino" data-game="rocket">
+        <div class="game-tile-icon"><img src="/static/releases/classic-2540455/img/ui/rocket.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-title">Ракетка</div>
+        <div class="game-tile-desc">Кэшаут до краха</div>
+      </div>
+      <div class="game-tile casino" data-game="dice">
+        <div class="game-tile-icon"><img src="/static/releases/classic-2540455/img/ui/dice.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-title">Кубик</div>
+        <div class="game-tile-desc">Чёт/нечёт или число</div>
+      </div>
+      <div class="game-tile casino" data-game="roulette">
+        <div class="game-tile-icon"><img src="/static/releases/classic-2540455/img/ui/roulette.svg" alt="" class="game-icon-lg"/></div>
+        <div class="game-tile-title">Рулетка</div>
+        <div class="game-tile-desc">От x0 до x3</div>
+      </div>
+    </div>
+  `;
+  
+  const games = {
+    moshonka: gameWhereIsMoshonka,
+    tictactoe: gameTicTacToe,
+    minesweeper: gameMinesweeper,
+    harvest: gameHarvest,
+    checkers: gameCheckers,
+    pingpong: gamePingPong,
+    slots: gameSlots,
+    rocket: gameRocket,
+    dice: gameDice,
+    roulette: gameRoulette,
+  };
+  
+  root.querySelectorAll(".game-tile").forEach((tile) => {
+    tile.addEventListener("click", () => {
+      const game = tile.dataset.game;
+      if (games[game]) games[game]();
+    });
+  });
+  
+  window.kov.arcade = games;
+}

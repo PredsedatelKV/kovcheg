@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="skitBag" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#E53935"/>
+      <stop offset="100%" style="stop-color:#C62828"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="8" width="44" height="48" rx="8" fill="url(#skitBag)"/>
+  <rect x="14" y="12" width="36" height="40" rx="6" fill="#F44336"/>
+  <text x="32" y="36" font-family="Arial Black, sans-serif" font-size="11" font-weight="900" fill="#FFFFFF" text-anchor="middle">skittles</text>
+  <circle cx="20" cy="44" r="3" fill="#FFEB3B"/>
+  <circle cx="28" cy="46" r="3" fill="#4CAF50"/>
+  <circle cx="36" cy="44" r="3" fill="#9C27B0"/>
+  <circle cx="44" cy="46" r="3" fill="#FF9800"/>
+  <circle cx="24" cy="50" r="3" fill="#2196F3"/>
+  <circle cx="32" cy="52" r="3" fill="#E53935"/>
+  <circle cx="40" cy="50" r="3" fill="#4CAF50"/>
+  <rect x="10" y="8" width="44" height="6" rx="3" fill="#FFD600"/>
+</svg>

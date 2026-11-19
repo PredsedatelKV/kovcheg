@@ -1,0 +1,8 @@
+{
+  "name": "Федерация Ковчега",
+  "short_name": "Ковчег",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#111827"
+}
