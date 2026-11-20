@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Index,
     LargeBinary,
     String,
     Text,
@@ -804,3 +805,27 @@ class CasinoRound(Base):
     payout: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     settled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+class CourierRun(Base):
+    """A server-issued winter run and its deterministic, immutable result."""
+    __tablename__ = "courier_runs"
+    __table_args__ = (
+        Index("ix_courier_daily_scores", "day", "status", "score"),
+        Index("ix_courier_player_day", "user_id", "day"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    day: Mapped[str] = mapped_column(String(10), nullable=False)
+    seed: Mapped[int] = mapped_column(Integer, nullable=False)
+    engine_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="started", nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    delivered: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    deliveries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    input_hash: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    result_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
