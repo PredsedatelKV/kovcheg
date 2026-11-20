@@ -116,6 +116,7 @@ def seed_winter_catalog(db: Session) -> None:
     db.flush()
     update_winter_shop(db)
     seed_tree_custom(db)
+    configure_winter_box_rewards(db)
 
 TREE_CUSTOM = (
     ("tree_garland_aurora", "tree_garland", "Гирлянда «Северное сияние»", 120),
@@ -146,9 +147,70 @@ def seed_tree_custom(db: Session) -> None:
             db.add(item)
             db.flush()
             db.add(models.ShopProduct(item_id=item.id, price=price, stock=-1, is_active=True))
-        # Seasonal box entries are additive, leaving current prizes available.
+        # Add the tree items first; the final reward migration balances the complete table.
         for pool in db.query(models.LootboxPool).filter(models.LootboxPool.code.in_(["winter-ice", "winter-seasonal"])):
             if not db.query(models.LootboxPoolEntry).filter_by(pool_id=pool.id, item_id=item.id).first():
                 db.add(models.LootboxPoolEntry(pool_id=pool.id, reward_kind="item", item_id=item.id,
                     amount_min=1, amount_max=1, weight=5))
     db.execute(text("INSERT INTO maintenance_migrations(key) VALUES (:key)"), {"key": key})
+
+# Provisional winter tables: one reward per opening; percentages sum to 100.
+# Kept as a one-time migration so later administrator edits survive restarts.
+WINTER_BOX_REWARDS_KEY = "2026-11-winter-box-rewards-v1"
+WINTER_BOX_REWARDS = {
+    "winter-ice": (
+        ("item", SNOWFLAKE_CODE, 10, 20, 35),
+        ("xp", None, 20, 35, 25),
+        ("kovbucks", None, 50, 100, 20),
+        ("item", "tree_garland_aurora", 1, 1, 6),
+        ("item", "tree_toys_crystal", 1, 1, 4),
+        ("item", "tree_snow_soft", 1, 1, 6),
+        ("item", "tree_gifts_festive", 1, 1, 4),
+    ),
+    "winter-seasonal": (
+        ("item", SNOWFLAKE_CODE, 25, 45, 30),
+        ("xp", None, 40, 60, 20),
+        ("kovbucks", None, 120, 200, 15),
+        ("item", "tree_garland_aurora", 1, 1, 10),
+        ("item", "tree_toys_crystal", 1, 1, 10),
+        ("item", "tree_snow_soft", 1, 1, 5),
+        ("item", "tree_gifts_festive", 1, 1, 10),
+    ),
+}
+
+
+def configure_winter_box_rewards(db: Session) -> None:
+    if db.execute(text("SELECT 1 FROM maintenance_migrations WHERE key=:key"),
+                  {"key": WINTER_BOX_REWARDS_KEY}).first():
+        return
+    # Tree seeding inserts by pool_id; refresh the relationship before replacing
+    # it so those just-added rows are removed too (including autoflush=False).
+    db.flush()
+    required_codes = {code for rows in WINTER_BOX_REWARDS.values()
+                      for kind, code, *_ in rows if kind == "item"}
+    items = {item.code: item for item in db.query(models.Item)
+             .filter(models.Item.code.in_(required_codes)).all()}
+    if required_codes - items.keys():
+        raise RuntimeError("Winter reward items are missing")
+    pools = {pool.code: pool for pool in db.query(models.LootboxPool)
+             .filter(models.LootboxPool.code.in_(WINTER_BOX_REWARDS)).all()}
+    if set(WINTER_BOX_REWARDS) - pools.keys():
+        raise RuntimeError("Winter reward pools are missing")
+    for code, rows in WINTER_BOX_REWARDS.items():
+        if sum(row[4] for row in rows) != 100:
+            raise RuntimeError(f"Winter reward percentages do not sum to 100: {code}")
+        pool = pools[code]
+        db.expire(pool, ["entries"])
+        pool.opening_mode = "chest_v2"
+        pool.bonus_item_chance = pool.special_item_chance = pool.super_special_item_chance = 0
+        pool.entries = [
+            models.LootboxPoolEntry(
+                reward_kind=kind, item_id=items[item_code].id if item_code else None,
+                amount_min=low, amount_max=high, weight=weight,
+                is_guaranteed=False, is_active=True, sort_order=order,
+            )
+            for order, (kind, item_code, low, high, weight) in enumerate(rows)
+        ]
+        pool.version += 1
+    db.execute(text("INSERT INTO maintenance_migrations(key) VALUES (:key)"),
+               {"key": WINTER_BOX_REWARDS_KEY})
