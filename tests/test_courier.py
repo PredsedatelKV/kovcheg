@@ -19,8 +19,12 @@ from app.db import Base,get_db
 from app.courier_engine import TICKS,create_state,make_track,step,result
 
 
-def trace(seed):
-    track=make_track(seed);state=create_state();controls=[]
+def trace(seed, mechanics=None):
+    track=(mechanics.make_track(seed) if mechanics else make_track(seed))
+    state=(mechanics.create_state() if mechanics else create_state())
+    advance=mechanics.step if mechanics else step
+    summarize=mechanics.result if mechanics else result
+    controls=[]
     for _ in range(TICKS):
         upcoming=track[state["cursor"]:]
         dock=next(e for e in upcoming if e["kind"]=="dock")
@@ -33,8 +37,8 @@ def trace(seed):
             if obstacle and abs(target-obstacle["x"])<280:
                 target=max(-900,min(900,obstacle["x"]+(-450 if obstacle["x"]>0 else 450)))
         code=max(0,min(2000,int(target*10/9)+1000))+(2048 if braking else 0)
-        controls.append(code);step(state,track,code)
-    return controls,result(state)
+        controls.append(code);advance(state,track,code)
+    return controls,summarize(state)
 
 
 class CourierAPITests(unittest.TestCase):
@@ -131,6 +135,56 @@ class CourierAPITests(unittest.TestCase):
         self.assertEqual(r.json()["reward"],0);self.assertEqual(self.wallet(),100)
         next_run=self.start();self.now+=timedelta(minutes=91)
         self.assertEqual(self.finish(next_run,controls).status_code,409)
+
+
+    def test_legacy_run_can_finish_but_does_not_dominate_new_ranking_or_repeat_reward(self):
+        from app import courier_engine_v1 as old
+        token="old-version-courier-token-123456789"
+        with self.sessions() as db:
+            db.add(models.CourierRun(token=token,user_id=1,day=self.day,seed=313,
+                engine_version=1,status="started",started_at=self.now-timedelta(seconds=123),
+                expires_at=self.now+timedelta(minutes=30)))
+            db.commit()
+        controls,expected=trace(313,old)
+        response=self.finish({"token":token},controls)
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertEqual(response.json()["engine_version"],1)
+        self.assertEqual(response.json()["score"],expected["score"])
+        self.assertEqual(response.json()["reward"],75)
+        status=self.client.get("/api/arcade/courier/status").json()
+        self.assertEqual(status["best"],0)
+        self.assertEqual(status["previous_best"],expected["score"])
+        self.assertEqual(status["leaders"],[])
+        self.assertTrue(status["reward_claimed"])
+        current=self.start();commands,_=trace(current["seed"]);self.now+=timedelta(seconds=123)
+        finished=self.finish(current,commands)
+        self.assertEqual(finished.status_code,200,finished.text)
+        self.assertEqual(finished.json()["reward"],0)
+        self.assertEqual(finished.json()["engine_version"],2)
+        self.assertEqual(self.wallet(),175)
+        replayed=self.finish({"token":token},controls)
+        self.assertEqual(replayed.status_code,200,replayed.text)
+        self.assertTrue(replayed.json()["replayed"])
+        with self.sessions() as db:self.assertEqual(db.query(models.CourierRun).count(),2)
+
+    def test_new_route_requires_more_precise_pickups_and_has_more_hazards(self):
+        from app import courier_engine as current,courier_engine_v1 as old
+        a,b=old.make_track(321),current.make_track(321)
+        gifts=lambda t:sum(e["kind"]=="gift" and e["y"]<50000 for e in t)
+        obstacles=lambda t:sum(e["kind"]=="obstacle" and e["y"]<50000 for e in t)
+        self.assertLess(gifts(b),gifts(a)*.75)
+        self.assertGreater(obstacles(b),obstacles(a)*1.5)
+        moving=[e for e in b if e.get("motion")]
+        self.assertTrue(moving)
+        for e in moving:
+            positions=[current.entity_x(e,t) for t in range(e["period"])]
+            self.assertEqual(min(positions),e["x"]-e["motion"])
+            self.assertEqual(max(positions),e["x"]+e["motion"])
+        for dx,expected in [(105,1),(106,0)]:
+            state=current.create_state()
+            current.step(state,[dict(y=0,x=dx,kind="gift")],1000)
+            self.assertEqual(state["picked"],expected)
+
 
 
 if __name__=="__main__":unittest.main(verbosity=2)

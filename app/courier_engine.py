@@ -1,5 +1,5 @@
 """Deterministic integer-only replay of the Snow Courier browser simulation."""
-ENGINE_VERSION = 1
+ENGINE_VERSION = 2
 STEP_MS = 50
 TICKS = 2400
 MAX_BAG = 12
@@ -24,22 +24,45 @@ def zone_at(distance):
     return 2 if part >= 16500 else 1 if part >= 9000 else 0
 
 
+def entity_x(e, tick):
+    if not e.get("motion"):
+        return e["x"]
+    half = e["period"] // 2
+    phase = (tick + e["phase"]) % e["period"]
+    triangle = phase if phase <= half else e["period"] - phase
+    return e["x"] + truncdiv((triangle * 2 - half) * e["motion"], half)
+
+
 def make_track(seed):
     r = rng(seed)
     track = []
+    y, safe = 500, 2
     for i in range(420):
-        y = 650 + i * 210
+        y += 240 + r(61)
         if i % 18 == 16:
             track.append(dict(y=y, x=650 if r(2) else -650, kind="dock", style=r(3), id=len(track)))
             continue
-        lane = r(5)
-        track.append(dict(y=y, x=(lane-2)*330, kind="gift", style=r(4), id=len(track)))
-        if i % 7 == 3:
-            track.append(dict(y=y+65, x=((lane+1) % 5-2)*330, kind="gift", style=r(4), id=len(track)))
-        if i > 6 and i % 3 != 0:
-            other = (lane+2+r(2)) % 5
-            track.append(dict(y=y+100, x=(other-2)*330, kind="obstacle", style=r(2), id=len(track)))
-    track.sort(key=lambda e: (e["y"], e["id"]))
+        tier = min(3, y // 15000)
+        safe = max(0, min(4, safe + r(3) - 1))
+        has_gift = i < 6 or r(100) < 62
+        gift_lane = safe
+        if has_gift:
+            if r(100) < 28:
+                gift_lane = max(0, min(4, safe + (1 if r(2) else -1)))
+            track.append(dict(y=y, x=(gift_lane-2)*360+r(161)-80, kind="gift", style=r(4), id=len(track)))
+        if i > 4 and i % 18 not in (15,17):
+            lanes = [lane for lane in range(5) if lane != safe and (not has_gift or lane != gift_lane)]
+            count = min(len(lanes), 1 if tier == 0 else 2 if tier == 1 else 2+r(2) if tier == 2 else 3)
+            for _ in range(count):
+                chosen = r(len(lanes))
+                lane = lanes.pop(chosen)
+                style = r(3)
+                motion = (70 if abs(lane-safe)<2 else 160) if style == 2 and tier > 0 else 0
+                period = 120+r(3)*40 if motion else 160
+                phase = r(period) if motion else 0
+                track.append(dict(y=y+r(121)-60, x=(lane-2)*360+r(51)-25,
+                                  kind="obstacle",style=style,motion=motion,period=period,phase=phase,id=len(track)))
+    track.sort(key=lambda e:(e["y"],e["id"]))
     return track
 
 
@@ -63,7 +86,7 @@ def step(state, track, code):
     s["vx"] = truncdiv(s["vx"]*(100-grip)+desired*grip, 100)
     s["x"] = max(-1080, min(1080, s["x"]+s["vx"]))
     zone = zone_at(s["distance"])
-    base = 34 if icy else 26 if zone == 2 else 25 if zone == 1 else 28
+    base = 37 if icy else 28 if zone == 2 else 27 if zone == 1 else 30
     base -= s["bag"]//3
     if brake:
         base = base*55//100
@@ -78,20 +101,21 @@ def step(state, track, code):
     while s["cursor"] < len(track) and track[s["cursor"]]["y"] <= s["distance"]:
         e = track[s["cursor"]]
         s["cursor"] += 1
-        dx = abs(s["x"]-e["x"])
-        if e["kind"] == "gift" and dx <= 160 and s["bag"] < MAX_BAG:
+        contact_x = entity_x(e, s["tick"])
+        dx = abs(s["x"]-contact_x)
+        if e["kind"] == "gift" and dx <= 105 and s["bag"] < MAX_BAG:
             s["bag"] += 1
             s["picked"] += 1
             s["score"] += 5
             s["events"].append(dict(kind="gift", x=e["x"], value=1))
-        elif e["kind"] == "obstacle" and dx <= 170 and not s["cooldown"]:
+        elif e["kind"] == "obstacle" and dx <= 195 and not s["cooldown"]:
             lost = min(2, s["bag"])
             s["bag"] -= lost
             s["lost"] += lost
             s["hits"] += 1
-            s["cooldown"] = 18
+            s["cooldown"] = 14
             s["combo"] = 0
-            s["events"].append(dict(kind="hit", x=e["x"], value=lost))
+            s["events"].append(dict(kind="hit", x=contact_x, value=lost))
         elif e["kind"] == "dock":
             if s["bag"] > 0 and dx <= 320 and s["speed"] <= 21:
                 delivered = s["bag"]

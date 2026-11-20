@@ -15,6 +15,8 @@ from app.auth import current_user
 from app.db import begin_game_write, get_db
 from app.api._helpers import ensure_wallet, require_open_section
 from app.courier_engine import ENGINE_VERSION, TICKS, STEP_MS, replay
+from app.courier_engine_v1 import replay as replay_v1
+REPLAY_ENGINES = {1: replay_v1, ENGINE_VERSION: replay}
 
 router = APIRouter(prefix="/api/arcade/courier", tags=["courier"],
                    dependencies=[Depends(require_open_section("arcade"))])
@@ -30,17 +32,18 @@ def daily_day():
 
 
 def daily_seed(day):
-    return int.from_bytes(hashlib.blake2s(("kovcheg-courier-v1:"+day).encode(), digest_size=4).digest(), "big") & 0x7FFFFFFF
+    return int.from_bytes(hashlib.blake2s(("kovcheg-courier-v2:"+day).encode(), digest_size=4).digest(), "big") & 0x7FFFFFFF
 
 
 def _claimed(db, user_id, day):
     return db.query(models.ArcadeFirstWin.id).filter_by(user_id=user_id, game=GAME, win_date=day).first() is not None
 
 
-def _board(db, user_id, day):
+def _board(db, user_id, day, version=ENGINE_VERSION):
     best = db.query(models.CourierRun.user_id.label("uid"),
                     func.max(models.CourierRun.score).label("score")).filter(
-        models.CourierRun.day == day, models.CourierRun.status == "finished"
+        models.CourierRun.day == day, models.CourierRun.status == "finished",
+        models.CourierRun.engine_version == version
     ).group_by(models.CourierRun.user_id).subquery()
     rows = db.query(best.c.uid, best.c.score, models.User.first_name).join(
         models.User, models.User.id == best.c.uid
@@ -59,7 +62,11 @@ def _board(db, user_id, day):
 @router.get("/status")
 def status(user: models.User=Depends(current_user), db: Session=Depends(get_db)):
     day = daily_day()
-    return dict(day=day, seed=daily_seed(day), engine_version=ENGINE_VERSION,
+    previous_best = db.query(func.max(models.CourierRun.score)).filter(
+        models.CourierRun.user_id==user.id, models.CourierRun.day==day,
+        models.CourierRun.status=="finished",models.CourierRun.engine_version!=ENGINE_VERSION,
+    ).scalar() or 0
+    return dict(day=day, seed=daily_seed(day), engine_version=ENGINE_VERSION, previous_best=previous_best,
                 duration_ms=TICKS*STEP_MS, player_id=user.id,
                 daily_reward=DAILY_REWARD, delivery_goal=DELIVERY_GOAL,
                 min_houses=MIN_HOUSES, reward_claimed=_claimed(db,user.id,day),
@@ -104,15 +111,15 @@ def finish(body: FinishBody, user: models.User=Depends(current_user), db: Sessio
     if run.status == "finished":
         if run.input_hash != digest:
             raise HTTPException(409,"Этот заезд уже завершён с другим результатом")
-        return dict(json.loads(run.result_json),replayed=True,balance=ensure_wallet(db,user).balance)
+        return dict(json.loads(run.result_json),engine_version=run.engine_version,replayed=True,balance=ensure_wallet(db,user).balance)
     now = models.now_utc()
     if run.status != "started" or run.expires_at < now:
         raise HTTPException(409,"Заезд истёк. Начните новый маршрут")
-    if run.engine_version != ENGINE_VERSION:
+    if run.engine_version not in REPLAY_ENGINES:
         raise HTTPException(409,"Игра обновилась. Начните новый маршрут")
     if (now-run.started_at).total_seconds() < TICKS*STEP_MS/1000-.5:
         raise HTTPException(400,"Заезд ещё не мог завершиться")
-    computed = replay(run.seed,body.controls)
+    computed = REPLAY_ENGINES[run.engine_version](run.seed,body.controls)
     if computed["duration_ms"] != TICKS*STEP_MS:
         raise HTTPException(422,"Неполная запись заезда")
     reward = 0
@@ -128,11 +135,11 @@ def finish(body: FinishBody, user: models.User=Depends(current_user), db: Sessio
         reward = DAILY_REWARD
     run.status="finished";run.finished_at=now;run.score=computed["score"]
     run.delivered=computed["delivered"];run.deliveries=computed["deliveries"];run.input_hash=digest
-    response=dict(**computed,day=run.day,eligible=eligible,reward=reward,
+    response=dict(**computed,day=run.day,engine_version=run.engine_version,eligible=eligible,reward=reward,
                   reward_claimed=_claimed(db,user.id,run.day) or reward>0,
                   balance=ensure_wallet(db,user).balance)
     db.flush()
-    response.update(_board(db,user.id,run.day))
+    response.update(_board(db,user.id,run.day,run.engine_version))
     run.result_json=json.dumps(response,ensure_ascii=False)
     db.commit()
     return dict(response,replayed=False)

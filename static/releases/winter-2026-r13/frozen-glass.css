@@ -1,0 +1,339 @@
+.ice-optics {
+  position: absolute;
+  inset: 0 auto auto 0;
+  pointer-events: none;
+}
+
+/* Ice has a clear core, cool color at depth and a brighter rim. */
+:root.winter:not(.solid-surfaces, .winter-gate) {
+  --surface: #e6f4ff52;
+  --surface-2: #e5f2fd99;
+  --bg-soft: #d9ebf8bf;
+  --border: #78a7cc45;
+  --text: #142941;
+  --text-muted: #344c66;
+  --lens-base: #c7e8ff9c;
+  --lens-tail: #89c5f147;
+  --lens-shine: #ffffffce;
+  --lens-stroke: #80b3de63;
+  --lens-ink: #184d87;
+  --text-soft: #354c65;
+  --ice-tint: #f2f9ff66;
+  --ice-shell: #e4f2ff80;
+  --ice-dialog: #e8f6ffd6;
+  --ice-lip: #ffffffe0;
+  --ice-inner: #eafaff38;
+  --ice-depth: #6898c735;
+  --ice-shadow: #2b608c2c;
+  --ice-glare: #fffdfd9c;
+  --ice-glow: #83cdff5c;
+  --ice-panel-light: #fff8;
+  --ice-panel-deep: #a8d5fa30;
+  --ice-hero-copy: #eef8ff9e;
+  --ice-scrim: #203c633d;
+  --ice-air:
+    radial-gradient(ellipse at 108% 17%, #a0daff76 0%, transparent 49%),
+    radial-gradient(ellipse at -12% 51%, #bfe6ff92 0%, transparent 46%),
+    radial-gradient(ellipse at 85% 106%, #82c0f741 0%, transparent 55%);
+}
+
+:root.winter.dark:not(.solid-surfaces, .winter-gate) {
+  --surface: #162b535c;
+  --surface-2: #243d687d;
+  --bg-soft: #1e3655c9;
+  --border: #8dbff741;
+  --text: #f3f8ff;
+  --text-muted: #cbdcf0;
+  --lens-base: #507ec368;
+  --lens-tail: #448ee934;
+  --lens-shine: #a6d6ff74;
+  --lens-stroke: #a1d5ff65;
+  --lens-ink: #f1f8ff;
+  --text-soft: #dae8f8;
+  --ice-tint: #1023427a;
+  --ice-shell: #15294b9c;
+  --ice-dialog: #12254ede;
+  --ice-lip: #bfebff72;
+  --ice-inner: #93cfff16;
+  --ice-depth: #4a7ec343;
+  --ice-shadow: #01061c99;
+  --ice-glare: #d0ebff4d;
+  --ice-glow: #66c3ff69;
+  --ice-panel-light: #77b6f530;
+  --ice-panel-deep: #539cf333;
+  --ice-hero-copy: #0d1a38a6;
+  --ice-scrim: #02081d70;
+  --ice-air:
+    radial-gradient(ellipse at 108% 12%, #275fc171 0%, transparent 48%),
+    radial-gradient(ellipse at -18% 44%, #296bae6e 0%, transparent 45%),
+    radial-gradient(ellipse at 83% 105%, #2e71ec58 0%, transparent 54%);
+}
+
+:root.winter:not(.solid-surfaces, .winter-gate) {
+  --ice-reflection:
+    radial-gradient(ellipse 89% 83% at 7% 0%, var(--ice-panel-light), transparent 68%),
+    radial-gradient(ellipse 66% 105% at 105% 116%, var(--ice-panel-deep), transparent 78%),
+    url("./media/ice-grain.png");
+  --ice-bevel:
+    inset 0 1px 0 var(--ice-lip),
+    inset 0 -1px 0 var(--ice-depth),
+    inset 0 0 0 1px var(--ice-inner),
+    0 9px 24px -10px var(--ice-shadow);
+  --ice-prism:
+    linear-gradient(122deg, transparent 3%, var(--ice-lip) 9%, transparent 15% 76%, var(--ice-inner) 82%, transparent 90%),
+    linear-gradient(155deg, var(--ice-glare) 4%, transparent 24% 63%, var(--ice-glow) 86%, transparent 98%);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) #app::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background: var(--ice-air);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) :is(
+  .card, .winter-intro, .kovbox-shop-card, .station-shortcut, .station-game-grid .game-tile,
+  .winter-clicker-wide, .product:not(.product-targeted), .station-admin-sections > div, .admin-card,
+  .station-header, .station-nav, .modal
+) {
+  background-color: var(--ice-fill, var(--ice-tint));
+  background-image: var(--ice-reflection);
+  border-color: var(--border);
+  box-shadow: var(--ice-bevel);
+}
+
+/* Dense grids, controls and menus are smaller pieces of the same material. */
+.winter:not(.solid-surfaces, .winter-gate) :is(
+  .station-currencies .station-balance, .station-tool, .station-menu-list button,
+  .intro-art, .kovbox-shop-item, .inv-cell, .daily-streak-fire,
+  .station-game-grid .game-tile-icon, .feature-thumb, .koverna-mode-card .toggle,
+  .settings-toggle, .settings-section .settings-volume
+) {
+  background-color: var(--surface-2);
+  background-image: linear-gradient(151deg, var(--ice-panel-light), transparent 72%);
+  box-shadow: inset 0 1px 0 var(--ice-lip), inset 0 -1px 0 var(--ice-depth);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .station-tool {
+  border: 1px solid var(--border);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .station-currencies .station-balance {
+  border: 1px solid var(--border);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .winter-hero {
+  background-color: var(--ice-tint);
+  border-color: var(--border);
+  box-shadow: var(--ice-bevel);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .winter-hero::before {
+  background:
+    radial-gradient(ellipse 42% 9% at 86% 0%, var(--ice-lip), transparent 82%),
+    radial-gradient(ellipse 41% 65% at 100% 7%, var(--ice-glow), transparent 84%),
+    linear-gradient(108deg, transparent 75%, var(--ice-inner) 75.5%, transparent 80%),
+    linear-gradient(92deg, var(--ice-hero-copy) 0%, transparent 72%),
+    var(--ice-reflection);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .winter-hero h1 {
+  color: var(--text);
+  text-shadow: 0 1px 4px var(--ice-shadow);
+  text-wrap: balance;
+}
+
+@media (max-width: 420px) {
+  .winter:not(.solid-surfaces, .winter-gate) .winter-hero {
+    background-position: right 3% center;
+    background-size: auto 76%;
+  }
+
+  .winter:not(.solid-surfaces, .winter-gate) .winter-hero-copy {
+    width: 59%;
+    max-width: none;
+    padding-inline: clamp(13px, 4vw, 18px);
+  }
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .winter-hero p {
+  color: var(--text-soft);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .winter-carousel-track {
+  border: 1px solid var(--border);
+  box-shadow: var(--ice-bevel);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .station-header {
+  --ice-fill: var(--ice-shell);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .view {
+  --dock-clearance: calc(82px + max(env(safe-area-inset-bottom), var(--station-telegram-bottom, 0px)));
+  padding-bottom: var(--dock-clearance);
+  scroll-padding-bottom: var(--dock-clearance);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .toast {
+  bottom: calc(77px + max(env(safe-area-inset-bottom), var(--station-telegram-bottom, 0px)));
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .tabbar {
+  position: absolute;
+  inset: auto 0 0;
+  padding-bottom: max(7px, env(safe-area-inset-bottom), var(--station-telegram-bottom, 0px));
+  background: transparent;
+  border: 0;
+  pointer-events: none;
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .station-nav {
+  --ice-fill: var(--ice-shell);
+  position: relative;
+  pointer-events: auto;
+  width: min(calc(100% - 16px), var(--station-width));
+  padding: 4px 5px 3px;
+  border: 1px solid var(--border);
+  border-radius: 21px;
+}
+
+.station-nav-glass {
+  display: none;
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .station-nav-glass {
+  display: block;
+  position: absolute;
+  inset: 4px 5px 3px;
+  pointer-events: none;
+}
+
+.station-nav-lens {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 20%;
+  transform: translateX(calc(var(--tab-lens-position, 0) * 100%));
+  transition: transform 420ms cubic-bezier(.28, .82, .23, 1.12);
+}
+
+.station-nav-lens > span {
+  display: block;
+  height: 100%;
+  margin-inline: 3px;
+  border-radius: 15px;
+  border: 1px solid var(--lens-stroke);
+  background:
+    radial-gradient(ellipse at 36% -12%, var(--lens-shine), transparent 73%),
+    linear-gradient(145deg, var(--lens-base), var(--lens-tail));
+  box-shadow: inset 0 1px 0 var(--ice-lip), inset 0 -1px 0 var(--ice-depth), 0 4px 11px -6px var(--ice-shadow);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .station-nav .tabbtn {
+  z-index: 1;
+  color: var(--text-muted);
+  font-size: clamp(10px, 2.8vw, 11.5px);
+  line-height: 1.2;
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .station-nav .tabbtn.active {
+  color: var(--lens-ink);
+  background: transparent;
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .station-nav .tabbtn.active > span:first-child {
+  background: transparent;
+  animation: none;
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .station-nav .tabbtn.active > span:last-child {
+  font-weight: 760;
+}
+
+.winter.motion-lite .station-nav-lens {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .station-nav-lens { transition: none; }
+}
+
+.winter :is(.station-header, .station-nav, .station-menu-list, .intro-art) .ui-icon {
+  filter: saturate(1.1) brightness(.88);
+}
+
+.winter.dark .ui-icon {
+  filter: brightness(1.8) saturate(.76);
+}
+
+.winter.dark :is(.station-header, .station-nav, .station-menu-list, .intro-art) .ui-icon {
+  filter: brightness(1.9) saturate(.78);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .chips-row .pill.active {
+  background: var(--primary-700);
+  color: var(--on-primary);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .modal-overlay {
+  background: var(--ice-scrim);
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .modal {
+  --ice-fill: var(--ice-dialog);
+}
+
+@supports ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .winter:not(.solid-surfaces, .winter-gate) :is(
+    .winter-hero, .winter-intro, .station-nav, .kovbox-shop-card
+  )::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    padding: 2px;
+    pointer-events: none;
+    border-radius: inherit;
+    background: var(--ice-prism);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+  }
+}
+
+@supports ((backdrop-filter: blur(8px)) or (-webkit-backdrop-filter: blur(8px))) {
+  .winter:not(.solid-surfaces, .winter-gate) :is(
+    .winter-hero, .winter-intro, .station-shortcut,
+    .card, .kovbox-shop-card, :where(.station-game-grid) .game-tile, .winter-clicker-wide
+  ):not(.modal *, .card *, .kovbox-shop-card *) {
+    -webkit-backdrop-filter: blur(10px) saturate(1.22);
+    backdrop-filter: blur(10px) saturate(1.22);
+  }
+
+  .winter:not(.solid-surfaces, .winter-gate) :is(.station-header, .station-nav) {
+    -webkit-backdrop-filter: blur(11px) saturate(1.55);
+    backdrop-filter: blur(11px) saturate(1.55);
+  }
+
+  .winter:not(.solid-surfaces, .winter-gate) .modal {
+    -webkit-backdrop-filter: blur(20px) saturate(1.35);
+    backdrop-filter: blur(20px) saturate(1.35);
+  }
+}
+
+/* Keep the browser's blur-only path for engines without SVG backdrops. */
+@supports (backdrop-filter: url("#ice-refraction")) {
+  .winter:not(.solid-surfaces, .winter-gate) .station-nav {
+    backdrop-filter: url("#ice-refraction") blur(12px) saturate(1.36);
+  }
+
+  .winter:not(.solid-surfaces, .winter-gate) .winter-hero:not(.modal *, .card *, .kovbox-shop-card *) {
+    backdrop-filter: url("#ice-refraction") blur(5px) saturate(1.4);
+  }
+
+  .winter:not(.solid-surfaces, .winter-gate) .modal {
+    backdrop-filter: url("#ice-refraction") blur(18px) saturate(1.35);
+  }
+}
