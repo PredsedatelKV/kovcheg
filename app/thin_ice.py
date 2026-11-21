@@ -12,6 +12,13 @@ SPAWNS = [(3, 3), (7, 7), (7, 3), (3, 7)]
 STORMS = (24, 43, 62, 81)
 ITEMS = ("bridge", "anchor", "charge")
 INPUT_TTL = .32
+JUMP_SPEED = 7.4
+GRAVITY = 20.0
+JUMP_BUFFER = .18
+EDGE_GRACE = .12
+JUMP_STEPS = math.ceil((2 * JUMP_SPEED / GRAVITY - DT) / DT)
+SKATER_SPEED = 5.35
+BOT_SPEED = 4.65
 
 
 def unit(x, z):
@@ -56,10 +63,13 @@ class Skater:
     alive: bool = True
     eliminated: float | None = None
     jump: float = 0
+    jump_buffer: float = -1
+    edge_left: float = -1
     dash: float = 0
     push: float = 0
     dash_until: float = 0
     grip: float = 0
+    knocked_until: float = 0
     intent: tuple = (0, 0)
     pressed: set = field(default_factory=set)
     actions: set = field(default_factory=set)
@@ -114,6 +124,7 @@ class IceMatch:
         p.bot = not connected and fill
         p.intent = (0, 0)
         p.actions.clear()
+        p.jump_buffer = p.edge_left = -1
         p.pressed.clear()
 
     def set_input(self, id, data):
@@ -134,13 +145,23 @@ class IceMatch:
         tile = self.floes[index]
         return not tile.gone and (not tile.breaks or tile.breaks > self.time + future)
 
+    def traction(self, p, grounded, moving, at):
+        if p.grip > at:
+            return .72
+        if p.knocked_until > at:
+            return .16
+        if not grounded:
+            return .27 if moving else .14
+        return .46 if moving else .55
+
     def bot_route(self, p, x, z, jump):
         px, pz, vx, vz = p.x, p.z, p.vx, p.vz
-        supported_at = 12 if jump else 1
-        for step in range(1, 15 if jump else 11):
-            traction = (.125 if jump and step < 12 else .22)
-            vx += (x * 4.65 - vx) * traction
-            vz += (z * 4.65 - vz) * traction
+        supported_at = JUMP_STEPS if jump else 1
+        horizon = JUMP_STEPS + 3 if jump else 10
+        for step in range(1, horizon + 1):
+            traction = self.traction(p, not jump or step > supported_at, True, self.time + step * DT)
+            vx += (x * BOT_SPEED - vx) * traction
+            vz += (z * BOT_SPEED - vz) * traction
             px += vx * DT
             pz += vz * DT
             if step >= supported_at and not self.safe(px, pz, step * DT + .05):
@@ -185,17 +206,21 @@ class IceMatch:
         x, z = p.intent
         if math.hypot(x, z) > .15:
             p.ax, p.az = unit(x * 100, z * 100)
-        if "jump" in p.actions and p.grounded and self.time >= p.jump:
-            p.grounded = False
-            p.vy = 5.7
-            p.y = .015
-            p.jump = self.time + .70
-            self.emit("jump", actor=p.id, x=p.x, z=p.z)
         if "dash" in p.actions and p.grounded and self.time >= p.dash:
             p.dash_until = self.time + .23
             p.dash = self.time + 3.4
             p.vx, p.vz = p.ax * 9, p.az * 9
             self.emit("dash", actor=p.id, x=p.x, z=p.z)
+        if "jump" in p.actions:
+            p.jump_buffer = self.time + JUMP_BUFFER
+        can_jump = p.grounded or 0 <= self.time - p.edge_left <= EDGE_GRACE
+        if can_jump and p.jump_buffer >= self.time >= p.jump:
+            p.grounded = False
+            p.edge_left = p.jump_buffer = -1
+            p.vy = JUMP_SPEED
+            p.y = .015
+            p.jump = self.time + .78
+            self.emit("jump", actor=p.id, x=p.x, z=p.z)
         if "fire" in p.actions and p.grounded and self.time >= p.push:
             p.push = self.time + 5.3
             self.emit("pulse", actor=p.id, x=p.x, z=p.z)
@@ -207,29 +232,31 @@ class IceMatch:
                 force = (10.5 - distance * 1.55) * (.25 if q.grip > self.time else 1)
                 q.vx += dx * force / distance
                 q.vz += dz * force / distance
+                if q.grip <= self.time:
+                    q.knocked_until = self.time + .19
                 p.shoves += 1
         p.actions.clear()
 
-    def wear(self, p, index):
+    def wear(self, p, index, landed=False):
         tile = self.floes[index]
         if tile.frozen > self.time or tile.breaks:
             return
         before = tile.wear
-        tile.wear += DT * (1.25 if p.dash_until > self.time else 1)
-        if before < .26 <= tile.wear:
+        tile.wear += .22 if landed else DT * (1.25 if p.dash_until > self.time else 1)
+        if before < .23 <= tile.wear:
             self.emit("fissure", tile=index)
-        if tile.wear >= .73:
-            tile.breaks = self.time + max(.52, 1.10 - .12 * self.storm)
+        if tile.wear >= .80:
+            tile.breaks = self.time + max(.68, 1.30 - .13 * self.storm)
             p.tiles += 1
             self.emit("crack", tile=index)
 
     def move(self, p):
         x, z = p.intent
-        speed = 4.65 if p.bot else 5.35
-        traction = 12 if p.grip > self.time else 4.4 if p.grounded else 2.5
+        speed = BOT_SPEED if p.bot else SKATER_SPEED
+        traction = self.traction(p, p.grounded, bool(x or z), self.time)
         if p.dash_until <= self.time:
-            p.vx += (x * speed - p.vx) * traction * DT
-            p.vz += (z * speed - p.vz) * traction * DT
+            p.vx += (x * speed - p.vx) * traction
+            p.vz += (z * speed - p.vz) * traction
         magnitude = math.hypot(p.vx, p.vz)
         if magnitude > 13:
             p.vx *= 13 / magnitude
@@ -240,19 +267,21 @@ class IceMatch:
         support = index is not None and self.supports(index)
         was_grounded = p.grounded
         if not p.grounded:
-            p.vy -= 19.2 * DT
+            p.vy -= GRAVITY * DT
             p.y += p.vy * DT
             if p.y <= 0 and p.vy < 0 and support and p.y >= -.3:
                 p.y = p.vy = 0
                 p.grounded = True
+                p.edge_left = -1
                 self.emit("land", actor=p.id, x=p.x, z=p.z)
             elif p.y < -.31:
                 self.eliminate(p)
         elif not support:
             p.grounded = False
-            p.vy = -1.8
+            p.vy = -.75
+            p.edge_left = self.time
         if p.alive and p.grounded and support:
-            self.wear(p, index)
+            self.wear(p, index, landed=not was_grounded)
             self.collect(p)
         elif was_grounded and not support:
             self.emit("slip", actor=p.id, x=p.x, z=p.z)
@@ -319,6 +348,9 @@ class IceMatch:
             return
         if self.phase == "countdown":
             self.phase = "playing"
+            for p in self.actors.values():
+                index = tile_at(p.x, p.z)
+                self.floes[index].frozen = self.time + 1.2
             self.emit("start")
         self.weather()
         for p in self.actors.values():
@@ -351,15 +383,17 @@ class IceMatch:
         for p in self.actors.values():
             actors.append(dict(id=p.id, name=p.name, bot=p.bot, connected=p.connected,
                                x=round(p.x, 3), y=round(p.y, 3), z=round(p.z, 3),
-                               vx=round(p.vx, 2), vz=round(p.vz, 2),
+                               vx=round(p.vx, 2), vy=round(p.vy, 2), vz=round(p.vz, 2),
                                ax=round(p.ax, 3), az=round(p.az, 3),
-                               alive=p.alive, out=p.eliminated, tiles=p.tiles, shoves=p.shoves,
+                               alive=p.alive, grounded=p.grounded, out=p.eliminated, tiles=p.tiles, shoves=p.shoves,
+                               dash_time=round(max(0,p.dash_until-self.time),2),
+                               knock_time=round(max(0,p.knocked_until-self.time),2),
                                items=p.items, grip=round(max(0, p.grip - self.time), 2),
                                jump=round(max(0, p.jump - self.time), 2),
                                dash=round(max(0, p.dash - self.time), 2),
                                push=round(max(0, p.push - self.time), 2)))
         tiles = "".join("0" if t.gone else "4" if t.storm else "3" if t.breaks else
-                        "5" if t.frozen > self.time and t.frozen else "2" if t.wear >= .26 else "1"
+                        "5" if t.frozen > self.time and t.frozen else "2" if t.wear >= .23 else "1"
                         for t in self.floes)
         return dict(seed=self.seed, tick=self.tick, time=round(self.time, 2), phase=self.phase,
                     countdown=round(max(0, -self.time), 2), storm=self.storm,

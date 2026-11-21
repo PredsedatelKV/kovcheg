@@ -36,12 +36,50 @@ class Physics(unittest.TestCase):
         a.z = 0
         a.vx = 5.35
         game.floes[tile_at(0,0)].gone = True
-        for i in range(12):
+        for i in range(15):
             game.set_input(a.id, {"mx":1, "jump":i < 2})
             game.advance()
         self.assertTrue(a.grounded and a.alive)
         self.assertGreater(a.x, TILE*.5)
         self.assertEqual(sum(e["kind"]=="jump" for e in game.events), 1)
+
+    def test_release_brakes_and_reverse_response(self):
+        game,a,b=self.game()
+        a.vx=5.35
+        initial=a.x
+        self.advance(game,4)
+        self.assertLess(a.x-initial,.26)
+        self.assertLess(a.vx,.25)
+        a.vx=5.35
+        for _ in range(2):
+            game.set_input(a.id,{"mx":-1})
+            game.advance()
+        self.assertLess(a.vx,-2)
+
+    def test_edge_jump_during_grace_period(self):
+        game,a,b=self.game()
+        game.floes[tile_at(a.x,a.z)].gone=True
+        game.advance()
+        self.assertFalse(a.grounded)
+        game.set_input(a.id,{"jump":True,"mx":1})
+        game.advance()
+        self.assertGreater(a.y,.3)
+        self.assertGreater(a.vy,0)
+        self.assertTrue(any(e["kind"]=="jump" for e in game.events))
+
+    def test_jump_buffer_and_landing_wear(self):
+        game,a,b=self.game()
+        a.y=.12
+        a.vy=-5
+        a.grounded=False
+        a.jump=game.time+.1
+        game.set_input(a.id,{"jump":True})
+        game.advance()
+        self.assertTrue(a.grounded)
+        self.assertGreaterEqual(game.floes[tile_at(a.x,a.z)].wear,.22)
+        game.advance()
+        self.assertFalse(a.grounded)
+        self.assertGreater(a.y,.3)
 
     def test_dash_cooldown_and_release(self):
         game,a,b=self.game()
