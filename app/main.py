@@ -21,6 +21,7 @@ from app.api import chat as chat_api
 from app.api import content as content_api
 from app.api import courier as courier_api
 from app.api import arena as arena_api
+from app.api import thin_ice as thin_ice_api
 from app.api import game as game_api
 from app.api import home as home_api
 from app.api import market as market_api
@@ -79,6 +80,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await arena_api.hub.shutdown()
+        await thin_ice_api.hub.shutdown()
 
 
 app = FastAPI(title="Ковчег Mini-App", lifespan=lifespan)
@@ -104,6 +106,8 @@ app.include_router(arcade_api.router)
 app.include_router(courier_api.router)
 app.include_router(arena_api.router)
 app.include_router(arena_api.socket_router)
+app.include_router(thin_ice_api.router)
+app.include_router(thin_ice_api.socket_router)
 app.include_router(battlepass_api.router)
 app.include_router(admin_api.router)
 app.include_router(game_api.router)

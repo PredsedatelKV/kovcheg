@@ -49,6 +49,9 @@ class Room:
     finished_at:float=0
 
 class ArenaHub:
+    modes=MODES
+    free_for_all=frozenset({"waves"})
+
     def __init__(self):
         self.rooms={};self.membership={};self.tickets={};self.task=None
         self.running=True;self.failures=0
@@ -71,9 +74,9 @@ class ArenaHub:
         if old is not None and old is not room:raise HTTPException(409,"Сначала выйдите из текущей комнаты")
         if uid in room.members:return room
         if room.game is not None:raise HTTPException(409,"Матч уже идёт. Дождитесь следующего")
-        if len(room.members)>=MODES[room.mode]["slots"]:raise HTTPException(409,"В комнате нет свободных мест")
+        if len(room.members)>=self.modes[room.mode]["slots"]:raise HTTPException(409,"В комнате нет свободных мест")
         team=0
-        if room.mode!="waves":
+        if room.mode not in self.free_for_all:
             counts=[sum(m.team==t for m in room.members.values()) for t in [0,1]]
             team=0 if counts[0]<=counts[1] else 1
         used={m.id for m in room.members.values()}
@@ -93,29 +96,38 @@ class ArenaHub:
             self.rooms.pop(room.code,None);return
         if room.owner==uid:room.owner=min(room.members.values(),key=lambda m:m.joined).uid
         if room.game and member:
-            p=room.game.actors.get(member.id)
-            if p:
-                p.bot=True;p.connected=False;p.name="Снежный бот"
-                if not room.bots:
-                    p.hp=0;p.respawn=99999
-                    if room.mode!="waves":
-                        active_teams={m.team for m in room.members.values()}
-                        if len(active_teams)==1:room.game.finish(next(iter(active_teams)),"Соперник покинул арену")
+            self.member_left(room,member)
         room.touched=time.monotonic();self.broadcast(room)
+    def member_left(self,room,member):
+        p=room.game.actors.get(member.id)
+        if p:
+            p.bot=True;p.connected=False;p.name="Снежный бот"
+            if not room.bots:
+                p.hp=0;p.respawn=99999
+                if room.mode not in self.free_for_all:
+                    active_teams={m.team for m in room.members.values()}
+                    if len(active_teams)==1:room.game.finish(next(iter(active_teams)),"Соперник покинул арену")
+    def set_connected(self,room,member,connected):
+        p=room.game.actors.get(member.id) if room.game else None
+        if p:
+            p.connected=connected
+            p.bot=not connected and room.bots
+            if not connected:
+                p.input={"mx":0,"mz":0,"ax":0,"az":-1,"fire":False}
     def start(self,uid):
         room=self.room_for(uid)
         if not room:raise HTTPException(404,"Комната не найдена")
         if room.owner!=uid:raise HTTPException(403,"Матч запускает создатель комнаты")
         if room.game is not None and room.game.phase!="finished":raise HTTPException(409,"Матч уже запущен")
-        slots=MODES[room.mode]["slots"]
-        if room.mode!="waves" and not room.bots:
+        slots=self.modes[room.mode]["slots"]
+        if room.mode not in self.free_for_all and not room.bots:
             per_team=slots//2
             if len(room.members)!=slots or any(sum(m.team==t for m in room.members.values())!=per_team for t in [0,1]):
                 raise HTTPException(409,"Дождитесь полного состава или включите ботов")
         players=[Actor(m.id,m.name,m.team,connected=m.connected) for m in room.members.values()]
         if room.bots:
             for i in range(slots-len(players)):
-                if room.mode=="waves":team=0
+                if room.mode in self.free_for_all:team=0
                 else:team=0 if sum(p.team==0 for p in players)<=sum(p.team==1 for p in players) else 1
                 players.append(Actor("b"+str(i),["Снежок","Иней","Вьюга","Полюс"][i],team,True))
         room.game=Battle(room.mode,players,secrets.randbits(32))
@@ -130,9 +142,9 @@ class ArenaHub:
     def team(self,uid):
         room=self.room_for(uid)
         if not room or room.game:raise HTTPException(409,"Команды меняются в комнате до матча")
-        if room.mode=="waves":return room
+        if room.mode in self.free_for_all:return room
         m=room.members[uid];other=1-m.team
-        if sum(p.team==other for p in room.members.values())>=MODES[room.mode]["slots"]//2:
+        if sum(p.team==other for p in room.members.values())>=self.modes[room.mode]["slots"]//2:
             raise HTTPException(409,"В этой команде нет свободного места")
         m.team=other;self.broadcast(room);return room
     def ticket(self,uid):
@@ -148,16 +160,18 @@ class ArenaHub:
         uid,code,_=ticket;room=self.rooms.get(code)
         if not room or uid not in room.members:return None
         return room,room.members[uid]
-    def data(self,room,uid):
+    def data(self,room,uid,game_state=None):
         members=[dict(id=m.id,name=m.name,team=m.team,connected=m.connected,owner=m.uid==room.owner) for m in room.members.values()]
         member=room.members.get(uid)
-        return dict(type="state",room=room.code,mode=room.mode,bots=room.bots,slots=MODES[room.mode]["slots"],
+        return dict(type="state",room=room.code,mode=room.mode,bots=room.bots,slots=self.modes[room.mode]["slots"],
                     me=member.id if member else None,ack=member.seq if member else -1,owner=room.owner==uid,members=members,
-                    game=room.game.data() if room.game else None)
+                    game=(game_state if game_state is not None else room.game.data()) if room.game else None)
     def broadcast(self,room):
+        if not any(m.connected for m in room.members.values()):return
+        game_state=room.game.data() if room.game else None
         for m in room.members.values():
             if not m.connected:continue
-            payload=self.data(room,m.uid)
+            payload=self.data(room,m.uid,game_state)
             if m.queue.full():
                 try:m.queue.get_nowait()
                 except asyncio.QueueEmpty:pass
@@ -261,6 +275,9 @@ async def send_states(ws,queue):
 
 @socket_router.websocket("/ws/arena")
 async def arena_socket(ws:WebSocket):
+    await room_socket(ws,hub)
+
+async def room_socket(ws:WebSocket,hub:ArenaHub):
     origin=ws.headers.get("origin")
     if origin and urlsplit(origin).netloc!=ws.headers.get("host"):
         await ws.close(1008);return
@@ -276,19 +293,19 @@ async def arena_socket(ws:WebSocket):
         if not auth:await ws.close(1008);return
         room,member=auth
         old_ws=member.ws
+        member.ws=ws;member.connected=True;member.disconnected=0;member.seq=-1
+        member.queue=asyncio.Queue(maxsize=1)
+        hub.set_connected(room,member,True)
         if old_ws is not None and old_ws is not ws:
             try:await old_ws.close(4001,"Подключено другое окно")
             except Exception:pass
-        member.ws=ws;member.connected=True;member.disconnected=0;member.seq=-1
-        member.queue=asyncio.Queue(maxsize=1)
-        if room.game and member.id in room.game.actors:
-            room.game.actors[member.id].connected=True
-            room.game.actors[member.id].bot=False
+        if member.ws is not ws:return
         hub.ensure_running();hub.broadcast(room)
         sender=asyncio.create_task(send_states(ws,member.queue))
         samples=deque()
         while True:
             message=await asyncio.wait_for(ws.receive_text(),timeout=20)
+            if member.ws is not ws:return
             now=time.monotonic();samples.append(now)
             while samples and samples[0]<now-1:samples.popleft()
             if len(samples)>65:await ws.close(1008,"Слишком много сообщений");return
@@ -322,8 +339,5 @@ async def arena_socket(ws:WebSocket):
             except (asyncio.CancelledError,Exception):pass
         if member and member.ws is ws:
             member.ws=None;member.connected=False;member.disconnected=time.monotonic()
-            if room.game and member.id in room.game.actors:
-                room.game.actors[member.id].connected=False
-                room.game.actors[member.id].bot=room.bots
-                room.game.actors[member.id].input={"mx":0,"mz":0,"ax":0,"az":-1,"fire":False}
+            hub.set_connected(room,member,False)
             hub.broadcast(room)

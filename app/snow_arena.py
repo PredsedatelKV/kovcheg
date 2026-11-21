@@ -168,7 +168,7 @@ class Battle:
         for i,p in enumerate(players):self.spawn(p,i)
         self.emit("start",mode=mode)
     def emit(self,kind,**data):
-        self.event_id+=1;self.events.append(dict(id=self.event_id,kind=kind,**data))
+        self.event_id+=1;self.events.append(dict(id=self.event_id,kind=kind,tick=self.tick,**data))
         self.events=self.events[-22:]
     def spawn(self,p,index=0):
         if self.mode=="waves":
@@ -293,10 +293,12 @@ class Battle:
             self.balls.append(dict(id=self.serial,owner=p.id,team=p.team,x=p.x+dx*.4,z=p.z+dz*.4,
                                    y=2.15 if p.boss else 1.35,vy=math.sin(p.pitch)*w["speed"],vx=dx*w["speed"],vz=dz*w["speed"],life=1.8,damage=round(w["damage"]*.75) if p.bot and not p.enemy else w["damage"],
                                    big=p.weapon in ["cannon","boss"],blast=p.weapon=="cannon"))
-        self.emit("shot",actor=p.id,weapon=p.weapon)
+        self.emit("shot",actor=p.id,weapon=p.weapon,x=round(p.x,2),z=round(p.z,2))
         if p.ammo>0:
             p.ammo-=1
-            if p.ammo==0:p.weapon="pistol";p.ammo=-1
+            if p.ammo==0:
+                p.weapon="pistol";p.ammo=-1
+                self.emit("empty",actor=p.id)
     def hit(self,p,damage,owner):
         if p.shield>0 or p.spawn_protection>0:
             self.emit("block",actor=p.id,x=round(p.x,2),z=round(p.z,2));return
@@ -309,7 +311,7 @@ class Battle:
             if attacker:
                 attacker.kills+=1
                 if self.mode!="waves" and attacker.team in [0,1]:self.score[attacker.team]+=1
-            self.emit("down",actor=p.id,owner=owner,name=p.name,by=attacker.name if attacker else "Снеговик")
+            self.emit("down",actor=p.id,owner=owner,name=p.name,by=attacker.name if attacker else "Снеговик",npc=p.bot or p.enemy,x=round(p.x,2),z=round(p.z,2))
             if p.enemy:
                 p.respawn=0
                 if self.rng.random()<.22:self.drop("heal",p.x,p.z)
@@ -358,7 +360,7 @@ class Battle:
         if self.phase=="countdown":
             self.countdown=max(0,self.countdown-DT)
             if self.countdown<1e-5:
-                self.phase="playing"
+                self.phase="playing";self.emit("go")
                 if self.mode=="waves":self.start_wave()
             return
         self.time+=DT;self.remaining=max(0,MODES[self.mode]["seconds"]-self.time)
@@ -374,9 +376,13 @@ class Battle:
                 p.respawn=max(0,p.respawn-DT)
                 if p.respawn<1e-5:
                     self.spawn(p,sum(map(ord,p.id)));previous_positions[p.id]=(p.x,p.z)
+                    self.emit("respawn",actor=p.id,x=p.x,z=p.z)
                 continue
+            had_shield=p.shield>0
             p.shield=max(0,p.shield-DT);p.spawn_protection=max(0,p.spawn_protection-DT);p.cooldown=max(0,p.cooldown-DT)
-            if p.shield<1e-6:p.shield=0
+            if p.shield<1e-6:
+                p.shield=0
+                if had_shield:self.emit("shield_off",actor=p.id,x=p.x,z=p.z)
             if p.spawn_protection<1e-6:p.spawn_protection=0
             control=self.ai(p) if p.bot else p.input
             if not p.bot and p.connected and self.time-p.last_input>.4:
