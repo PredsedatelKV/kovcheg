@@ -96,6 +96,7 @@ export class SnowArena{
  setPhase(phase){
   if(this.phase===phase)return;
   this.phase=phase;this.root.dataset.phase=phase;
+  if(["menu","lobby","finished","error"].includes(phase)){clearTimeout(this.toastTimer);this.toastEl.classList.remove("is-visible");}
   const active=["playing","countdown"].includes(phase);
   this.hud.hidden=!active;this.controls.hidden=!active;
   this.root.querySelector(".arena-crosshair").hidden=!active;
