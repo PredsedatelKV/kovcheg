@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru" class="winter">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fafafb">
+  <title>Ковчег</title>
+  <script src="https://telegram.org/js/telegram-web-app.js?56"></script>
+  <link rel="stylesheet" href="/static/style.css?v=288">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r19/winter.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r19/pig-overhang-v2.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r19/appearance.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r19/frozen-glass.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r19/station-layout.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r19/final-polish.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r19/holiday.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r19/custom-winter.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r19/courier.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r19/snow-arena.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r19/thin-ice.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r19/polar-express.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r19/mobile-window.css">
+</head>
+<body>
+  <svg class="ice-optics" width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <filter id="ice-refraction" x="-10%" y="-25%" width="120%" height="150%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency=".022 .043" numOctaves="1" seed="17" result="ice-ripples"/>
+        <feDisplacementMap in="SourceGraphic" in2="ice-ripples" scale="16" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
+  <div id="app">
+    <div id="winter-flakes" aria-hidden="true"></div>
+    <header class="station-header" id="station-header" hidden>
+      <div class="station-garland" aria-hidden="true"><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i></div>
+      <div class="station-header-inner">
+        <div class="station-currencies">
+          <button type="button" class="station-balance" data-shell="profile" aria-label="Ковбаксы" data-balance><span data-icon="coin"></span><strong>—</strong></button>
+          <button type="button" class="station-balance" data-shell="profile" aria-label="Снежинки" data-snowflakes><span data-icon="snowflake"></span><strong>—</strong></button>
+          <button type="button" class="station-balance" data-shell="battlepass" aria-label="Уровень боевого пропуска" data-pass-level><span data-icon="xp"></span><strong>0</strong></button>
+        </div>
+        <div class="station-tools">
+          <button type="button" class="station-tool" data-shell="chat" aria-label="Чат" data-icon="chat"></button>
+          <button type="button" class="station-tool" data-shell="menu" aria-label="Меню" data-icon="menu"></button>
+        </div>
+      </div>
+    </header>
+    <main id="view" class="view" aria-label="Ковчег"><div class="entry-loading" role="status"><span class="entry-loader"></span>Загружаем Ковчег</div></main>
+    <nav id="tabbar" class="tabbar" aria-label="Основная навигация" hidden>
+      <div class="station-nav">
+        <div class="station-nav-glass" aria-hidden="true">
+          <span class="station-nav-lens" hidden><span></span></span>
+        </div>
+        <button type="button" class="tabbtn" data-tab="koverna"><span data-icon="koverna"></span><span>Коверна</span></button>
+        <button type="button" class="tabbtn" data-tab="profile"><span data-icon="profile"></span><span>Профиль</span></button>
+        <button type="button" class="tabbtn" data-tab="home"><span data-icon="home"></span><span>Главная</span></button>
+        <button type="button" class="tabbtn" data-tab="arcade"><span data-icon="arcade"></span><span>Аркада</span></button>
+        <button type="button" class="tabbtn" data-tab="battlepass"><span data-icon="battlepass"></span><span>Пропуск</span></button>
+      </div>
+    </nav>
+  </div>
+  <div id="modal-root"></div>
+  <script type="module" src="/static/releases/winter-2026-r19/version-entry-pig2.js"></script>
+</body>
+</html>
