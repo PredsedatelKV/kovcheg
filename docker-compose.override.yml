@@ -1,6 +1,6 @@
 services:
   kovcheg:
-    image: "kovcheg-winter:${KOVCHEG_WINTER_IMAGE:-courier-rally}"
+    image: "kovcheg-winter:${KOVCHEG_WINTER_IMAGE:-snow-arena}"
     environment:
       HF_HUB_OFFLINE: "1"
     volumes:
