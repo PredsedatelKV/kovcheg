@@ -32,7 +32,7 @@ class PhysicsTests(unittest.TestCase):
         b,p,q=self.game();p.x=-1;p.z=0;q.x=1;q.z=0
         for _ in range(9):
             b.set_input("p0",dict(mx=0,mz=0,ax=1,az=0,pitch=0,fire=True));b.advance()
-        self.assertEqual(q.hp,76)
+        self.assertEqual(q.hp,72)
         q.team=0;q.hp=100;p.cooldown=0
         for _ in range(9):
             b.set_input("p0",dict(ax=1,az=0,fire=True));b.advance()
@@ -64,6 +64,15 @@ class PhysicsTests(unittest.TestCase):
         p.ammo=1;p.cooldown=0;b.set_input("p0",dict(ax=1,az=0,fire=True));b.advance()
         self.assertEqual((p.weapon,p.ammo),("pistol",-1))
         self.assertEqual(b.balls[-1]["damage"],17)
+    def test_downward_projectile_impacts_snow_ground(self):
+        b,p,q=self.game();p.x=p.z=0;p.cooldown=0
+        for _ in range(4):
+            b.set_input("p0",dict(ax=1,az=0,pitch=-1.3,fire=True));b.advance()
+        self.assertFalse(b.balls)
+        impacts=[e for e in b.events if e["kind"]=="impact"]
+        self.assertTrue(impacts)
+        self.assertAlmostEqual(impacts[0]["y"],.10,places=2)
+
     def test_cannon_splash_and_shielded_targets(self):
         b,p,q=self.game();p.x=-2;p.z=0;q.x=0;q.z=0
         third=Actor("p2","Near target",1,x=.7,z=.6);third.spawn_protection=0
@@ -91,6 +100,63 @@ class PhysicsTests(unittest.TestCase):
         before=(p.hp,p.x)
         b.set_input(p.id,dict(hp=99999,x=999,kills=99))
         self.assertEqual((p.hp,p.x),before);self.assertEqual(p.kills,0)
+    def test_auto_pickups_for_every_kind_on_pad_edge(self):
+        for kind in ["heal","shield","rapid","spread","cannon"]:
+            with self.subTest(kind=kind):
+                b,p,q=self.game();p.x=-.90;p.z=0;p.hp=60
+                b.drop(kind,0,0);b.advance()
+                self.assertFalse(b.pickups)
+                event=next(e for e in b.events if e["kind"]=="pickup")
+                self.assertEqual((event["actor"],event["item"]),("p0",kind))
+                self.assertEqual((event["x"],event["z"]),(0,0))
+                if kind=="heal":self.assertEqual(p.hp,88)
+                elif kind=="shield":self.assertEqual(p.shield,3)
+                else:self.assertEqual(p.weapon,kind)
+
+    def test_full_health_medkit_is_still_collected(self):
+        b,p,q=self.game();p.x=p.z=0
+        b.drop("heal",0,0);b.advance()
+        self.assertEqual(p.hp,100);self.assertFalse(b.pickups)
+        self.assertEqual([e for e in b.events if e["kind"]=="pickup"][-1]["healed"],0)
+
+    def test_pickup_is_single_claim_and_does_not_pass_through_cover(self):
+        b,p,q=self.game();p.x=p.z=0;q.x=.1;q.z=0
+        b.drop("rapid",0,0);b.advance()
+        self.assertEqual(sum(a.weapon=="rapid" for a in [p,q]),1)
+        self.assertEqual(len([e for e in b.events if e["kind"]=="pickup"]),1)
+        # Short distance alone is insufficient when a low snow wall separates the item.
+        p.x=0;p.z=8.2+.525+.34+.01
+        b.drop("heal",0,8.2);b.advance()
+        self.assertEqual(len(b.pickups),1)
+
+    def test_respawn_does_not_sweep_items_across_map(self):
+        b,p,q=self.game();p.x=10;p.z=9;p.hp=0;p.respawn=.01;p.pitch=-1.4
+        b.drop("rapid",0,0);b.advance()
+        self.assertEqual(p.hp,100);self.assertEqual(p.weapon,"pistol");self.assertEqual(p.pitch,0)
+        self.assertEqual(len(b.pickups),1)
+
+    def test_bot_reacts_before_firing_and_moves_slower_than_player(self):
+        b,p,q=self.game();p.x=p.z=0;q.x=0;q.z=-7;q.ax=0;q.az=1;q.bot=True
+        for _ in range(12):b.advance()
+        self.assertFalse(any(e["kind"]=="shot" and e["actor"]==q.id for e in b.events))
+        old=(q.x,q.z);b.move(q,1,0)
+        self.assertLessEqual(math.hypot(q.x-old[0],q.z-old[1])/DT,3.26)
+
+    def test_bot_damage_and_player_ttk_are_fairer(self):
+        b,p,q=self.game();q.bot=True;q.ax=1;q.az=0;q.cooldown=0
+        b.fire(q)
+        self.assertLess(b.balls[-1]["damage"],WEAPONS["pistol"]["damage"])
+        p.hp=100;p.spawn_protection=0
+        for _ in range(4):b.hit(p,WEAPONS["pistol"]["damage"],q.id)
+        self.assertEqual(p.hp,0)
+
+    def test_enemies_do_not_spawn_on_top_of_players(self):
+        b,p,q=self.game("waves");p.x=-11;p.z=-10;q.x=11;q.z=7
+        b.wave=1;b.to_spawn=5
+        for _ in range(6):b.spawn_enemy()
+        for enemy in [a for a in b.actors.values() if a.enemy]:
+            self.assertTrue(all(math.hypot(enemy.x-a.x,enemy.z-a.z)>=5 for a in [p,q]))
+
     def test_bots_complete_match_with_bounded_cost(self):
         players=[Actor("b"+str(i),"Bot",i%2,True) for i in range(4)]
         game=Battle("teams",players,411);start=time.perf_counter()
