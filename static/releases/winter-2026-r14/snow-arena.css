@@ -139,3 +139,6 @@
 
 .arena-intro{width:min(calc(100% - 32px),420px);left:50%;transform:translateX(-50%)}
 @media(min-width:760px){.arena-intro{width:390px;left:auto;right:40px;transform:none}}
+.arena-match{width:max-content;max-width:calc(100% - 24px)}
+.arena-score,.arena-score>strong,.arena-score>span{white-space:nowrap}
+.arena-look-hint{font-size:9px;padding:4px 7px;border-radius:8px;background:#eff8ffc9;color:#345e80;text-shadow:none}

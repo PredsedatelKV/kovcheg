@@ -302,7 +302,7 @@ export class ArenaScene{
   const rapid=me?.weapon==="rapid",spread=me?.weapon==="spread",cannon=me?.weapon==="cannon";
   const bob=this.reduceMotion?0:Math.sin(this.time*10)*.012*moving;
   const recoil=this.recoil*(cannon?1.0:.6);
-  const x=.27+Math.sin(this.time*1.5)*.006,y=-.27+bob,z=-.56+recoil;
+  const x=.27+Math.sin(this.time*1.5)*.006,y=-.34+bob,z=-.72+recoil;
   b.box(x,y-.12,z+.12,.18,.23,.28,"#5798c6",-.12);
   b.box(x,y-.04,z+.05,.15,.14,.20,"#def2ff");
   b.box(x,y,z-.14,.16,cannon?.23:.16,cannon?.48:rapid?.52:.36,cannon?"#a5d6ed":"#91c9ec");
