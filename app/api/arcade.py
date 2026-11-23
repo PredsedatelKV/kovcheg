@@ -12,7 +12,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import casino_slots, models, schemas
-from app.access import can_use_clicker
+from app.access import FAILURE_FRAGMENTS_ENABLED, can_use_clicker
 from app.api import _casino_wallet as casino_wallet
 from app.api._helpers import ensure_wallet, require_open_section
 from app.auth import current_user
@@ -402,7 +402,7 @@ def _require_casino_access(db: Session, user: models.User, account: models.Casin
 
 def _grant_failure_fragment(db: Session, user: models.User, bet: int, payout: int) -> tuple[int, int]:
     """Grant one fragment for a meaningful loss, inside the round transaction."""
-    if bet < FAILURE_FRAGMENT_MIN_BET or payout * 2 > bet:
+    if not FAILURE_FRAGMENTS_ENABLED or bet < FAILURE_FRAGMENT_MIN_BET or payout * 2 > bet:
         return 0, 0
     fragment = db.query(models.Item).filter(models.Item.code == "failure_fragment").one_or_none()
     if fragment is None:

@@ -391,7 +391,7 @@ def test_vault_persists_offer_and_settles_once(game_api, monkeypatch, decision, 
     assert client.get(active, headers=_headers()).json() == {"round":None}
 
 
-def test_roulette_is_atomic_idempotent_and_awards_failure_fragment(game_api, monkeypatch):
+def test_roulette_is_atomic_idempotent_with_fragments_paused(game_api, monkeypatch):
     client, sessions = game_api
     monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 17)
     payload = {"amount": 100, "request_id": "roulette_low_0001", "ledger": 1}
@@ -399,18 +399,22 @@ def test_roulette_is_atomic_idempotent_and_awards_failure_fragment(game_api, mon
     assert first.status_code == 200, first.text
     assert first.json()["payout"] == 10
     assert first.json()["wallet"]["cash"] == 10
-    assert first.json()["failure_fragment_awarded"] == 1
+    assert first.json()["failure_fragment_awarded"] == 0
     replay = client.post("/api/arcade/roulette/spin", json=payload, headers=_headers())
     assert replay.status_code == 200
     assert replay.json()["replayed"] is True
     assert _balance(sessions) == 100
     with sessions() as db:
         fragment = db.query(models.Item).filter_by(code="failure_fragment").one()
-        assert db.query(models.InventoryItem).filter_by(user_id=1, item_id=fragment.id).one().quantity == 1
+        assert db.query(models.InventoryItem).filter_by(user_id=1, item_id=fragment.id).one_or_none() is None
 
 
-def test_slots_loss_awards_failure_fragment(game_api, monkeypatch):
+def test_slots_loss_preserves_existing_fragments(game_api, monkeypatch):
     client, sessions = game_api
+    with sessions() as db:
+        fragment = db.query(models.Item).filter_by(code="failure_fragment").one()
+        db.add(models.InventoryItem(user_id=1, item_id=fragment.id, quantity=10))
+        db.commit()
     monkeypatch.setattr(casino_slots, "spin", lambda rng: {
         "grid": [["C","L","G"],["D","S","L"],["L","G","D"],["C","L","G"],["G","C","L"]],
         "wins": [], "multiplier": 1, "payout_percent": 0, "jackpot": False,
@@ -422,11 +426,12 @@ def test_slots_loss_awards_failure_fragment(game_api, monkeypatch):
     )
     assert settled.status_code == 200, settled.text
     assert settled.json()["payout"] == 0
-    assert settled.json()["failure_fragment_awarded"] == 1
-    assert settled.json()["failure_fragment_count"] == 1
+    assert settled.json()["failure_fragment_awarded"] == 0
+    assert settled.json()["failure_fragment_count"] == 0
+    assert client.post("/api/profile/inventory/assemble-failure-fragments", headers=_headers()).status_code == 404
     with sessions() as db:
         fragment = db.query(models.Item).filter_by(code="failure_fragment").one()
-        assert db.query(models.InventoryItem).filter_by(user_id=1, item_id=fragment.id).one().quantity == 1
+        assert db.query(models.InventoryItem).filter_by(user_id=1, item_id=fragment.id).one().quantity == 10
 
 
 def test_roulette_enforces_fixed_bet(game_api):

@@ -1,5 +1,7 @@
 # Stable Telegram identifiers. Display names and usernames are intentionally
 # not used: both can be changed or duplicated.
+FAILURE_FRAGMENTS_ENABLED = False
+
 CLICKER_BLOCKED_TELEGRAM_IDS = frozenset()
 LIMITED_STOCK_LOOTBOX_TELEGRAM_IDS = frozenset({
     7_735_808_918,  # Ибрагим

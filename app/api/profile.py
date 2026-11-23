@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.access import can_use_clicker, maintenance_sections, uses_limited_lootbox_stock
+from app.access import FAILURE_FRAGMENTS_ENABLED, can_use_clicker, maintenance_sections, uses_limited_lootbox_stock
 from app.api._helpers import award_xp, ensure_wallet
 from app.winter_economy import SNOWFLAKE_CODE, snowflake_balance
 from app.auth import current_user, is_admin
@@ -271,7 +271,10 @@ def me(user: models.User = Depends(current_user), db: Session = Depends(get_db))
     owned_items = (
         db.query(models.InventoryItem).filter(models.InventoryItem.user_id == user.id, models.InventoryItem.quantity > 0).all()
     )
-    inventory = [row for row in owned_items if not row.item.skin_slot]
+    inventory = [
+        row for row in owned_items
+        if not row.item.skin_slot and (FAILURE_FRAGMENTS_ENABLED or row.item.code != "failure_fragment")
+    ]
     skin_inventory = [row for row in owned_items if row.item.skin_slot]
     user_tasks = (
         db.query(models.UserTask).filter(models.UserTask.user_id == user.id, models.UserTask.status == "in_progress").all()
@@ -1503,6 +1506,8 @@ def assemble_failure_fragments(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    if not FAILURE_FRAGMENTS_ENABLED:
+        raise HTTPException(404, "Сборка временно недоступна")
     begin_game_write(db)
     fragment = db.query(models.Item).filter(models.Item.code == "failure_fragment").one_or_none()
     box = db.query(models.Item).filter(models.Item.code == "lootbox_consolation").one_or_none()
