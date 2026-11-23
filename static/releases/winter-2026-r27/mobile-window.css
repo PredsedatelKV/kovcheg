@@ -1,0 +1,176 @@
+/* Let backgrounds fill the Telegram window. Keep interactive UI inside both
+   the physical screen insets and Telegram's separate overlay controls. */
+:root {
+  --kov-default-height: 100vh;
+  --kov-height: min(var(--kov-default-height), var(--kov-host-height, var(--kov-default-height)));
+  --kov-safe-top: calc(max(env(safe-area-inset-top, 0px), var(--kov-system-top, 0px)) + var(--kov-content-top, 0px));
+  --kov-safe-right: calc(max(env(safe-area-inset-right, 0px), var(--kov-system-right, 0px)) + var(--kov-content-right, 0px));
+  --kov-safe-bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--kov-system-bottom, 0px)) + var(--kov-content-bottom, 0px));
+  --kov-safe-left: calc(max(env(safe-area-inset-left, 0px), var(--kov-system-left, 0px)) + var(--kov-content-left, 0px));
+}
+@supports (height: 100dvh) {
+  :root { --kov-default-height: 100dvh; }
+}
+
+.winter #app { height: var(--kov-height); }
+.winter .station-header { padding-top: var(--kov-safe-top); }
+.winter .station-header-inner {
+  padding-left: max(clamp(10px, 3vw, 20px), var(--kov-safe-left));
+  padding-right: max(clamp(10px, 3vw, 20px), var(--kov-safe-right));
+}
+.winter .station-garland { top: var(--kov-safe-top); }
+.winter #station-header:not([hidden]) + #view {
+  padding-top: calc(12px + var(--toolbar-fit) + var(--kov-safe-top));
+  scroll-padding-top: calc(var(--toolbar-fit) + var(--kov-safe-top));
+}
+.winter:not(.winter-gate) #view {
+  padding-left: max(clamp(12px, 3.7vw, 20px), var(--kov-safe-left));
+  padding-right: max(clamp(12px, 3.7vw, 20px), var(--kov-safe-right));
+}
+.winter .tabbar {
+  padding-left: var(--kov-safe-left);
+  padding-right: var(--kov-safe-right);
+  padding-bottom: max(5px, var(--kov-safe-bottom));
+}
+.winter:not(.solid-surfaces, .winter-gate) .tabbar {
+  padding-left: var(--kov-safe-left);
+  padding-right: var(--kov-safe-right);
+  padding-bottom: max(7px, var(--kov-safe-bottom));
+}
+.winter:not(.solid-surfaces, .winter-gate) .view {
+  --dock-clearance: calc(82px + var(--kov-safe-bottom));
+}
+.winter .toast { bottom: calc(77px + var(--kov-safe-bottom)); }
+
+.winter .modal-overlay {
+  top: var(--kov-window-top, 0px);
+  bottom: auto;
+  height: var(--kov-height);
+}
+.winter .modal-overlay:not(.snow-arena-overlay, .ice-overlay, .train-overlay, .courier-modal-overlay) {
+  padding-left: var(--kov-safe-left);
+  padding-right: var(--kov-safe-right);
+}
+.winter .modal-overlay:not(.snow-arena-overlay, .ice-overlay, .train-overlay, .courier-modal-overlay) > .modal {
+  max-height: max(80px, calc(var(--kov-height) - var(--kov-safe-top) - 10px));
+  padding-bottom: max(20px, calc(12px + var(--kov-safe-bottom)));
+}
+.winter .station-sheet .station-chat-dialog {
+  height: min(calc(var(--kov-height) * .78), calc(120px + var(--station-menu-rows, 4) * 79px));
+}
+.winter[data-kov-keyboard] .station-sheet .station-chat-dialog {
+  height: max(120px, calc(var(--kov-height) - var(--kov-safe-top) - 10px));
+  padding-bottom: 10px;
+}
+.winter .login-gift-overlay {
+  height: var(--kov-height);
+  bottom: auto;
+  padding-top: max(20px, var(--kov-safe-top));
+  padding-bottom: max(20px, var(--kov-safe-bottom));
+  padding-left: max(20px, var(--kov-safe-left));
+  padding-right: max(20px, var(--kov-safe-right));
+}
+.winter .winter-cover-owner {
+  right: max(10px, var(--kov-safe-right));
+  bottom: max(10px, var(--kov-safe-bottom));
+}
+.winter[data-kov-telegram] :is(textarea, [contenteditable="true"], input:not([type]), input:is(
+  [type="text"], [type="search"], [type="email"], [type="tel"], [type="number"], [type="url"], [type="password"]
+)) {
+  font-size: max(16px, 1em);
+}
+
+.winter .modal:is(.snow-arena-modal, .ice-modal, .train-modal, .courier-modal) {
+  height: var(--kov-height);
+}
+:is(.arena-top, .courier-top) {
+  left: max(12px, var(--kov-safe-left));
+  right: max(12px, var(--kov-safe-right));
+}
+:is(.ice-layer, .train-layer) {
+  padding-top: calc(65px + var(--kov-safe-top));
+  padding-left: max(12px, var(--kov-safe-left));
+  padding-right: max(12px, var(--kov-safe-right));
+}
+.arena-layer {
+  padding-top: calc(75px + var(--kov-safe-top));
+  padding-inline: max(18px, var(--kov-safe-left)) max(18px, var(--kov-safe-right));
+  padding-bottom: calc(20px + var(--kov-safe-bottom));
+}
+.arena-panel { max-height: calc(var(--kov-height) - 100px - var(--kov-safe-top) - var(--kov-safe-bottom)); }
+.arena-radar { left: max(16px, var(--kov-safe-left)); }
+.arena-vitals { left: max(18px, var(--kov-safe-left)); }
+.arena-weapon { right: max(18px, var(--kov-safe-right)); }
+.arena-joystick { left: max(27px, var(--kov-safe-left)); }
+.arena-trigger { right: max(31px, var(--kov-safe-right)); }
+.arena-feed { right: max(16px, var(--kov-safe-right)); }
+.arena-look-hint { right: max(20px, var(--kov-safe-right)); }
+
+.courier-layer {
+  padding-top: calc(70px + var(--kov-safe-top));
+  padding-inline: max(18px, var(--kov-safe-left)) max(18px, var(--kov-safe-right));
+  padding-bottom: calc(24px + var(--kov-safe-bottom));
+}
+.courier-panel { max-height: calc(var(--kov-height) - 96px - var(--kov-safe-top) - var(--kov-safe-bottom)); }
+.courier-rotate {
+  padding: max(20px, var(--kov-safe-top)) max(20px, var(--kov-safe-right)) max(18px, var(--kov-safe-bottom)) max(20px, var(--kov-safe-left));
+}
+.courier-intro-sled { top: max(calc(76px + var(--kov-safe-top)), 12%); }
+
+@media (max-width: 374px) {
+  .winter .station-header-inner { gap: 4px; }
+  .winter .station-header .station-tools { gap: 1px; }
+  .winter .station-currencies { min-width: 0; gap: 6px; }
+  .winter .station-currencies .station-balance { min-width: 0; padding: 0 1px; gap: 3px; }
+  .winter .station-currencies .station-balance strong { overflow: hidden; text-overflow: ellipsis; }
+}
+
+@media (orientation: landscape) and (max-height: 510px) {
+  :is(.ice-top, .train-top) { top: calc(6px + var(--kov-safe-top)); }
+  :is(.ice-hud, .train-hud) { top: calc(8px + var(--kov-safe-top)); }
+  :is(.ice-layer, .train-layer) { padding-top: calc(53px + var(--kov-safe-top)); padding-bottom: calc(6px + var(--kov-safe-bottom)); }
+  .ice-map { top: calc(53px + var(--kov-safe-top)); }
+  :is(.ice-notice, .train-notice) { bottom: calc(10px + var(--kov-safe-bottom)); }
+}
+@media (orientation: landscape) and (max-height: 480px) {
+  .arena-top { top: calc(8px + var(--kov-safe-top)); }
+  .arena-match { top: calc(10px + var(--kov-safe-top)); }
+  .arena-radar { top: calc(57px + var(--kov-safe-top)); left: max(12px, var(--kov-safe-left)); }
+  .arena-layer { padding-top: calc(45px + var(--kov-safe-top)); padding-bottom: calc(10px + var(--kov-safe-bottom)); }
+  .arena-panel { max-height: calc(var(--kov-height) - 56px - var(--kov-safe-top) - var(--kov-safe-bottom)); }
+  .arena-joystick { left: calc(17px + var(--kov-safe-left)); }
+  .arena-trigger { right: calc(20px + var(--kov-safe-right)); }
+  .arena-vitals { left: calc(122px + var(--kov-safe-left)); }
+  .arena-weapon { right: calc(120px + var(--kov-safe-right)); }
+  :is(.arena-joystick, .arena-trigger) { bottom: calc(24px + var(--kov-safe-bottom)); }
+  :is(.arena-vitals, .arena-weapon) { bottom: calc(22px + var(--kov-safe-bottom)); }
+  .arena-toast { top: calc(72px + var(--kov-safe-top)); }
+  .arena-feed { top: calc(110px + var(--kov-safe-top)); }
+  .arena-look-hint { bottom: calc(5px + var(--kov-safe-bottom)); }
+}
+
+/* Blur remains in the shell, but SVG displacement over moving snow is
+   disproportionately expensive in mobile WebViews. */
+.winter[data-kov-telegram]:not(.solid-surfaces, .winter-gate) :is(.station-nav, .winter-hero, .modal) {
+  -webkit-backdrop-filter: blur(9px) saturate(1.15);
+  backdrop-filter: blur(9px) saturate(1.15);
+}
+.winter[data-kov-telegram]:not(.solid-surfaces, .winter-gate) .winter-hero:not(.modal *, .card *, .kovbox-shop-card *) {
+  -webkit-backdrop-filter: blur(7px) saturate(1.15);
+  backdrop-filter: blur(7px) saturate(1.15);
+}
+.winter[data-kov-telegram] #station-header::before {
+  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(7px);
+}
+.winter[data-kov-telegram] #winter-flakes > span:nth-child(n+29),
+html:has(#modal-root .modal:is(.snow-arena-modal, .ice-modal, .train-modal, .courier-modal)) #winter-flakes {
+  display: none;
+}
+html:has(#modal-root .modal:is(.snow-arena-modal, .ice-modal, .train-modal, .courier-modal)) #app {
+  visibility: hidden;
+}
+.winter[data-kov-telegram] .modal:is(.snow-arena-modal, .ice-modal, .train-modal, .courier-modal) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}

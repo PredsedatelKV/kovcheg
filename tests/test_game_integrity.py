@@ -341,22 +341,51 @@ def test_legacy_casino_payout_is_rejected(game_api):
     assert _balance(sessions) == before
 
 
-def test_casino_tables_have_exact_90_percent_rtp():
-    assert sum(payout * weight for payout, weight in arcade.ROULETTE_PAYOUTS) == 90 * 10_000
+def test_casino_tables_have_exact_nominal_rtp():
+    rtp = arcade.CASINO_RTP_PERCENT
+    assert sum(payout * weight for payout, weight in arcade.ROULETTE_PAYOUTS) == rtp * 10_000
     assert sum(weight for _, weight in arcade.ROULETTE_PAYOUTS) == 10_000
-    assert sum(percent * chance for percent, chance in arcade.RISKWHEEL_PAYOUTS) == 90 * 100
+    assert sum(percent * chance for percent, chance in arcade.RISKWHEEL_PAYOUTS) == rtp * 100
     assert sum(chance for _, chance in arcade.RISKWHEEL_PAYOUTS) == 100
-    assert sum(percent * chance for _, percent, chance in arcade.SLOTS_OUTCOMES) == 90 * 100
+    assert sum(percent * chance for _, percent, chance in arcade.SLOTS_OUTCOMES) == rtp * 100
     assert sum(chance for _, _, chance in arcade.SLOTS_OUTCOMES) == 100
-    assert arcade.DICE_EXACT_PAYOUT_PERCENT / 6 == 90
-    assert arcade.DICE_EVEN_PAYOUT_PERCENT / 2 == 90
+    assert arcade.DICE_EXACT_PAYOUT_PERCENT / 6 == rtp
+    assert arcade.DICE_EVEN_PAYOUT_PERCENT / 2 == rtp
+    assert sum(arcade.VAULT_PAYOUTS) / len(arcade.VAULT_PAYOUTS) == rtp
 
 
-def test_rocket_has_ten_percent_immediate_bust_bucket(monkeypatch):
-    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 9000)
+def test_rocket_immediate_bust_threshold_matches_rtp(monkeypatch):
+    rtp = arcade.CASINO_RTP_PERCENT / 100
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "random", lambda: rtp)
     assert arcade._rocket_crash_point() == 1.0
-    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 3000)
-    assert arcade._rocket_crash_point() == 3.0
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "random", lambda: rtp / 3)
+    assert arcade._rocket_crash_point() == pytest.approx(3.0)
+
+
+@pytest.mark.parametrize("decision,payout", [(None, 85), ("left", 170), ("right", 0)])
+def test_vault_persists_offer_and_settles_once(game_api, monkeypatch, decision, payout):
+    client, sessions = game_api
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "shuffle", lambda values: None)
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "choice", lambda keys: "left")
+    start = "/api/arcade/casino/start"
+    active = "/api/arcade/casino/vault/active"
+    settle = "/api/arcade/casino/settle"
+    opened = client.post(start, json={"game":"vault","amount":100,"choice":"2"}, headers=_headers())
+    assert opened.status_code == 200
+    round = opened.json()
+    assert round["outcome"] == {"choice":"2","offer":85}
+    assert _balance(sessions) == 0
+
+    same = client.post(start, json={"game":"vault","amount":100,"choice":"1"}, headers=_headers())
+    assert same.json() == round and _balance(sessions) == 0
+    assert client.get(active, headers=_headers()).json()["round"]["token"] == round["token"]
+    assert client.get(active, headers=_headers(2)).json()["round"] is None
+    payload = {"token":round["token"], "vault_key":decision}
+    assert client.post(settle, json=payload, headers=_headers(2)).status_code == 409
+    assert client.post(settle, json=payload, headers=_headers()).json()["payout"] == payout
+    assert client.post(settle, json=payload, headers=_headers()).status_code == 409
+    assert _balance(sessions) == payout
+    assert client.get(active, headers=_headers()).json() == {"round":None}
 
 
 def test_roulette_is_atomic_idempotent_and_awards_failure_fragment(game_api, monkeypatch):

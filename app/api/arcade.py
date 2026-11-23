@@ -228,7 +228,7 @@ def arcade_bet(
     raise HTTPException(status_code=410, detail="Используйте серверный раунд казино")
 
 
-CASINO_GAMES = {"riskwheel", "slots", "dice", "rocket"}
+CASINO_GAMES = {"riskwheel", "slots", "dice", "rocket", "vault"}
 
 # Номинальная отдача до округления выплат до целых Ковбаксов.
 CASINO_RTP_PERCENT = 95
@@ -288,6 +288,11 @@ DICE_EVEN_PAYOUT_PERCENT = 190
 ROCKET_GROWTH_PER_SECOND = 0.25
 ROCKET_MAX_MULTIPLIER = 5.0
 ROCKET_MIN_MULTIPLIER = 1.0
+
+# The four safe doors are uniformly shuffled. The mean offer is 95%.
+# Guessing the key doubles the integer offer with probability 1/2.
+VAULT_PAYOUTS = (50, 85, 105, 140)
+VAULT_KEYS = ("left", "right")
 
 
 def _weighted_percent(table: tuple) -> tuple[int, int]:
@@ -490,6 +495,38 @@ def _slots_reels(combo: str) -> list[str]:
     return SYSTEM_RANDOM.sample(premium + common, 3)
 
 
+def _active_vault_round(db: Session, user_id: int) -> models.CasinoRound | None:
+    return (
+        db.query(models.CasinoRound)
+        .filter(
+            models.CasinoRound.user_id == user_id,
+            models.CasinoRound.game == "vault",
+            models.CasinoRound.settled.is_(False),
+        )
+        .order_by(models.CasinoRound.created_at.desc())
+        .first()
+    )
+
+
+def _vault_round_response(row: models.CasinoRound) -> dict:
+    outcome = json.loads(row.outcome)
+    return {
+        "game": "vault",
+        "token": row.token,
+        "amount": row.bet,
+        "outcome": {"choice": outcome["choice"], "offer": outcome["offer"]},
+    }
+
+
+@router.get("/casino/vault/active")
+def casino_vault_active(
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    row = _active_vault_round(db, user.id)
+    return {"round": _vault_round_response(row) if row else None}
+
+
 @router.post("/casino/start")
 def casino_start(
     payload: dict = Body(...),
@@ -503,7 +540,14 @@ def casino_start(
         raise HTTPException(status_code=422, detail="Некорректный формат раунда")
     if game not in CASINO_GAMES or amount < CASINO_MIN_BET or amount > CASINO_MAX_BET:
         raise HTTPException(status_code=400, detail="Некорректный раунд")
+    if game == "vault" and choice not in {"1", "2", "3", "4"}:
+        raise HTTPException(status_code=400, detail="Выберите один из четырёх сейфов")
     begin_game_write(db)
+    if game == "vault":
+        db.query(models.User.id).filter(models.User.id == user.id).with_for_update().one()
+        existing = _active_vault_round(db, user.id)
+        if existing:
+            return {**_vault_round_response(existing), "balance": ensure_wallet(db, user).balance}
     _require_casino_access(db, user)
     wallet = ensure_wallet(db, user)
     if wallet.balance < amount:
@@ -531,20 +575,29 @@ def casino_start(
         payout_percent = DICE_EXACT_PAYOUT_PERCENT if choice.isdigit() else DICE_EVEN_PAYOUT_PERCENT
         payout = amount * payout_percent // 100 if won else 0
         outcome = {"roll": roll, "choice": choice, "payout_percent": payout_percent if won else 0}
+    elif game == "vault":
+        offers = list(VAULT_PAYOUTS)
+        SYSTEM_RANDOM.shuffle(offers)
+        payout = amount * offers[int(choice) - 1] // 100
+        outcome = {"choice": choice, "offer": payout, "winning_key": SYSTEM_RANDOM.choice(VAULT_KEYS)}
     else:
         outcome = _new_rocket_outcome()
 
     token = secrets.token_urlsafe(32)
     balance_before = wallet.balance
     wallet.balance -= amount
-    db.add(models.CasinoRound(
+    round_row = models.CasinoRound(
         token=token, user_id=user.id, game=game, bet=amount,
         balance_before=balance_before, outcome=json.dumps(outcome), payout=payout,
-    ))
+    )
+    db.add(round_row)
     db.add(models.Transaction(sender_id=user.id, amount=amount, note=f"casino:bet:{game}"))
     db.flush()
     _apply_casino_loss_lock(db, user)
     db.commit()
+    if game == "vault":
+        return {**_vault_round_response(round_row), "balance": wallet.balance}
+
     public_outcome = outcome
     if game == "rocket":
         # Never disclose the pre-generated crash point while a cashout is still
@@ -661,16 +714,24 @@ def rocket_status(
 def casino_settle(
     token: str = Body(..., embed=True),
     multiplier: float | None = Body(None, embed=True),
+    vault_key: str | None = Body(None, embed=True),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
     begin_game_write(db)
     row = db.query(models.CasinoRound).filter(
         models.CasinoRound.token == token, models.CasinoRound.user_id == user.id,
-    ).first()
+    ).with_for_update().first()
     if not row or row.settled:
         raise HTTPException(status_code=409, detail="Раунд уже завершён или не найден")
+    if vault_key is not None and (row.game != "vault" or vault_key not in VAULT_KEYS):
+        raise HTTPException(status_code=400, detail="Недопустимый ключ сейфа")
     payout = row.payout
+    vault_key_won = None
+    if row.game == "vault" and vault_key is not None:
+        vault_key_won = vault_key == json.loads(row.outcome)["winning_key"]
+        payout = 2 * payout if vault_key_won else 0
+
     rocket_result = None
     if row.game == "rocket":
         # Older clients send this field. It is validation-only now and can
@@ -704,6 +765,8 @@ def casino_settle(
         "failure_fragment_awarded": awarded_fragment,
         "failure_fragment_count": fragment_count,
     }
+    if vault_key_won is not None:
+        response["vault_key_won"] = vault_key_won
     if rocket_result is not None:
         response.update({
             "crashed": rocket_result["crashed"],
