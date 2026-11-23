@@ -14,25 +14,25 @@
   <title>Ковчег</title>
   <script src="https://telegram.org/js/telegram-web-app.js?56"></script>
   <link rel="stylesheet" href="/static/style.css?v=288">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/winter.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/pig-overhang-v2.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/appearance.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/frozen-glass.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/station-layout.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/final-polish.css?dock=2">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/holiday.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/custom-winter.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/courier.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/snow-arena.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/thin-ice.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/polar-express.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/mobile-window.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/casino.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r28/entry.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/winter.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/pig-overhang-v2.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/appearance.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/frozen-glass.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/station-layout.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/final-polish.css?dock=2">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/holiday.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/custom-winter.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/courier.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/snow-arena.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/thin-ice.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/polar-express.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/mobile-window.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/casino.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r29/entry.css">
 </head>
 <body>
   <section id="entry-screen" class="entry-screen" role="status" aria-label="Загрузка Ковчега">
-    <div class="entry-glass" aria-hidden="true"><span class="entry-cube"><i></i><i></i><i></i></span><i class="entry-line"></i></div>
+    <div class="entry-glass"><span class="entry-cube" aria-hidden="true"><i></i><i></i><i></i></span><i class="entry-line" role="progressbar" aria-label="Подготовка игры"></i><span class="entry-count" aria-hidden="true"></span></div>
   </section>
   <svg class="ice-optics" width="0" height="0" aria-hidden="true" focusable="false">
     <defs>
@@ -42,7 +42,7 @@
       </filter>
     </defs>
   </svg>
-  <div id="app">
+  <div id="app" inert>
     <div id="winter-flakes" aria-hidden="true"></div>
     <header class="station-header" id="station-header" hidden>
       <div class="station-garland" aria-hidden="true"><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i></div>
@@ -73,6 +73,6 @@
     </nav>
   </div>
   <div id="modal-root"></div>
-  <script type="module" src="/static/releases/winter-2026-r28/app.js"></script>
+  <script type="module" src="/static/releases/winter-2026-r29/app.js"></script>
 </body>
 </html>
