@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import StrictInt
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -229,10 +230,8 @@ def arcade_bet(
 
 CASINO_GAMES = {"riskwheel", "slots", "dice", "rocket"}
 
-# Целевая отдача казино. Каждая таблица ниже даёт РОВНО этот процент, поэтому
-# ожидание казино положительно на любой дистанции и не зависит от того, какую
-# игру и какую стратегию выбирает игрок.
-CASINO_RTP_PERCENT = 90
+# Номинальная отдача до округления выплат до целых Ковбаксов.
+CASINO_RTP_PERCENT = 95
 CASINO_MIN_BET = 100
 CASINO_MAX_BET = 10_000
 
@@ -247,50 +246,45 @@ CASINO_LOSS_THRESHOLD_PERCENT = 50
 # расхождений между показанным множителем и реально зачисленной суммой.
 
 # Колесо риска: 9 секторов, шансы в процентах, сумма шансов = 100.
-# sum(процент выплаты * шанс) = 9000 => RTP ровно 90%.
-RISKWHEEL_PAYOUTS = ((5, 15), (25, 13), (50, 15), (75, 16), (100, 15),
+# sum(процент выплаты * шанс) = 9500.
+RISKWHEEL_PAYOUTS = ((5, 10), (25, 13), (50, 15), (75, 15), (100, 21),
                      (150, 11), (200, 8), (250, 4), (300, 3))
 
 # Рулетка имеет фиксированную ставку и показывает реальные суммы, а не
 # множители. Шансы заданы в базисных пунктах (1/100 процента), чтобы редкие
 # выплаты не приходилось грубо округлять. Сумма весов = 10_000, а
-# sum(выплата * вес) / 10_000 = 90 при ставке 100: RTP ровно 90%.
+# sum(выплата * вес) / 10_000 = 95 при ставке 100.
 ROULETTE_FIXED_BET = 100
 FAILURE_FRAGMENT_MIN_BET = 100
 ROULETTE_PAYOUTS = (
-    (10, 900),
-    (20, 1_100),
-    (30, 1_000),
+    (10, 600),
+    (20, 900),
+    (30, 900),
     (40, 1_000),
     (50, 1_000),
-    (100, 3_490),
+    (100, 4_090),
     (200, 1_200),
     (500, 300),
     (1_000, 10),
 )
 
 # Слоты: выплата зависит от комбинации, а вероятности задаются напрямую.
-# Максимум ограничен x5, чтобы даже редкий результат не создавал огромный
-# джекпот. Таблица по-прежнему даёт ровно 90% RTP.
+# Джекпот ×5, возврат ставки при обычной паре.
 SLOTS_OUTCOMES = (
     ("jackpot", 500, 2),    # три одинаковых премиальных: x5
     ("triple", 300, 5),     # три одинаковых обычных: x3
     ("pair_high", 200, 15), # две премиальные: x2
-    ("pair", 100, 35),      # две одинаковых: возврат ставки
-    ("miss", 0, 43),
+    ("pair", 100, 40),      # две одинаковых: возврат ставки
+    ("miss", 0, 38),
 )
 SLOTS_PREMIUM_SYMBOLS = ("7\ufe0f\u20e3", "\U0001f48e")
 SLOTS_COMMON_SYMBOLS = ("\U0001f352", "\U0001f34b", "\U0001f34a", "\U0001f347", "\u2b50")
 
-# Кубик: выплата подобрана так, чтобы RTP каждой ставки был ровно 90%.
-# Точное число: 1/6 * 540% = 90%. Чёт/нечет/больше/меньше: 1/2 * 180% = 90%.
-DICE_EXACT_PAYOUT_PERCENT = 540
-DICE_EVEN_PAYOUT_PERCENT = 180
+# Кубик: 1/6 × 570% = 1/2 × 190% = 95%.
+DICE_EXACT_PAYOUT_PERCENT = 570
+DICE_EVEN_PAYOUT_PERCENT = 190
 
-# Ракетка: шанс дожить до множителя t равен 0.90 / t, поэтому ожидание выплаты
-# t * 0.90/t = 90% при ЛЮБОЙ точке выхода. Прошлая версия брала экспоненту без
-# привязки к множителю, и выход на x1.05 давал игроку 105% — казино уходило
-# в минус тем вернее, чем аккуратнее играл игрок.
+# Вероятность дожить до множителя x равна RTP/x.
 ROCKET_GROWTH_PER_SECOND = 0.25
 ROCKET_MAX_MULTIPLIER = 5.0
 ROCKET_MIN_MULTIPLIER = 1.0
@@ -329,14 +323,18 @@ def _weighted_basis_points(table: tuple[tuple[int, int], ...]) -> tuple[int, int
 
 
 def _rocket_crash_point() -> float:
-    """Точка срыва с P(дожить до t) = RTP/t — отдача 90% на любой стратегии."""
-    roll = SYSTEM_RANDOM.randrange(1, 10_001) / 10_000
-    if roll >= CASINO_RTP_PERCENT / 100:
-        # Мгновенный проигрыш необходим в 10% раундов. При минимуме x1.01
-        # моментальный вывод на x1.00 всегда возвращал ставку и давал RTP 100%.
+    """Draw the crash point. Round only the multiplier shown and paid."""
+    roll = SYSTEM_RANDOM.random()
+    rtp = CASINO_RTP_PERCENT / 100
+    if roll >= rtp:
         return ROCKET_MIN_MULTIPLIER
-    crash_at = (CASINO_RTP_PERCENT / 100) / roll
-    return round(min(ROCKET_MAX_MULTIPLIER, max(ROCKET_MIN_MULTIPLIER, crash_at)), 2)
+    if roll <= rtp / ROCKET_MAX_MULTIPLIER:
+        return ROCKET_MAX_MULTIPLIER
+    return rtp / roll
+
+
+def _new_rocket_outcome() -> dict:
+    return {"crash_at": _rocket_crash_point(), "auto_cashout_at_cap": True}
 
 
 def _format_wait(seconds: int) -> str:
@@ -350,18 +348,19 @@ def _format_wait(seconds: int) -> str:
 
 
 def _casino_loss_snapshot(db: Session, user: models.User, now: datetime) -> tuple[int, int]:
-    rounds = (
-        db.query(models.CasinoRound)
+    loss_sum, peak = (
+        db.query(
+            func.sum(models.CasinoRound.bet - models.CasinoRound.payout),
+            func.max(models.CasinoRound.balance_before),
+        )
         .filter(
             models.CasinoRound.user_id == user.id,
             models.CasinoRound.created_at >= now - CASINO_LOSS_WINDOW,
         )
-        .all()
+        .one()
     )
-    net_loss = max(0, sum(row.bet - row.payout for row in rounds))
-    known_balances = [row.balance_before for row in rounds if row.balance_before > 0]
-    wallet = ensure_wallet(db, user)
-    baseline = max(known_balances, default=max(0, wallet.balance + net_loss))
+    net_loss = max(0, loss_sum or 0)
+    baseline = peak if peak and peak > 0 else max(0, ensure_wallet(db, user).balance + net_loss)
     return net_loss, baseline
 
 
@@ -439,7 +438,12 @@ def _rocket_progress(row: models.CasinoRound, now: datetime | None = None) -> di
         ROCKET_MAX_MULTIPLIER,
         1.0 + elapsed_seconds * ROCKET_GROWTH_PER_SECOND,
     )
-    crashed = current_multiplier >= crash_at
+    capped = (
+        outcome.get("auto_cashout_at_cap") is True
+        and crash_at == ROCKET_MAX_MULTIPLIER
+        and current_multiplier == ROCKET_MAX_MULTIPLIER
+    )
+    crashed = current_multiplier >= crash_at and not capped
     # The game displays two decimal places. Use integer hundredths for both
     # display and payout so x1.50 can never pay as x1.49 because of rounding or
     # binary floating-point representation. Flooring also never exposes a
@@ -455,6 +459,7 @@ def _rocket_progress(row: models.CasinoRound, now: datetime | None = None) -> di
         "crashed": crashed,
         "current_multiplier": settlement_hundredths / 100,
         "_settlement_hundredths": settlement_hundredths,
+        "capped": capped,
         # The crash point becomes public only after the server clock reaches it.
         "crash_multiplier": crash_at if crashed else None,
     }
@@ -527,7 +532,7 @@ def casino_start(
         payout = amount * payout_percent // 100 if won else 0
         outcome = {"roll": roll, "choice": choice, "payout_percent": payout_percent if won else 0}
     else:
-        outcome = {"crash_at": _rocket_crash_point()}
+        outcome = _new_rocket_outcome()
 
     token = secrets.token_urlsafe(32)
     balance_before = wallet.balance
@@ -627,6 +632,7 @@ def roulette_spin(
 @router.get("/casino/rocket/status")
 def rocket_status(
     token: str = Query(..., min_length=8, max_length=128),
+    cap_aware: bool = Query(False),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -641,10 +647,13 @@ def rocket_status(
     if row.settled:
         raise HTTPException(status_code=409, detail="Раунд уже завершён")
     progress = _rocket_progress(row)
+    # Older clients use the crash flag as their only signal to settle.
+    legacy_stop = progress["capped"] and not cap_aware
     return {
-        "crashed": progress["crashed"],
+        "crashed": progress["crashed"] or legacy_stop,
+        "capped": progress["capped"],
         "current_multiplier": progress["current_multiplier"],
-        "crash_multiplier": progress["crash_multiplier"],
+        "crash_multiplier": ROCKET_MAX_MULTIPLIER if legacy_stop else progress["crash_multiplier"],
     }
 
 
@@ -698,6 +707,7 @@ def casino_settle(
     if rocket_result is not None:
         response.update({
             "crashed": rocket_result["crashed"],
+            "capped": rocket_result["capped"],
             "multiplier": rocket_result["current_multiplier"],
             "crash_multiplier": rocket_result["crash_multiplier"],
         })
