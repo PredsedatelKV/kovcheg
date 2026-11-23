@@ -791,6 +791,31 @@ class ArcadeRound(Base):
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class CasinoWallet(Base):
+    __tablename__ = "casino_wallets"
+    __table_args__ = (
+        CheckConstraint("cash >= 0 AND bonus >= 0", name="ck_casino_wallet_nonnegative"),
+    )
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    cash: Mapped[int] = mapped_column(Integer, default=0)
+    bonus: Mapped[int] = mapped_column(Integer, default=0)
+    bonus_claimed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+class CasinoTransfer(Base):
+    __tablename__ = "casino_transfers"
+    __table_args__ = (UniqueConstraint("user_id", "request_id", name="uq_casino_transfer_request"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    direction: Mapped[str] = mapped_column(String(12), nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    fee: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class CasinoRound(Base):
     """A casino bet and its outcome, generated and settled by the server."""
     __tablename__ = "casino_rounds"
@@ -805,6 +830,18 @@ class CasinoRound(Base):
     payout: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     settled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+class CasinoFunding(Base):
+    __tablename__ = "casino_funding"
+    __table_args__ = (
+        CheckConstraint("cash_used >= 0 AND bonus_used >= 0", name="ck_casino_funding_nonnegative"),
+    )
+
+    token: Mapped[str] = mapped_column(ForeignKey("casino_rounds.token"), primary_key=True)
+    cash_before: Mapped[int] = mapped_column(Integer, nullable=False)
+    cash_used: Mapped[int] = mapped_column(Integer, nullable=False)
+    bonus_used: Mapped[int] = mapped_column(Integer, nullable=False)
+
 
 class CourierRun(Base):
     """A server-issued winter run and its deterministic, immutable result."""

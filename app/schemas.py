@@ -769,9 +769,21 @@ class ChooseLootboxRequest(BaseModel):
         return self
 
 
+class CasinoTransferRequest(BaseModel):
+    direction: Literal["deposit", "withdraw"]
+    amount: StrictInt = Field(ge=2, le=2_000_000_000)
+    request_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class CasinoSlotSpinRequest(BaseModel):
+    amount: StrictInt = Field(ge=100, le=10_000)
+    request_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+
+
 class RouletteSpinRequest(BaseModel):
     amount: StrictInt = Field(ge=100, le=100)
     request_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    ledger: StrictInt | None = None
 
 
 class LootboxRewardOut(BaseModel):

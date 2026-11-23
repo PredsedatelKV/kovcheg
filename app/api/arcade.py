@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import secrets
@@ -10,8 +11,9 @@ from pydantic import StrictInt
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app import models, schemas
+from app import casino_slots, models, schemas
 from app.access import can_use_clicker
+from app.api import _casino_wallet as casino_wallet
 from app.api._helpers import ensure_wallet, require_open_section
 from app.auth import current_user
 from app.db import begin_game_write, get_db
@@ -228,10 +230,10 @@ def arcade_bet(
     raise HTTPException(status_code=410, detail="Используйте серверный раунд казино")
 
 
-CASINO_GAMES = {"riskwheel", "slots", "dice", "rocket", "vault"}
+CASINO_GAMES = {"riskwheel", "dice", "rocket", "vault"}
 
 # Номинальная отдача до округления выплат до целых Ковбаксов.
-CASINO_RTP_PERCENT = 95
+CASINO_RTP_PERCENT = 90
 CASINO_MIN_BET = 100
 CASINO_MAX_BET = 10_000
 
@@ -246,52 +248,40 @@ CASINO_LOSS_THRESHOLD_PERCENT = 50
 # расхождений между показанным множителем и реально зачисленной суммой.
 
 # Колесо риска: 9 секторов, шансы в процентах, сумма шансов = 100.
-# sum(процент выплаты * шанс) = 9500.
-RISKWHEEL_PAYOUTS = ((5, 10), (25, 13), (50, 15), (75, 15), (100, 21),
+# sum(процент выплаты * шанс) = 9000.
+RISKWHEEL_PAYOUTS = ((5, 15), (25, 13), (50, 15), (75, 16), (100, 15),
                      (150, 11), (200, 8), (250, 4), (300, 3))
 
 # Рулетка имеет фиксированную ставку и показывает реальные суммы, а не
 # множители. Шансы заданы в базисных пунктах (1/100 процента), чтобы редкие
 # выплаты не приходилось грубо округлять. Сумма весов = 10_000, а
-# sum(выплата * вес) / 10_000 = 95 при ставке 100.
+# sum(выплата * вес) / 10_000 = 90 при ставке 100.
 ROULETTE_FIXED_BET = 100
 FAILURE_FRAGMENT_MIN_BET = 100
 ROULETTE_PAYOUTS = (
-    (10, 600),
-    (20, 900),
-    (30, 900),
+    (10, 900),
+    (20, 1_100),
+    (30, 1_000),
     (40, 1_000),
     (50, 1_000),
-    (100, 4_090),
+    (100, 3_490),
     (200, 1_200),
     (500, 300),
     (1_000, 10),
 )
 
-# Слоты: выплата зависит от комбинации, а вероятности задаются напрямую.
-# Джекпот ×5, возврат ставки при обычной паре.
-SLOTS_OUTCOMES = (
-    ("jackpot", 500, 2),    # три одинаковых премиальных: x5
-    ("triple", 300, 5),     # три одинаковых обычных: x3
-    ("pair_high", 200, 15), # две премиальные: x2
-    ("pair", 100, 40),      # две одинаковых: возврат ставки
-    ("miss", 0, 38),
-)
-SLOTS_PREMIUM_SYMBOLS = ("7\ufe0f\u20e3", "\U0001f48e")
-SLOTS_COMMON_SYMBOLS = ("\U0001f352", "\U0001f34b", "\U0001f34a", "\U0001f347", "\u2b50")
-
-# Кубик: 1/6 × 570% = 1/2 × 190% = 95%.
-DICE_EXACT_PAYOUT_PERCENT = 570
-DICE_EVEN_PAYOUT_PERCENT = 190
+# Кубик: 1/6 × 540% = 1/2 × 180% = 90%.
+DICE_EXACT_PAYOUT_PERCENT = 540
+DICE_EVEN_PAYOUT_PERCENT = 180
 
 # Вероятность дожить до множителя x равна RTP/x.
 ROCKET_GROWTH_PER_SECOND = 0.25
 ROCKET_MAX_MULTIPLIER = 5.0
 ROCKET_MIN_MULTIPLIER = 1.0
 
-# The four safe doors are uniformly shuffled. The mean offer is 95%.
+# The four safe doors are uniformly shuffled. The mean offer is 90%.
 # Guessing the key doubles the integer offer with probability 1/2.
-VAULT_PAYOUTS = (50, 85, 105, 140)
+VAULT_PAYOUTS = (45, 80, 100, 135)
 VAULT_KEYS = ("left", "right")
 
 
@@ -352,26 +342,33 @@ def _format_wait(seconds: int) -> str:
     return f"{minutes} мин"
 
 
-def _casino_loss_snapshot(db: Session, user: models.User, now: datetime) -> tuple[int, int]:
-    loss_sum, peak = (
-        db.query(
-            func.sum(models.CasinoRound.bet - models.CasinoRound.payout),
-            func.max(models.CasinoRound.balance_before),
+def _casino_loss_snapshot(db: Session, user: models.User, now: datetime,
+                          account: models.CasinoWallet | None) -> tuple[int, int]:
+    cash_used = models.CasinoFunding.cash_used if account else models.CasinoRound.bet
+    cash_before = models.CasinoFunding.cash_before if account else models.CasinoRound.balance_before
+    rows = db.query(
+        func.sum(cash_used - models.CasinoRound.payout),
+        func.max(cash_before),
+    ).select_from(models.CasinoRound)
+    if account:
+        rows = rows.join(models.CasinoFunding, models.CasinoFunding.token == models.CasinoRound.token)
+    else:
+        rows = rows.outerjoin(models.CasinoFunding, models.CasinoFunding.token == models.CasinoRound.token).filter(
+            models.CasinoFunding.token.is_(None),
         )
-        .filter(
-            models.CasinoRound.user_id == user.id,
-            models.CasinoRound.created_at >= now - CASINO_LOSS_WINDOW,
-        )
-        .one()
-    )
+    loss_sum, peak = rows.filter(
+        models.CasinoRound.user_id == user.id,
+        models.CasinoRound.created_at >= now - CASINO_LOSS_WINDOW,
+    ).one()
     net_loss = max(0, loss_sum or 0)
-    baseline = peak if peak and peak > 0 else max(0, ensure_wallet(db, user).balance + net_loss)
-    return net_loss, baseline
+    remaining = account.cash if account else ensure_wallet(db, user).balance
+    return net_loss, peak or max(0, remaining + net_loss)
 
 
-def _apply_casino_loss_lock(db: Session, user: models.User, now: datetime | None = None) -> datetime | None:
+def _apply_casino_loss_lock(db: Session, user: models.User, account: models.CasinoWallet | None,
+                            now: datetime | None = None) -> datetime | None:
     current_time = now or models.now_utc()
-    net_loss, baseline = _casino_loss_snapshot(db, user, current_time)
+    net_loss, baseline = _casino_loss_snapshot(db, user, current_time, account)
     if baseline > 0 and net_loss * 100 >= baseline * CASINO_LOSS_THRESHOLD_PERCENT:
         locked_until = current_time + CASINO_LOCK_DURATION
         if not user.casino_locked_until or user.casino_locked_until < locked_until:
@@ -380,14 +377,14 @@ def _apply_casino_loss_lock(db: Session, user: models.User, now: datetime | None
     return None
 
 
-def _require_casino_access(db: Session, user: models.User) -> None:
+def _require_casino_access(db: Session, user: models.User, account: models.CasinoWallet) -> None:
     now = models.now_utc()
     locked_until = user.casino_locked_until
     if locked_until and locked_until <= now:
         user.casino_locked_until = None
         locked_until = None
     if not locked_until:
-        locked_until = _apply_casino_loss_lock(db, user, now)
+        locked_until = _apply_casino_loss_lock(db, user, account, now)
         if locked_until:
             db.commit()
     if not locked_until:
@@ -470,31 +467,6 @@ def _rocket_progress(row: models.CasinoRound, now: datetime | None = None) -> di
     }
 
 
-def _slots_reels(combo: str) -> list[str]:
-    """Барабаны, показывающие уже выбранный исход.
-
-    Исход берётся из таблицы вероятностей, а барабаны только иллюстрируют его,
-    иначе независимые барабаны задавали бы свой собственный RTP.
-    """
-    premium = list(SLOTS_PREMIUM_SYMBOLS)
-    common = list(SLOTS_COMMON_SYMBOLS)
-    if combo == "jackpot":
-        symbol = SYSTEM_RANDOM.choice(premium)
-        return [symbol, symbol, symbol]
-    if combo == "triple":
-        symbol = SYSTEM_RANDOM.choice(common)
-        return [symbol, symbol, symbol]
-    if combo in {"pair_high", "pair"}:
-        pool = premium if combo == "pair_high" else common
-        pair_symbol = SYSTEM_RANDOM.choice(pool)
-        others = [s for s in premium + common if s != pair_symbol]
-        reels = [pair_symbol, pair_symbol, SYSTEM_RANDOM.choice(others)]
-        SYSTEM_RANDOM.shuffle(reels)
-        return reels
-    # Промах: три разных символа.
-    return SYSTEM_RANDOM.sample(premium + common, 3)
-
-
 def _active_vault_round(db: Session, user_id: int) -> models.CasinoRound | None:
     return (
         db.query(models.CasinoRound)
@@ -518,6 +490,99 @@ def _vault_round_response(row: models.CasinoRound) -> dict:
     }
 
 
+@router.get("/casino/wallet")
+def casino_wallet_status(
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    return casino_wallet.snapshot(user, db.get(models.CasinoWallet, user.id))
+
+
+@router.post("/casino/wallet/transfer")
+def casino_wallet_transfer(
+    body: schemas.CasinoTransferRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    begin_game_write(db)
+    account = casino_wallet.lock_account(db, user)
+    return casino_wallet.transfer(db, user, account, body)
+
+
+@router.post("/casino/slots/bonus")
+def casino_slots_bonus(
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    begin_game_write(db)
+    account = casino_wallet.lock_account(db, user)
+    awarded = not account.bonus_claimed
+    if awarded:
+        account.bonus = casino_wallet.BONUS_AMOUNT
+        account.bonus_claimed = True
+        db.commit()
+    return {"awarded": awarded, "wallet": casino_wallet.snapshot(user, account)}
+
+
+def _record_casino_funding(db: Session, row: models.CasinoRound, cash_used: int, bonus_used: int = 0):
+    db.add(row)
+    db.flush()
+    db.add(models.CasinoFunding(token=row.token, cash_before=row.balance_before,
+                                cash_used=cash_used, bonus_used=bonus_used))
+    db.flush()
+
+
+def _paid_spin(db: Session, user: models.User, account: models.CasinoWallet, *,
+               game: str, amount: int, request_id: str) -> dict:
+    token = hashlib.sha256(f"casino:ledger:{game}:{user.id}:{request_id}".encode()).hexdigest()
+    row = db.query(models.CasinoRound).filter_by(token=token, user_id=user.id, game=game).first()
+    if row is None and game == "roulette_v2":
+        # Reloading a cached client can replay an already-paid pre-ledger spin.
+        row = db.query(models.CasinoRound).filter_by(token=request_id, user_id=user.id, game=game).first()
+    replayed = row is not None
+    if replayed:
+        if row.bet != amount:
+            raise HTTPException(409, "Этот раунд уже проведён с другой ставкой")
+        outcome = json.loads(row.outcome)
+        payout = row.payout
+        awarded = 0
+        count = 0
+    else:
+        _require_casino_access(db, user, account)
+        cash_before = account.cash
+        cash_used, bonus_used = casino_wallet.spend(account, amount, use_bonus=game == "slots")
+        if game == "slots":
+            outcome = casino_slots.spin(SYSTEM_RANDOM)
+            payout = amount * outcome["payout_percent"] // 100
+        else:
+            payout, index = _weighted_basis_points(ROULETTE_PAYOUTS)
+            outcome = {"index": index, "payout_percent": payout}
+        casino_wallet.credit(account, payout)
+        row = models.CasinoRound(
+            token=token, user_id=user.id, game=game, bet=amount, balance_before=cash_before,
+            payout=payout, outcome=json.dumps(outcome), settled=True,
+        )
+        _record_casino_funding(db, row, cash_used, bonus_used)
+        awarded, count = _grant_failure_fragment(db, user, amount, payout)
+        _apply_casino_loss_lock(db, user, account)
+        db.commit()
+    return {
+        **outcome, "ok": True, "payout": payout, "wallet": casino_wallet.snapshot(user, account),
+        "replayed": replayed, "failure_fragment_awarded": awarded, "failure_fragment_count": count,
+    }
+
+
+@router.post("/casino/slots/spin")
+def casino_slots_spin(
+    body: schemas.CasinoSlotSpinRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    begin_game_write(db)
+    account = casino_wallet.lock_account(db, user)
+    return _paid_spin(db, user, account, game="slots", amount=body.amount, request_id=body.request_id)
+
+
 @router.get("/casino/vault/active")
 def casino_vault_active(
     user: models.User = Depends(current_user),
@@ -538,33 +603,27 @@ def casino_start(
     choice = payload.get("choice")
     if type(game) is not str or type(amount) is not int or (choice is not None and type(choice) is not str):
         raise HTTPException(status_code=422, detail="Некорректный формат раунда")
+    if type(payload.get("ledger")) is not int or payload["ledger"] != 1:
+        raise HTTPException(409, "Откройте мини-приложение заново, чтобы загрузить кошелёк казино")
     if game not in CASINO_GAMES or amount < CASINO_MIN_BET or amount > CASINO_MAX_BET:
         raise HTTPException(status_code=400, detail="Некорректный раунд")
     if game == "vault" and choice not in {"1", "2", "3", "4"}:
         raise HTTPException(status_code=400, detail="Выберите один из четырёх сейфов")
     begin_game_write(db)
+    account = casino_wallet.lock_account(db, user)
     if game == "vault":
-        db.query(models.User.id).filter(models.User.id == user.id).with_for_update().one()
         existing = _active_vault_round(db, user.id)
         if existing:
-            return {**_vault_round_response(existing), "balance": ensure_wallet(db, user).balance}
-    _require_casino_access(db, user)
-    wallet = ensure_wallet(db, user)
-    if wallet.balance < amount:
-        raise HTTPException(status_code=400, detail="Недостаточно Ковбаксов")
+            return {**_vault_round_response(existing), "wallet": casino_wallet.snapshot(user, account)}
+    _require_casino_access(db, user, account)
+    cash_before = account.cash
+    cash_used, bonus_used = casino_wallet.spend(account, amount)
     outcome: dict = {}
     payout = 0
     if game == "riskwheel":
         payout_percent, index = _weighted_percent(RISKWHEEL_PAYOUTS)
         payout = amount * payout_percent // 100
         outcome = {"payout_percent": payout_percent, "index": index}
-    elif game == "slots":
-        payout_percent, index = _weighted_percent(
-            tuple((percent, chance) for _, percent, chance in SLOTS_OUTCOMES)
-        )
-        combo = SLOTS_OUTCOMES[index][0]
-        payout = amount * payout_percent // 100
-        outcome = {"reels": _slots_reels(combo), "payout_percent": payout_percent, "combo": combo}
     elif game == "dice":
         allowed = {"odd", "even", "low", "high", "1", "2", "3", "4", "5", "6"}
         if choice not in allowed:
@@ -584,19 +643,16 @@ def casino_start(
         outcome = _new_rocket_outcome()
 
     token = secrets.token_urlsafe(32)
-    balance_before = wallet.balance
-    wallet.balance -= amount
     round_row = models.CasinoRound(
         token=token, user_id=user.id, game=game, bet=amount,
-        balance_before=balance_before, outcome=json.dumps(outcome), payout=payout,
+        balance_before=cash_before, outcome=json.dumps(outcome), payout=payout,
     )
-    db.add(round_row)
-    db.add(models.Transaction(sender_id=user.id, amount=amount, note=f"casino:bet:{game}"))
-    db.flush()
-    _apply_casino_loss_lock(db, user)
+    _record_casino_funding(db, round_row, cash_used, bonus_used)
+    _apply_casino_loss_lock(db, user, account)
     db.commit()
+    wallet = casino_wallet.snapshot(user, account)
     if game == "vault":
-        return {**_vault_round_response(round_row), "balance": wallet.balance}
+        return {**_vault_round_response(round_row), "wallet": wallet}
 
     public_outcome = outcome
     if game == "rocket":
@@ -607,7 +663,7 @@ def casino_start(
             "growth_per_second": ROCKET_GROWTH_PER_SECOND,
             "max_multiplier": ROCKET_MAX_MULTIPLIER,
         }
-    return {"token": token, "outcome": public_outcome, "balance": wallet.balance}
+    return {"token": token, "outcome": public_outcome, "wallet": wallet}
 
 
 @router.post("/roulette/spin")
@@ -616,70 +672,11 @@ def roulette_spin(
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Atomic, server-authoritative roulette with an exact 90% RTP table."""
+    if body.ledger != 1:
+        raise HTTPException(409, "Откройте мини-приложение заново, чтобы загрузить кошелёк казино")
     begin_game_write(db)
-    existing = db.query(models.CasinoRound).filter(
-        models.CasinoRound.user_id == user.id,
-        models.CasinoRound.game == "roulette_v2",
-        models.CasinoRound.token == body.request_id,
-    ).first()
-    if existing:
-        if existing.bet != ROULETTE_FIXED_BET:
-            raise HTTPException(409, "Этот запрос уже использован для другой ставки")
-        outcome = json.loads(existing.outcome)
-        fragment_item = db.query(models.Item).filter(models.Item.code == "failure_fragment").first()
-        fragment_count = 0
-        if fragment_item:
-            row = db.query(models.InventoryItem).filter(
-                models.InventoryItem.user_id == user.id,
-                models.InventoryItem.item_id == fragment_item.id,
-            ).first()
-            fragment_count = row.quantity if row else 0
-        db.rollback()
-        return {
-            "ok": True, "replayed": True, "payout": existing.payout,
-            "payout_percent": outcome["payout_percent"], "index": outcome["index"],
-            "balance": ensure_wallet(db, user).balance,
-            "failure_fragment_awarded": outcome.get("failure_fragment_awarded", 0),
-            "failure_fragment_count": fragment_count,
-        }
-
-    _require_casino_access(db, user)
-    wallet = ensure_wallet(db, user)
-    if body.amount != ROULETTE_FIXED_BET:
-        raise HTTPException(400, f"Ставка в Рулетке фиксирована: {ROULETTE_FIXED_BET} ковбаксов")
-    if wallet.balance < ROULETTE_FIXED_BET:
-        raise HTTPException(400, "Недостаточно ковбаксов")
-
-    payout, index = _weighted_basis_points(ROULETTE_PAYOUTS)
-    payout_percent = payout * 100 // ROULETTE_FIXED_BET
-    awarded_fragment, fragment_count = _grant_failure_fragment(
-        db, user, ROULETTE_FIXED_BET, payout
-    )
-
-    balance_before = wallet.balance
-    wallet.balance = wallet.balance - ROULETTE_FIXED_BET + payout
-    outcome = {
-        "payout_percent": payout_percent,
-        "index": index,
-        "failure_fragment_awarded": awarded_fragment,
-    }
-    db.add(models.CasinoRound(
-        token=body.request_id, user_id=user.id, game="roulette_v2", bet=ROULETTE_FIXED_BET,
-        balance_before=balance_before, outcome=json.dumps(outcome), payout=payout, settled=True,
-    ))
-    db.add(models.Transaction(sender_id=user.id, amount=ROULETTE_FIXED_BET, note="casino:bet:roulette"))
-    if payout:
-        db.add(models.Transaction(recipient_id=user.id, amount=payout, note="casino:payout:roulette"))
-    db.flush()
-    _apply_casino_loss_lock(db, user)
-    db.commit()
-    return {
-        "ok": True, "replayed": False, "payout": payout,
-        "payout_percent": payout_percent, "index": index, "balance": wallet.balance,
-        "failure_fragment_awarded": awarded_fragment,
-        "failure_fragment_count": fragment_count,
-    }
+    account = casino_wallet.lock_account(db, user)
+    return _paid_spin(db, user, account, game="roulette_v2", amount=body.amount, request_id=body.request_id)
 
 
 @router.get("/casino/rocket/status")
@@ -746,25 +743,33 @@ def casino_settle(
                 row.bet * int(ROCKET_MAX_MULTIPLIER),
                 row.bet * rocket_result["_settlement_hundredths"] // 100,
             )
+    funding = db.get(models.CasinoFunding, row.token)
+    account = casino_wallet.lock_account(db, user) if funding else None
     row.settled = True
     row.payout = payout
-    wallet = ensure_wallet(db, user)
-    if payout > 0:
-        if wallet.balance < 0 or wallet.balance > 2_000_000_000 - payout:
+    if account:
+        casino_wallet.credit(account, payout)
+    elif payout:
+        # Old rounds were paid from the main wallet. Return their original
+        # award to that wallet so the migration cannot strand pending payouts.
+        wallet = ensure_wallet(db, user)
+        if wallet.balance < 0 or wallet.balance > casino_wallet.LIMIT - payout:
             raise HTTPException(status_code=409, detail="Достигнут максимальный баланс ковбаксов")
         wallet.balance += payout
         db.add(models.Transaction(recipient_id=user.id, amount=payout, note=f"casino:win:{row.game}"))
     awarded_fragment, fragment_count = _grant_failure_fragment(db, user, row.bet, payout)
     db.flush()
-    _apply_casino_loss_lock(db, user)
+    _apply_casino_loss_lock(db, user, account)
     db.commit()
     response = {
         "ok": True,
         "payout": payout,
-        "balance": wallet.balance,
+        "wallet": casino_wallet.snapshot(user, account or db.get(models.CasinoWallet, user.id)),
         "failure_fragment_awarded": awarded_fragment,
         "failure_fragment_count": fragment_count,
     }
+    if not account:
+        response["balance"] = response["wallet"]["main_balance"]
     if vault_key_won is not None:
         response["vault_key_won"] = vault_key_won
     if rocket_result is not None:
