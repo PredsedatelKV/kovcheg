@@ -466,42 +466,44 @@ def test_casino_has_no_round_count_limit(game_api, monkeypatch):
         assert response.status_code == 200, response.text
 
 
-def test_casino_locks_for_six_hours_after_half_balance_loss(game_api, monkeypatch):
+@pytest.mark.parametrize("had_active_lock", [False, True])
+def test_casino_allows_rounds_after_loss_and_ignores_existing_locks(game_api, monkeypatch, had_active_lock):
     client, sessions = game_api
     now = datetime(2026, 7, 26, 12, 0, 0)
     monkeypatch.setattr(arcade.models, "now_utc", lambda: now)
     monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda *args, **kwargs: 1)
-
-    # Один фиксированный спин возвращает 10 и теряет 90% стартового баланса.
-    response = client.post(
-        "/api/arcade/roulette/spin",
-        json={"amount": 100, "request_id": "loss_lock_fixed", "ledger": 1},
-        headers=_headers(),
-    )
-    assert response.status_code == 200, response.text
+    old_lock = datetime(2026, 7, 26, 18, 0, 0) if had_active_lock else None
     with sessions() as db:
-        for stored in db.query(models.CasinoRound).all():
-            stored.created_at = now
+        db.get(models.User, 1).casino_locked_until = old_lock
         db.commit()
 
-    blocked = client.post(
-        "/api/arcade/casino/start",
-        json={"game": "dice", "amount": 100, "choice": "odd", "ledger": 1},
+    spin = client.post(
+        "/api/arcade/roulette/spin",
+        json={"amount": 100, "request_id": "loss_without_cooldown", "ledger": 1},
         headers=_headers(),
     )
-    assert blocked.status_code == 429
-    assert int(blocked.headers["Retry-After"]) == 6 * 60 * 60
-
-    monkeypatch.setattr(arcade.models, "now_utc", lambda: now + arcade.CASINO_LOCK_DURATION)
+    assert spin.status_code == 200, spin.text
+    assert spin.json()["wallet"]["cash"] == 10
     with sessions() as db:
+        assert db.get(models.User, 1).casino_locked_until == old_lock
         db.get(models.CasinoWallet, 1).cash = 100
         db.commit()
-    allowed = client.post(
+
+    started = client.post(
         "/api/arcade/casino/start",
-        json={"game": "dice", "amount": 100, "choice": "odd", "ledger": 1},
+        json={"game": "dice", "amount": 100, "choice": "even", "ledger": 1},
         headers=_headers(),
     )
-    assert allowed.status_code == 200
+    assert started.status_code == 200, started.text
+    settled = client.post(
+        "/api/arcade/casino/settle",
+        json={"token": started.json()["token"]},
+        headers=_headers(),
+    )
+    assert settled.status_code == 200, settled.text
+    assert settled.json()["payout"] == 0
+    with sessions() as db:
+        assert db.get(models.User, 1).casino_locked_until == old_lock
 
 
 MAINTENANCE_USERS = ("3", "4")  # Магомет и Ибрагим

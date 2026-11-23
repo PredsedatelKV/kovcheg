@@ -8,7 +8,6 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import StrictInt
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import casino_slots, models, schemas
@@ -239,9 +238,6 @@ CASINO_MAX_BET = 10_000
 
 # Ограничений по числу раундов нет. Защитная пауза включается только если
 # чистый убыток за скользящий час достиг половины стартового баланса.
-CASINO_LOSS_WINDOW = timedelta(hours=1)
-CASINO_LOCK_DURATION = timedelta(hours=6)
-CASINO_LOSS_THRESHOLD_PERCENT = 50
 
 # Все выплаты хранятся в процентах от ставки (целые числа), а не во float:
 # payout = ставка * процент // 100 считается точно и не даёт копеечных
@@ -330,74 +326,6 @@ def _rocket_crash_point() -> float:
 
 def _new_rocket_outcome() -> dict:
     return {"crash_at": _rocket_crash_point(), "auto_cashout_at_cap": True}
-
-
-def _format_wait(seconds: int) -> str:
-    minutes = max(1, math.ceil(seconds / 60))
-    hours, minutes = divmod(minutes, 60)
-    if hours and minutes:
-        return f"{hours} ч {minutes} мин"
-    if hours:
-        return f"{hours} ч"
-    return f"{minutes} мин"
-
-
-def _casino_loss_snapshot(db: Session, user: models.User, now: datetime,
-                          account: models.CasinoWallet | None) -> tuple[int, int]:
-    cash_used = models.CasinoFunding.cash_used if account else models.CasinoRound.bet
-    cash_before = models.CasinoFunding.cash_before if account else models.CasinoRound.balance_before
-    rows = db.query(
-        func.sum(cash_used - models.CasinoRound.payout),
-        func.max(cash_before),
-    ).select_from(models.CasinoRound)
-    if account:
-        rows = rows.join(models.CasinoFunding, models.CasinoFunding.token == models.CasinoRound.token)
-    else:
-        rows = rows.outerjoin(models.CasinoFunding, models.CasinoFunding.token == models.CasinoRound.token).filter(
-            models.CasinoFunding.token.is_(None),
-        )
-    loss_sum, peak = rows.filter(
-        models.CasinoRound.user_id == user.id,
-        models.CasinoRound.created_at >= now - CASINO_LOSS_WINDOW,
-    ).one()
-    net_loss = max(0, loss_sum or 0)
-    remaining = account.cash if account else ensure_wallet(db, user).balance
-    return net_loss, peak or max(0, remaining + net_loss)
-
-
-def _apply_casino_loss_lock(db: Session, user: models.User, account: models.CasinoWallet | None,
-                            now: datetime | None = None) -> datetime | None:
-    current_time = now or models.now_utc()
-    net_loss, baseline = _casino_loss_snapshot(db, user, current_time, account)
-    if baseline > 0 and net_loss * 100 >= baseline * CASINO_LOSS_THRESHOLD_PERCENT:
-        locked_until = current_time + CASINO_LOCK_DURATION
-        if not user.casino_locked_until or user.casino_locked_until < locked_until:
-            user.casino_locked_until = locked_until
-        return user.casino_locked_until
-    return None
-
-
-def _require_casino_access(db: Session, user: models.User, account: models.CasinoWallet) -> None:
-    now = models.now_utc()
-    locked_until = user.casino_locked_until
-    if locked_until and locked_until <= now:
-        user.casino_locked_until = None
-        locked_until = None
-    if not locked_until:
-        locked_until = _apply_casino_loss_lock(db, user, account, now)
-        if locked_until:
-            db.commit()
-    if not locked_until:
-        return
-    remaining_seconds = max(1, math.ceil((locked_until - now).total_seconds()))
-    raise HTTPException(
-        status_code=429,
-        detail=(
-            "Казино временно недоступно после потери 50% баланса за час. "
-            f"Доступ через {_format_wait(remaining_seconds)}"
-        ),
-        headers={"Retry-After": str(remaining_seconds)},
-    )
 
 
 def _grant_failure_fragment(db: Session, user: models.User, bet: int, payout: int) -> tuple[int, int]:
@@ -548,7 +476,6 @@ def _paid_spin(db: Session, user: models.User, account: models.CasinoWallet, *,
         awarded = 0
         count = 0
     else:
-        _require_casino_access(db, user, account)
         cash_before = account.cash
         cash_used, bonus_used = casino_wallet.spend(account, amount, use_bonus=game == "slots")
         if game == "slots":
@@ -564,7 +491,6 @@ def _paid_spin(db: Session, user: models.User, account: models.CasinoWallet, *,
         )
         _record_casino_funding(db, row, cash_used, bonus_used)
         awarded, count = _grant_failure_fragment(db, user, amount, payout)
-        _apply_casino_loss_lock(db, user, account)
         db.commit()
     return {
         **outcome, "ok": True, "payout": payout, "wallet": casino_wallet.snapshot(user, account),
@@ -615,7 +541,6 @@ def casino_start(
         existing = _active_vault_round(db, user.id)
         if existing:
             return {**_vault_round_response(existing), "wallet": casino_wallet.snapshot(user, account)}
-    _require_casino_access(db, user, account)
     cash_before = account.cash
     cash_used, bonus_used = casino_wallet.spend(account, amount)
     outcome: dict = {}
@@ -648,7 +573,6 @@ def casino_start(
         balance_before=cash_before, outcome=json.dumps(outcome), payout=payout,
     )
     _record_casino_funding(db, round_row, cash_used, bonus_used)
-    _apply_casino_loss_lock(db, user, account)
     db.commit()
     wallet = casino_wallet.snapshot(user, account)
     if game == "vault":
@@ -759,7 +683,6 @@ def casino_settle(
         db.add(models.Transaction(recipient_id=user.id, amount=payout, note=f"casino:win:{row.game}"))
     awarded_fragment, fragment_count = _grant_failure_fragment(db, user, row.bet, payout)
     db.flush()
-    _apply_casino_loss_lock(db, user, account)
     db.commit()
     response = {
         "ok": True,

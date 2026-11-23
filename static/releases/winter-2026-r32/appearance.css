@@ -1,0 +1,68 @@
+/* The background follows the theme. The entrance poster keeps its own canvas. */
+:root.winter {
+  --winter-sky: #fafafb url("./media/light-gradient.webp");
+  --flake-opacity: .29;
+}
+
+:root.winter.dark {
+  --winter-sky: #03041c url("./media/gradient.webp");
+  --flake-opacity: .44;
+}
+
+html.winter:not(.winter-gate) body {
+  background: var(--winter-sky) center / 100% 100% no-repeat;
+}
+
+#winter-flakes > span {
+  opacity: var(--flake-opacity);
+}
+
+#winter-flakes > span:nth-child(3n) {
+  opacity: calc(var(--flake-opacity) * .65);
+}
+
+.winter.dark #winter-flakes > span {
+  filter: brightness(0) invert(1);
+}
+
+@media (max-width: 520px) {
+  #winter-flakes > span:nth-child(n+29) { display: none; }
+}
+
+.appearance-glass-row {
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+  padding-top: 8px;
+}
+
+.appearance-glass-row #glass-toggle {
+  appearance: none;
+  width: 46px;
+  height: 26px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: grid;
+  align-items: center;
+  padding: 3px;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.appearance-glass-row #glass-toggle::before {
+  content: "";
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.appearance-glass-row #glass-toggle:checked {
+  background: var(--primary-ink);
+  border-color: transparent;
+  justify-items: end;
+}
+
+.appearance-glass-row #glass-toggle:checked::before {
+  background: var(--on-primary);
+}
