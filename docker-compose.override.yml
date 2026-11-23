@@ -1,6 +1,6 @@
 services:
   kovcheg:
-    image: "kovcheg-winter:${KOVCHEG_WINTER_IMAGE:-casino-tuning-r26}"
+    image: "kovcheg-winter:${KOVCHEG_WINTER_IMAGE:-casino-vault-r27}"
     environment:
       HF_HUB_OFFLINE: "1"
     volumes:
