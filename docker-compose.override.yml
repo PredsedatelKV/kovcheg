@@ -1,6 +1,6 @@
 services:
   kovcheg:
-    image: "kovcheg-winter:${KOVCHEG_WINTER_IMAGE:-polar-express}"
+    image: "kovcheg-winter:${KOVCHEG_WINTER_IMAGE:-polar-express-r21}"
     environment:
       HF_HUB_OFFLINE: "1"
     volumes:
