@@ -1,7 +1,9 @@
 """Authenticated Polar Express crews and cooperative train rooms."""
 import secrets
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket
+from pydantic import BaseModel, ConfigDict, Field
 
 from app import models
 from app.api._helpers import require_open_section
@@ -13,6 +15,11 @@ router = APIRouter(prefix="/api/arcade/train", tags=["polar-express"],
                    dependencies=[Depends(require_open_section("arcade"))])
 socket_router = APIRouter()
 MODE = "journey"
+
+
+class LeaveBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str | None = Field(default=None, pattern="^[A-Z2-9]{6}$")
 
 
 class TrainHub(ArenaHub):
@@ -30,26 +37,30 @@ class TrainHub(ArenaHub):
             raise HTTPException(403, "Рейс запускает создатель комнаты")
         if room.game is not None:
             raise HTTPException(409, "Вернитесь в лобби перед новым рейсом")
-        players = [Passenger(m.id,m.name,connected=m.connected) for m in room.members.values()]
+        players = [Passenger(m.id,m.name,bot=room.bots and not m.connected and m.uid != uid,
+                             connected=m.connected) for m in room.members.values()]
         # A solo player can dispatch without bots or take a complete helper crew.
         if room.bots:
             for i in range(4-len(players)):
                 players.append(Passenger(f"b{i}",("Иней","Искра","Фонарь")[i],bot=True))
-        room.game = Journey(players,secrets.randbits(32))
+        room.game = Journey(players,secrets.randbits(32),crew_size=len(room.members))
+        room.touched = time.monotonic()
         room.finished_at = 0
         for m in room.members.values():
             m.seq = -1
         self.broadcast(room)
         return room
 
+    def leave(self, uid):
+        self.tickets = {token: ticket for token, ticket in self.tickets.items() if ticket[0] != uid}
+        super().leave(uid)
+
     def member_left(self, room, member):
         p = room.game.actors.get(member.id)
         if p:
             room.game.connection(p,False,room.bots)
             if not room.bots:
-                if p.hand:
-                    stock_item = "parcel" if p.hand == "sealed" else p.hand
-                    room.game.stock[stock_item] += 1
+                room.game.return_item(p.hand)
                 del room.game.actors[member.id]
 
     def set_connected(self, room, member, connected):
@@ -102,8 +113,10 @@ async def lobby(user: models.User = Depends(current_user)):
 
 
 @router.post("/leave")
-async def leave(user: models.User = Depends(current_user)):
-    hub.leave(user.id)
+async def leave(body: LeaveBody | None = None, user: models.User = Depends(current_user)):
+    room = hub.room_for(user.id)
+    if room and (body is None or body.code is None or body.code == room.code):
+        hub.leave(user.id)
     return {"ok":True}
 
 

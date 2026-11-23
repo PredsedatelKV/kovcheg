@@ -5,7 +5,6 @@ from collections import deque
 from dataclasses import dataclass, field
 import json
 import logging
-import math
 import secrets
 import time
 from urllib.parse import urlsplit
@@ -279,8 +278,14 @@ async def arena_socket(ws:WebSocket):
 
 async def room_socket(ws:WebSocket,hub:ArenaHub):
     origin=ws.headers.get("origin")
-    if origin and urlsplit(origin).netloc!=ws.headers.get("host"):
-        await ws.close(1008);return
+    if origin:
+        try:
+            parsed = urlsplit(origin)
+            trusted = parsed.scheme in ("http", "https") and parsed.netloc == ws.headers.get("host")
+        except ValueError:
+            trusted = False
+        if not trusted:
+            await ws.close(1008);return
     await ws.accept()
     room=member=sender=None
     try:
@@ -305,7 +310,8 @@ async def room_socket(ws:WebSocket,hub:ArenaHub):
         samples=deque()
         while True:
             message=await asyncio.wait_for(ws.receive_text(),timeout=20)
-            if member.ws is not ws:return
+            if member.ws is not ws or room.members.get(member.uid) is not member:
+                return
             now=time.monotonic();samples.append(now)
             while samples and samples[0]<now-1:samples.popleft()
             if len(samples)>65:await ws.close(1008,"Слишком много сообщений");return
@@ -322,7 +328,7 @@ async def room_socket(ws:WebSocket,hub:ArenaHub):
             member.seq=seq
             if room.game and room.game.phase=="playing":
                 values=[data.get(k,0) for k in ["mx","mz","ax","az","pitch"]]
-                if any(isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) for v in values):
+                if any(isinstance(v,bool) or not isinstance(v,(int,float)) or not -1e4 <= v <= 1e4 for v in values):
                     await ws.close(1008);return
                 room.game.set_input(member.id,data)
     except (WebSocketDisconnect,asyncio.TimeoutError,ValueError,TypeError):
