@@ -1,0 +1,178 @@
+.winter {
+  --toolbar-fit: 61px;
+  --toolbar-fade-start: #f6fbfff5;
+  --toolbar-fade-middle: #eef7ffcf;
+  --toolbar-fade-edge: #e5f2ff66;
+  --dock-matte: #e4f0ffd3;
+}
+
+.winter.dark {
+  --toolbar-fade-start: #0c1731f5;
+  --toolbar-fade-middle: #111d3bd9;
+  --toolbar-fade-edge: #17285280;
+  --dock-matte: #132647d3;
+}
+
+@media (max-width: 420px) {
+  .winter { --toolbar-fit: 55px; }
+}
+
+.winter #view { scrollbar-width: none; }
+.winter #view::-webkit-scrollbar { display: none; }
+
+.winter #station-header {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 11;
+  pointer-events: none;
+}
+
+.winter #station-header::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 -14px;
+  z-index: -1;
+  background: linear-gradient(to bottom,
+    var(--toolbar-fade-start), var(--toolbar-fade-middle) 45%,
+    var(--toolbar-fade-edge) 79%, transparent);
+  -webkit-mask-image: linear-gradient(#000 0 66%, transparent);
+  mask-image: linear-gradient(#000 0 66%, transparent);
+  -webkit-backdrop-filter: blur(13px) saturate(1.12);
+  backdrop-filter: blur(13px) saturate(1.12);
+}
+
+.winter #station-header button { pointer-events: auto; }
+
+.winter #station-header:not([hidden]) + #view {
+  padding-top: calc(12px + var(--toolbar-fit) + max(env(safe-area-inset-top), var(--station-telegram-top, 0px)));
+  scroll-padding-top: calc(var(--toolbar-fit) + max(env(safe-area-inset-top), var(--station-telegram-top, 0px)));
+}
+
+.winter:not(.solid-surfaces, .winter-gate) .station-nav {
+  --ice-fill: var(--dock-matte);
+  -webkit-backdrop-filter: blur(20px) saturate(1.16);
+  backdrop-filter: blur(20px) saturate(1.16);
+}
+
+.winter .station-chat-dialog :is(.chat-send-btn, .chat-sticker-btn, .chat-game-btn) {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0;
+  background: var(--surface-2);
+  color: var(--primary-ink);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+.winter .station-chat-dialog .chat-send-btn svg {
+  width: 21px;
+  height: 21px;
+  stroke: currentColor !important;
+}
+
+.winter .station-chat-dialog :is(.chat-send-btn, .chat-sticker-btn, .chat-game-btn):hover {
+  opacity: 1;
+  background: var(--primary-soft);
+}
+
+.winter .station-chat-dialog .chat-send-btn:disabled { opacity: .48; }
+
+.winter [data-tab-content="home"] .winter-carousel { margin: 10px 0 9px; }
+.winter [data-tab-content="home"] .carousel-dots { margin-top: 2px; }
+.winter [data-tab-content="home"] .carousel-arrow,
+.winter [data-tab-content="home"] .carousel-dot { height: 24px; }
+
+.winter .station-wheel-card {
+  display: grid;
+  grid-template-columns: clamp(53px, 14vw, 68px) 1fr 18px;
+  gap: 11px;
+  min-height: 70px;
+  margin: 9px 0 13px;
+  padding: 6px 13px 6px 9px;
+}
+
+.station-wheel-thumbnail {
+  width: 100%;
+  height: 57px;
+  object-fit: contain;
+}
+
+.winter .station-wheel-card strong { font-size: 15px; }
+.winter .station-wheel-card > .ui-icon { display: block; justify-self: end; }
+
+.carousel-story { clear: both; color: var(--text); }
+.carousel-story > h2 { margin: 0 0 10px; }
+.carousel-story-image { display: block; width: 100%; max-height: 42dvh; object-fit: contain; border-radius: 13px; }
+.carousel-story p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.carousel-story small { color: var(--text-muted); }
+
+.winter .winter-wheel-modal { position: relative; }
+
+/* A single source-space canvas keeps rim, axis and medallion registered. */
+.winter-wheel-scene { display: block; width: 100%; height: 100%; overflow: visible; }
+.winter-wheel-scene .winter-wheel-rotor {
+  position: static;
+  width: auto;
+  height: auto;
+  transform-box: view-box;
+  transform-origin: 49.76076555% 48.28548644%;
+  will-change: transform;
+}
+.winter-wheel-frame, .winter-wheel-hub { pointer-events: none; }
+
+.winter .station-wallet-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  margin-top: 9px;
+}
+
+.winter .station-wallet-stat {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 5px;
+  padding: 4px 3px;
+  min-width: 0;
+  text-align: center;
+  line-height: 1.12;
+}
+
+.winter .station-wallet-stat + .station-wallet-stat { border-left: 1px solid var(--border); }
+.winter .station-wallet-stat .ui-icon { width: 23px; height: 23px; }
+.winter .station-wallet-stats .station-wallet-stat strong {
+  color: var(--text);
+  font-size: clamp(13px, 4.1vw, 22px);
+  font-weight: 780;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.winter .station-wallet-stat > span { color: var(--text-muted); font-size: 11px; font-weight: 640; }
+
+@media (max-width: 540px) {
+  .winter .profile-overview-grid { grid-template-columns: 1fr; }
+}
+
+.lootbox-chest-overlay.lootbox-theme-winter-ice {
+  --lb-accent: #63c7ff;
+  --lb-deep: #0b2247;
+  --lb-light: #d9f5ff;
+  background:
+    radial-gradient(ellipse at 50% 38%, #489ad6 0%, transparent 51%),
+    radial-gradient(ellipse at 12% 82%, #23649e73, transparent 45%),
+    linear-gradient(158deg, #081628, #173c69 60%, #081f3e);
+}
+
+.lootbox-chest-overlay.lootbox-theme-winter-seasonal {
+  --lb-accent: #ff8a75;
+  --lb-deep: #461024;
+  --lb-light: #ffe9cb;
+  background:
+    radial-gradient(ellipse at 50% 40%, #ab3640 0%, transparent 52%),
+    radial-gradient(ellipse at 85% 68%, #c3714059, transparent 50%),
+    linear-gradient(151deg, #1c0c19, #600f28 64%, #2b1020);
+}
