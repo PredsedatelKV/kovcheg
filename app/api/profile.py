@@ -14,6 +14,7 @@ from app.api._helpers import award_xp, ensure_wallet
 from app.winter_economy import SNOWFLAKE_CODE, snowflake_balance
 from app.auth import current_user, is_admin
 from app.db import begin_game_write, get_db
+from app.tree_custom import TREE_CODES, saved_tree_codes, tree_catalog
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
@@ -287,6 +288,8 @@ def me(user: models.User = Depends(current_user), db: Session = Depends(get_db))
         failure_fragment_cost=models.FAILURE_FRAGMENT_COST,
         inventory=_inventory_to_out(inventory),
         skin_inventory=_inventory_to_out(skin_inventory),
+        tree_loadout=schemas.TreeLoadoutOut(equipped=sorted(saved_tree_codes(db, user.id))),
+        tree_catalog=tree_catalog(db),
         user_tasks=[_user_task_to_out(ut) for ut in user_tasks],
         daily_plan=(
             schemas.TaskOut(
@@ -314,6 +317,32 @@ def me(user: models.User = Depends(current_user), db: Session = Depends(get_db))
             .one_or_none(),
         ),
     )
+
+
+@router.post("/tree/decorations", response_model=schemas.TreeLoadoutOut)
+def set_tree_decoration(
+    payload: schemas.TreeDecorationRequest,
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> schemas.TreeLoadoutOut:
+    begin_game_write(db)
+    if payload.code not in TREE_CODES or not db.query(models.Item.id).filter_by(code=payload.code).first():
+        raise HTTPException(404, "Украшение не найдено")
+    if db.get_bind().dialect.name != "sqlite":
+        db.query(models.User.id).filter_by(id=user.id).with_for_update().one()
+    equipped = saved_tree_codes(db, user.id)
+    if payload.equipped:
+        equipped.add(payload.code)
+    else:
+        equipped.discard(payload.code)
+    arranged = sorted(equipped)
+    loadout = db.get(models.UserTreeLoadout, user.id)
+    if loadout is None:
+        db.add(models.UserTreeLoadout(user_id=user.id, decorations=arranged))
+    else:
+        loadout.decorations = arranged
+    db.commit()
+    return schemas.TreeLoadoutOut(equipped=arranged)
 
 
 @router.get("/skins", response_model=schemas.SkinLoadoutOut)

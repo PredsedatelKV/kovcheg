@@ -1,0 +1,122 @@
+[
+  {
+    "code": "tree_bauble_k",
+    "name": "Рубиновый шар «К»",
+    "group": "Игрушки",
+    "rarity": "Обычный"
+  },
+  {
+    "code": "tree_bauble_snow",
+    "name": "Шар «Снежинка»",
+    "group": "Игрушки",
+    "rarity": "Редкий"
+  },
+  {
+    "code": "tree_bauble_cube",
+    "name": "Шар «Белый куб»",
+    "group": "Игрушки",
+    "rarity": "Редкий"
+  },
+  {
+    "code": "tree_bauble_marble",
+    "name": "Шар «Северный мрамор»",
+    "group": "Игрушки",
+    "rarity": "Эпический"
+  },
+  {
+    "code": "tree_box_bronze",
+    "name": "Бронзовые ковбоксики",
+    "group": "Игрушки",
+    "rarity": "Редкий"
+  },
+  {
+    "code": "tree_box_legend",
+    "name": "Радужные ковбоксики",
+    "group": "Игрушки",
+    "rarity": "Легендарный"
+  },
+  {
+    "code": "tree_toys_crystal",
+    "name": "Хрустальные сосульки",
+    "group": "Игрушки",
+    "rarity": "Редкий"
+  },
+  {
+    "code": "tree_bell_gold",
+    "name": "Золотые колокольчики",
+    "group": "Игрушки",
+    "rarity": "Редкий"
+  },
+  {
+    "code": "tree_candy_cane",
+    "name": "Мятные леденцы",
+    "group": "Игрушки",
+    "rarity": "Обычный"
+  },
+  {
+    "code": "tree_orange_slice",
+    "name": "Апельсиновые дольки",
+    "group": "Игрушки",
+    "rarity": "Обычный"
+  },
+  {
+    "code": "tree_bow_crimson",
+    "name": "Малиновые банты",
+    "group": "Игрушки",
+    "rarity": "Обычный"
+  },
+  {
+    "code": "tree_pinecone",
+    "name": "Кедровые шишки",
+    "group": "Игрушки",
+    "rarity": "Обычный"
+  },
+  {
+    "code": "tree_moon",
+    "name": "Лунные подвески",
+    "group": "Игрушки",
+    "rarity": "Эпический"
+  },
+  {
+    "code": "tree_garland_aurora",
+    "name": "Гирлянда «Северное сияние»",
+    "group": "Гирлянды",
+    "rarity": "Эпический"
+  },
+  {
+    "code": "tree_lights_gold",
+    "name": "Янтарные огоньки",
+    "group": "Гирлянды",
+    "rarity": "Редкий"
+  },
+  {
+    "code": "tree_garland_pearls",
+    "name": "Жемчужные бусы",
+    "group": "Гирлянды",
+    "rarity": "Редкий"
+  },
+  {
+    "code": "tree_garland_ribbon",
+    "name": "Алая атласная лента",
+    "group": "Гирлянды",
+    "rarity": "Эпический"
+  },
+  {
+    "code": "tree_snow_soft",
+    "name": "Искусственный снег",
+    "group": "Под ёлкой",
+    "rarity": "Редкий"
+  },
+  {
+    "code": "tree_gifts_festive",
+    "name": "Подарки под ёлкой",
+    "group": "Под ёлкой",
+    "rarity": "Эпический"
+  },
+  {
+    "code": "tree_star_north",
+    "name": "Вифлеемская звезда",
+    "group": "Верхушка",
+    "rarity": "Легендарный"
+  }
+]

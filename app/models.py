@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     Index,
+    JSON,
     LargeBinary,
     String,
     Text,
@@ -754,6 +755,13 @@ class UserSkinLoadout(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     user: Mapped["User"] = relationship("User")
+
+
+class UserTreeLoadout(Base):
+    __tablename__ = "user_tree_loadouts"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    decorations: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
 
 class DailyReward(Base):

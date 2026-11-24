@@ -37,6 +37,7 @@ from app.config import get_settings
 from app.db import Base, SessionLocal, engine, session_scope
 from app.idempotency import protect_game_mutation
 from app.seed import migrate_icons, migrate_schema, seed
+from app.tree_custom import seed_tree_catalog
 from app.winter_economy import seed_winter_catalog
 from app.winter_preview import preview_gate
 
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI):
         seed(db)
         migrate_icons(db)
         seed_winter_catalog(db)
+        seed_tree_catalog(db)
     # Warm up the embeddings model so the first assistant request isn't slow.
     try:
         from app.assistant.embedder import warmup
@@ -176,7 +178,10 @@ if STATIC_DIR.exists():
         resp = await call_next(request)
         path = request.url.path.lower()
         if path.startswith("/static/"):
-            if path.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".mp3", ".ogg", ".woff", ".woff2")):
+            release = path.removeprefix("/static/releases/winter-2026-r").split("/", 1)[0]
+            if release.isdecimal() and int(release) >= 40:
+                resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            elif path.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".mp3", ".ogg", ".woff", ".woff2")):
                 # Stable media remains in the WebView cache; uploaded content
                 # gets a new URL and bundled replacements get a bumped ?v.
                 resp.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=604800"
@@ -193,6 +198,11 @@ if STATIC_DIR.exists():
     @app.get("/")
     def root() -> FileResponse:
         return FileResponse(str(STATIC_DIR / "index.html"))
+
+    @app.get("/asset-worker.js", include_in_schema=False)
+    def static_asset_worker() -> FileResponse:
+        return FileResponse(str(STATIC_DIR / "asset-worker.js"), media_type="text/javascript",
+                            headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
 
     @app.get("/manifest.json")
     def manifest() -> FileResponse:

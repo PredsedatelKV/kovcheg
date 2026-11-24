@@ -250,6 +250,22 @@ class SkinUnequipRequest(BaseModel):
     slot: Literal["head", "torso", "legs", "feet", "tree_garland", "tree_toys", "tree_snow", "tree_gifts"]
 
 
+class TreeDecorationOut(BaseModel):
+    code: str
+    name: str
+    group: str
+    rarity: str
+
+
+class TreeLoadoutOut(BaseModel):
+    equipped: list[str] = Field(default_factory=list)
+
+
+class TreeDecorationRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=64)
+    equipped: bool
+
+
 class ProfilePayload(BaseModel):
     user: UserOut
     bp_level: int = 0
@@ -261,6 +277,8 @@ class ProfilePayload(BaseModel):
     daily_plan: TaskOut | None = None
     login_gifts: list[LoginGiftOut] = Field(default_factory=list)
     skin_loadout: SkinLoadoutOut = Field(default_factory=SkinLoadoutOut)
+    tree_loadout: TreeLoadoutOut = Field(default_factory=TreeLoadoutOut)
+    tree_catalog: list[TreeDecorationOut] = Field(default_factory=list)
 
 
 class KovernaPayload(BaseModel):
