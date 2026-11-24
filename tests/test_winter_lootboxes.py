@@ -195,6 +195,37 @@ class WinterLootboxTests(unittest.TestCase):
                 with self.sessions() as db:
                     self.assertIsNone(db.query(models.InventoryItem).filter_by(user_id=self.uid, item_id=item_id).one_or_none())
 
+    def test_legendary_cosmetics_are_granted_when_stock_runs_out(self):
+        with self.sessions() as db:
+            box = models.Item(code="legend_box", name="Ковбокс", icon="/box.svg", lootbox_pool_code="seasonal")
+            crown = models.Item(code="skin_crown", name="Корона", icon="/crown.svg", rarity="Легендарный", skin_slot="head")
+            boots = models.Item(code="skin_boots", name="Сапоги", icon="/boots.svg", rarity="Легендарный", skin_slot="feet")
+            physical = models.Item(code="physical_prize", name="Приз", icon="/prize.svg", lootbox_reward_tier="super_special")
+            db.add_all([box, crown, boots, physical])
+            db.flush()
+            pool = models.LootboxPool(code="seasonal", name="Легендарный", item_id=box.id, opening_mode="chest_v2")
+            product = models.ShopProduct(item_id=physical.id, price=1, stock=1, is_active=True)
+            db.add_all([pool, product])
+            db.flush()
+            db.add(models.LootboxPoolEntry(pool_id=pool.id, reward_kind="xp", is_guaranteed=True))
+            db.add(models.InventoryItem(user_id=self.uid, item_id=box.id, quantity=4))
+            box_id, stock_id = box.id, product.id
+            db.commit()
+        with patch.object(profile, "uses_limited_lootbox_stock", return_value=True), patch.object(
+            profile.secrets, "randbelow", return_value=0,
+        ):
+            for index, expected in enumerate(["physical_prize", "skin_crown", "skin_boots", "skin_crown"]):
+                payload = {"item_id": box_id, "request_id": f"legendary-stock-{index}"}
+                opened = self.client.post("/api/profile/inventory/open-lootbox", json=payload)
+                self.assertEqual(opened.status_code, 200, opened.text)
+                reward, = opened.json()["rewards"]
+                self.assertEqual(reward["item"]["code"], expected)
+                replay = self.client.post("/api/profile/inventory/open-lootbox", json=payload)
+                self.assertTrue(replay.json()["replayed"])
+                self.assertEqual(replay.json()["rewards"], [reward])
+        with self.sessions() as db:
+            self.assertEqual(db.get(models.ShopProduct, stock_id).stock, 0)
+
     def test_migration_preserves_other_boxes_and_later_admin_edits(self):
         self.seed()
         with self.sessions() as db:

@@ -784,6 +784,13 @@ def _reward_priority(kind: str, item: models.Item | None = None) -> int:
     return {"fragment": 0, "xp": 1, "kovbucks": 2, "kovcoins": 2, "item": 3}[presentation_kind]
 
 
+def _stock_free_lootbox_item(item: models.Item) -> bool:
+    return (
+        item.code in {"box_fragment", "failure_fragment", SNOWFLAKE_CODE}
+        or (item.skin_slot in SKIN_SLOTS and item.rarity == "Легендарный")
+    )
+
+
 def _limited_stock_product(
     db: Session,
     user: models.User,
@@ -792,7 +799,7 @@ def _limited_stock_product(
     if (
         item is None
         or not uses_limited_lootbox_stock(user)
-        or item.code in {"box_fragment", "failure_fragment", SNOWFLAKE_CODE}
+        or _stock_free_lootbox_item(item)
         or item.lootbox_pool_code
     ):
         return None
@@ -805,7 +812,7 @@ def _limited_stock_product(
 def _entry_available_for_user(db: Session, user: models.User, entry: models.LootboxPoolEntry) -> bool:
     if entry.reward_kind != "item" or entry.item is None:
         return True
-    if entry.item.code in {"box_fragment", "failure_fragment", SNOWFLAKE_CODE}:
+    if _stock_free_lootbox_item(entry.item):
         return True
     product = db.query(models.ShopProduct).filter(
         models.ShopProduct.item_id == entry.item.id,
@@ -847,6 +854,23 @@ def _fallback_shop_item(
         ).all()
     }
     available = [item for item in rows if item.id in stocked_ids]
+    if not available and tier == "super_special":
+        cosmetics = [
+            item for item in db.query(models.Item).filter(
+                models.Item.skin_slot.in_(SKIN_SLOTS),
+                models.Item.rarity == "Легендарный",
+                models.Item.lootbox_pool_code.is_(None),
+            ).order_by(models.Item.id).all()
+            if item.id not in excluded
+        ]
+        owned = {
+            item_id for (item_id,) in db.query(models.InventoryItem.item_id).filter(
+                models.InventoryItem.user_id == user.id,
+                models.InventoryItem.item_id.in_([item.id for item in cosmetics]),
+                models.InventoryItem.quantity > 0,
+            ).all()
+        }
+        available = [item for item in cosmetics if item.id not in owned] or cosmetics
     # Ibrahim and Magomet are tied to real warehouse stock. For everyone else
     # an entirely empty tier remains drawable, but a stocked replacement is
     # always preferred over a sold-out card.
@@ -871,7 +895,7 @@ def _resolved_reward_item(
     *,
     exclude_ids: set[int] | None = None,
 ) -> models.Item:
-    if item.code in {"box_fragment", "failure_fragment", SNOWFLAKE_CODE}:
+    if _stock_free_lootbox_item(item):
         return item
     product = db.query(models.ShopProduct).filter(
         models.ShopProduct.item_id == item.id,
@@ -1098,9 +1122,12 @@ def _decrement_limited_stock(
 ) -> None:
     product = _limited_stock_product(db, user, item)
     if product is None:
-        if uses_limited_lootbox_stock(user) and item is not None and item.code not in {
-            "box_fragment", "failure_fragment", SNOWFLAKE_CODE
-        } and not item.lootbox_pool_code:
+        if (
+            uses_limited_lootbox_stock(user)
+            and item is not None
+            and not _stock_free_lootbox_item(item)
+            and not item.lootbox_pool_code
+        ):
             raise HTTPException(409, "Этот предмет закончился в магазине")
         return
     if product.stock >= 0:

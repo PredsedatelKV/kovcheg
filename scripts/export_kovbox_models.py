@@ -7,6 +7,7 @@ All coordinates and split normals come from the evaluated Blender meshes. Each
 batch uses 16-bit indices so the viewer can also run on older WebGL devices.
 """
 import gzip
+import math
 import shutil
 import struct
 import sys
@@ -15,10 +16,31 @@ from pathlib import Path
 
 import bpy
 from mathutils import Vector
+from mathutils.bvhtree import BVHTree
 
 VARIANTS = ("bronze", "silver", "gold", "rainbow", "ice", "festive")
 POSITION_SCALE = 8192
 VERTEX = struct.Struct("<3h3b9B")
+# Several deterministic, angled rays estimate contact shadows without requiring
+# shadow maps or extra texture sampling in the game renderer.
+AO_DISTANCE = 0.29
+AO_RAYS = [(0, 0, 1)] + [
+    (math.cos(index * math.tau / 5) * .84, math.sin(index * math.tau / 5) * .84, .54)
+    for index in range(5)
+]
+
+
+def ambient_visibility(bvh, point, normal):
+    tangent = normal.cross(Vector((0, 0, 1) if abs(normal.z) < .9 else (0, 1, 0))).normalized()
+    bitangent = normal.cross(tangent)
+    origin = point + normal * .012
+    hits = 0.0
+    for x, y, z in AO_RAYS:
+        _, _, _, distance = bvh.ray_cast(origin, tangent * x + bitangent * y + normal * z, AO_DISTANCE)
+        if distance is not None:
+            hits += 1 - distance / AO_DISTANCE
+    return 1 - .94 * math.sqrt(hits / len(AO_RAYS))
+
 
 
 def clamp(value):
@@ -65,12 +87,12 @@ class Material:
             self.intensity = 0.22
             self.kind = 1
 
-    def packed(self, point):
+    def packed(self, point, visibility):
         color = rainbow_color(self.ramps, point) if self.ramps else self.base
         glow = color if self.ramps else self.emission
         return (*[byte(srgb(v)) for v in color],
                 *[byte(srgb(clamp(v * self.intensity / 3))) for v in glow],
-                byte(self.roughness), byte(self.metallic), self.kind)
+                byte(self.roughness), byte(self.metallic), (self.kind << 7) | round(clamp(visibility) * 127))
 
 
 class Batch:
@@ -113,47 +135,58 @@ def export(scene, variant, destination):
     bounds = [obj.matrix_world @ Vector(co) for obj in evaluated for co in obj.bound_box]
     center = Vector([(min(p[i] for p in bounds) + max(p[i] for p in bounds)) / 2 for i in range(3)])
 
-    batches = [Batch()]
-    materials = {}
-    radius = 0
+    meshes = []
+    surfaces = []
+    world_points = []
     for obj in evaluated:
         mesh = obj.to_mesh()
         mesh.calc_loop_triangles()
+        points = [obj.matrix_world @ vertex.co for vertex in mesh.vertices]
+        needles = variant == "festive" and "иголк" in obj.name
+        triangles = [tri for tri in mesh.loop_triangles if not needles or tri.index % 2 == 0]
+        surfaces.extend(tuple(len(world_points) + v for v in tri.vertices) for tri in triangles)
+        world_points.extend(points)
+        meshes.append((obj, mesh, points, triangles))
+    bvh = BVHTree.FromPolygons(world_points, surfaces, all_triangles=True)
+
+    batches = [Batch()]
+    materials = {}
+    ambient = {}
+    radius = 0
+    for obj, mesh, points, triangles in meshes:
         slots = []
         for material in mesh.materials:
             if material not in materials:
                 materials[material] = Material(material, variant)
             slots.append(materials[material])
         normal_transform = obj.matrix_world.to_3x3().inverted_safe().transposed()
-        points = [obj.matrix_world @ v.co for v in mesh.vertices]
         positions = [p - center for p in points]
         radius = max(radius, max((p.length for p in positions), default=0))
         coordinates = [tuple(round(value * POSITION_SCALE) for value in (p.x, p.z, -p.y)) for p in positions]
-        normals = []
-        for corner in mesh.corner_normals:
-            n = (normal_transform @ corner.vector).normalized()
-            normals.append(tuple(round(value * 127) for value in (n.x, n.z, -n.y)))
+        normals = [(normal_transform @ corner.vector).normalized() for corner in mesh.corner_normals]
+        packed_normals = [tuple(round(value * 127) for value in (n.x, n.z, -n.y)) for n in normals]
 
-        # Separate subpixel needles contribute texture. Keep their distribution
-        # along each branch with a deterministic half-density sample.
-        needles = variant == "festive" and "иголк" in obj.name
-        for tri in mesh.loop_triangles:
-            if needles and tri.index % 2:
-                continue
+        for tri in triangles:
             appearance = slots[tri.material_index]
-            corners = [VERTEX.pack(*coordinates[v], *normals[loop], *appearance.packed(points[v]))
-                       for loop, v in zip(tri.loops, tri.vertices)]
+            corners = []
+            for loop, vertex in zip(tri.loops, tri.vertices):
+                position = coordinates[vertex]
+                normal = packed_normals[loop]
+                key = (position, normal)
+                if key not in ambient:
+                    ambient[key] = ambient_visibility(bvh, points[vertex], normals[loop])
+                corners.append(VERTEX.pack(*position, *normal, *appearance.packed(points[vertex], ambient[key])))
             if len(batches[-1].lookup) > 65533:
                 batches.append(Batch())
             batches[-1].add_triangle(corners)
         obj.to_mesh_clear()
 
     with destination.open("wb") as stream:
-        stream.write(struct.pack("<4sHHf", b"KBOX", 1, len(batches), radius))
+        stream.write(struct.pack("<4sHHf", b"KBOX", 2, len(batches), radius))
         for batch in batches:
             batch.write(stream)
     with destination.open("rb") as source, destination.with_suffix(".bin.gz").open("wb") as packed:
-        with gzip.GzipFile(fileobj=packed, filename="", mtime=0) as compressed:
+        with gzip.GzipFile(fileobj=packed, filename="", mode="wb", mtime=0) as compressed:
             shutil.copyfileobj(source, compressed)
     print(variant, sum(len(b.indices) // 3 for b in batches), "triangles,", len(batches),
           "batches,", destination.stat().st_size, "bytes", flush=True)
