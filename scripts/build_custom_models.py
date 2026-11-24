@@ -153,22 +153,24 @@ def tube(mesh, points, radii, mat, sides=8):
 
 def box(mesh, center, size, mat, bevel=.06):
     ext=tuple(n/2 for n in size)
+    steps = (-1, -.70, .70, 1) if bevel else (-1, 1)
+    side = len(steps)
     for normal,u,v in (
         ((0,0,1),(1,0,0),(0,1,0)), ((0,0,-1),(-1,0,0),(0,1,0)),
         ((1,0,0),(0,0,-1),(0,1,0)), ((-1,0,0),(0,0,1),(0,1,0)),
         ((0,1,0),(1,0,0),(0,0,-1)), ((0,-1,0),(1,0,0),(0,0,1)),
     ):
         a=len(mesh.vertices)
-        for j in (-1,-.70,.70,1):
-            for i in (-1,-.70,.70,1):
+        for j in steps:
+            for i in steps:
                 point=tuple(ext[k]*(normal[k]+u[k]*i+v[k]*j) for k in range(3))
                 r=tuple(max(-ext[k]+bevel,min(ext[k]-bevel,point[k])) for k in range(3))
-                n=norm(sub(point,r))
+                n=norm(sub(point,r)) if bevel else normal
                 mesh.vertex(add(center,add(r,mul(n,bevel))),n,mat)
-        for j in range(3):
-            for i in range(3):
-                k=a+j*4+i
-                mesh.quad(k,k+1,k+5,k+4)
+        for j in range(side-1):
+            for i in range(side-1):
+                k=a+j*side+i
+                mesh.quad(k,k+1,k+side+1,k+side)
 
 
 def plate(mesh, outline, center, depth, mat, side=None):
@@ -594,9 +596,16 @@ HUMAN_PALETTES=[
 
 # All pieces use the same body grid, so sleeves, trousers and boots
 # can be replaced independently without drawing two shells in one slot.
-ARM_X = .680
-LEG_X = .238
 FOOT_Y = -1.805
+PIXEL = .115
+LIMB = 4 * PIXEL
+HEAD = 8 * PIXEL
+BODY = 12 * PIXEL
+WAIST_Y = FOOT_Y + BODY
+SHOULDER_Y = WAIST_Y + BODY
+ARM_X = (HEAD + LIMB) / 2
+LEG_X = LIMB / 2
+SHOE_HEIGHT = .317
 FABRIC = .70
 
 
@@ -624,8 +633,7 @@ def pixels(mesh, rows, palette, x, y, z, cell, *, back=False, metal=0):
 
 def make_person():
     mesh = Mesh()
-    voxel(mesh, (0, 1.42, 0), (.92, .92, .92), "#e8af83", rough=.64)
-    voxel(mesh, (0, .90, 0), (.37, .19, .34), "#c58664", shade=.74)
+    voxel(mesh, (0, SHOULDER_Y + HEAD / 2, 0), (HEAD, HEAD, HEAD), "#e8af83", rough=.64, bevel=0)
     pixels(mesh, [
         "........",
         "........",
@@ -638,7 +646,9 @@ def make_person():
     ], {"X":"#6b4034","L":"#a56b51","W":"#fff1d1","E":"#254350","B":"#d28e75",
         "N":"#c68b6a","M":"#9d5a57"}, -.408, 1.809, .462, .102)
     for side in (-1, 1):
-        voxel(mesh, (side * ARM_X, -.104, 0), (.397, .884, .429), "#e8af83", shade=.91)
+        exposed = BODY - .46
+        voxel(mesh, (side * ARM_X, WAIST_Y + exposed / 2, 0),
+              (LIMB, exposed, LIMB - .004), "#e8af83", shade=.91, bevel=0)
     return mesh
 
 
@@ -684,19 +694,20 @@ def headpiece(mesh, code, tint):
 
 def outfit(mesh, kind, tint):
     metal = .36 if kind == "armor" else 0
-    voxel(mesh, (0,.188,0), (.909,1.261,.477), tint, metal=metal)
+    voxel(mesh, (0,WAIST_Y + BODY / 2,0), (HEAD,BODY,LIMB), tint, metal=metal, bevel=0)
     long_sleeve = kind != "torso"
     for side in (-1, 1):
-        length = .899 if long_sleeve else .493
-        voxel(mesh, (side * ARM_X, .808-length/2,0), (.411,length,.464), tint, metal=metal, shade=.91)
+        length = .92 if long_sleeve else .46
+        voxel(mesh, (side * ARM_X, SHOULDER_Y-length/2,0), (LIMB,length,LIMB),
+              tint, metal=metal, shade=.91, bevel=0)
         if kind == "armor":
             voxel(mesh, (side*.689,.645,.012), (.445,.31,.505), "#a1b6c7", metal=.47, rough=.29)
         elif kind == "stripe":
             for y in (.09,.33,.57):
-                voxel(mesh, (side*ARM_X,y,0), (.414,.101,.466), "#e2e0d0", bevel=.009)
+                voxel(mesh, (side*ARM_X,y,0), (LIMB,.101,LIMB+.006), "#e2e0d0", bevel=0)
     if kind == "stripe":
         for y in (-.303,-.049,.205,.459,.713):
-            voxel(mesh, (0,y,0), (.913,.105,.482), "#e6e4d7", bevel=.008)
+            voxel(mesh, (0,y,0), (HEAD,.105,LIMB+.006), "#e6e4d7", bevel=0)
     elif kind == "armor":
         pixels(mesh, ["L.L.L.L.",".L.L.L.L","L.L.L.L.",".L.L.L.L","L.L.L.L.",".L.L.L.L",
                       "L.L.L.L.",".L.L.L.L","L.L.L.L."],
@@ -722,7 +733,9 @@ def trousers(mesh, kind, tint, code):
     puffy = code == "skin_legs_vatniki"
     for side in (-1,1):
         x = side*LEG_X
-        voxel(mesh, (x,-.961,0), (.449,1.067,.454), tint, metal=.38 if plate else 0, shade=.91)
+        height = BODY - SHOE_HEIGHT
+        voxel(mesh, (x, WAIST_Y - height / 2, 0), (LIMB,height,LIMB), tint,
+              metal=.38 if plate else 0, shade=.90 if side < 0 else .94, bevel=0)
         if kind == "parade":
             voxel(mesh, (x+side*.174,-.964,.23), (.056,1.029,.026), "#d4a873", bevel=.004)
         elif plate:
@@ -732,22 +745,24 @@ def trousers(mesh, kind, tint, code):
                 voxel(mesh, (x+offset,-.968,.231), (.022,.995,.018), "#596b52", bevel=.005)
         else:
             voxel(mesh, (x,-.586,.227), (.251,.222,.028), "#57748d", bevel=.01)
-            voxel(mesh, (x,-1.445,0), (.453,.101,.461), "#374f62", bevel=.008)
+            voxel(mesh, (x,-1.445,0), (LIMB,.101,LIMB+.005), "#374f62", bevel=0)
 
 
 def boots(mesh, tint, code):
     gold = code == "skin_feet_golden"
     for side in (-1,1):
         x = side*LEG_X
-        voxel(mesh, (x,FOOT_Y+.167,.074), (.455,.29,.631), tint, metal=.51 if gold else .02, rough=.34 if gold else .66)
+        mid = (.084 + SHOE_HEIGHT) / 2
+        voxel(mesh, (x,FOOT_Y+mid,0), (LIMB,SHOE_HEIGHT-.084,LIMB), tint,
+              metal=.51 if gold else .02, rough=.34 if gold else .66, shade=.94 if side < 0 else 1, bevel=0)
         sole = "#644622" if gold else "#30343f"
-        voxel(mesh, (x,FOOT_Y+.042,.074), (.463,.084,.647), sole, bevel=.012)
+        voxel(mesh, (x,FOOT_Y+.042,0), (LIMB,.084,LIMB), sole, bevel=0)
         if code == "skin_feet_sneakers" or code == "skin_feet_bercy":
-            for z in (.16,.251,.33):
-                voxel(mesh, (x,FOOT_Y+.317,z), (.225,.02,.038),
+            for y in (.149,.197,.245):
+                voxel(mesh, (x,FOOT_Y+y,LIMB/2), (.225,.023,.016),
                       "#f3ead9" if code == "skin_feet_sneakers" else "#8797a2", bevel=.004)
         elif gold:
-            voxel(mesh, (x,FOOT_Y+.16,.388), (.278,.104,.025), "#f4c665", metal=.56, rough=.26, bevel=.009)
+            voxel(mesh, (x,FOOT_Y+.16,LIMB/2), (.278,.104,.025), "#f4c665", metal=.56, rough=.26, bevel=.009)
 
 
 def garment(kind, tint, code):
