@@ -1,0 +1,118 @@
+.winter .inventory-grid.inv-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(7px, 2vw, 12px);
+}
+.inventory-grid > .empty { grid-column: 1 / -1; }
+@media (max-width: 600px) {
+  .winter .inventory-grid.inv-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 366px) {
+  .winter .inventory-grid.inv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.winter .inventory-grid .inv-cell {
+  display: grid;
+  grid-template-rows: 101px minmax(42px, auto);
+  align-items: center;
+  align-content: start;
+  justify-items: center;
+  min-width: 0;
+  padding: 19px 5px 8px;
+  border-radius: 13px;
+  background: var(--surface-2);
+}
+.inventory-grid .inv-cell > .img-frame-lg {
+  grid-row: 1;
+  display: grid;
+  place-items: center;
+  width: min(66px, 100%);
+  height: auto;
+  max-width: none;
+  aspect-ratio: 1;
+  margin: 0;
+  transform: none;
+}
+.inventory-grid .inv-cell[data-kovbox] > .img-frame-lg {
+  width: min(98px, 100%);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.inventory-grid .inv-cell[data-kovbox] > .img-frame-lg img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  padding: 4%;
+}
+.inventory-grid .inv-cell > .qty {
+  inset-block-start: 5px;
+  inset-inline-end: 6px;
+  padding: 2px 5px;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.inventory-grid .inv-cell > .name {
+  grid-row: 2;
+  align-self: start;
+  height: auto;
+  max-height: 3.6em;
+  margin: 0;
+  padding: 2px 1px 0;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.17;
+  text-wrap: balance;
+  -webkit-line-clamp: 3;
+}
+.inventory-grid .inv-cell:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+#modal-root > .modal-underlay {
+  z-index: 99;
+  pointer-events: none;
+}
+#modal-root .modal:is(.inventory-item-dialog, .inventory-dialog) {
+  --inventory-dialog-background: #fcfdff;
+  position: relative;
+  overscroll-behavior: contain;
+  background: var(--inventory-dialog-background);
+}
+html.dark #modal-root .modal:is(.inventory-item-dialog, .inventory-dialog) {
+  --inventory-dialog-background: #1e2737;
+}
+.modal.inventory-item-dialog > .close, .inventory-dialog-head > .close {
+  position: absolute;
+  z-index: 2;
+  float: none;
+  inset-block-start: 8px;
+  inset-inline-end: 9px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+.inventory-dialog-head {
+  position: sticky;
+  z-index: 3;
+  top: -1px;
+  margin: -8px -4px 6px;
+  padding: 10px 37px 9px;
+  background: var(--inventory-dialog-background);
+  border-radius: 9px;
+  text-align: center;
+}
+.inventory-dialog-head > h2 { margin: 0; min-height: 27px; display: grid; place-items: center; }
+.inventory-dialog-head > .close { inset-block-start: 3px; inset-inline-end: 0; }
+.inventory-item-dialog .item-actions-head { width: 100%; }
+.inventory-item-dialog .item-actions-grid > .btn {
+  grid-column: auto;
+  min-height: 42px;
+}
+.inventory-item-dialog .item-actions-grid > .item-action-wide { grid-column: 1 / -1; }
