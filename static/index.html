@@ -12,27 +12,68 @@
     } catch (_) {}
   </script>
   <title>Ковчег</title>
-  <script src="https://telegram.org/js/telegram-web-app.js?56"></script>
+    <link rel="license" href="/static/releases/winter-2026-r44/media/casino/credits.txt">
+  <template id="kov-release-styles">
   <link rel="stylesheet" href="/static/style.css?v=288">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/winter.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/pig-overhang-v2.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/appearance.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/frozen-glass.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/station-layout.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/final-polish.css?dock=2">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/holiday.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/courier.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/snow-arena.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/thin-ice.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/polar-express.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/mobile-window.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/casino.css?layout=2">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/casino-fx.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/kovbox-stage.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/inventory.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/custom-3d.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r43/entry.css">
-    <link rel="license" href="/static/releases/winter-2026-r43/media/casino/credits.txt">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/winter.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/pig-overhang-v2.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/appearance.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/frozen-glass.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/station-layout.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/final-polish.css?dock=2">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/holiday.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/courier.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/snow-arena.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/thin-ice.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/polar-express.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/mobile-window.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/casino.css?layout=2">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/casino-fx.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/kovbox-stage.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/inventory.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/custom-3d.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r44/entry.css">
+  </template>
+  <style id="kov-entry-fallback">
+    #entry-screen { position: fixed; inset: 0; display: grid; place-items: center; z-index: 500; background: #0d1733; }
+    #entry-screen .entry-cube { display: block; width: 24px; height: 24px; border: 2px solid #aac8f3; border-radius: 5px; transform: rotate(45deg); }
+    #entry-screen button { color: #0d1733; background: #b6d8ff; border: 0; border-radius: 10px; padding: 12px 18px; }
+    #app[inert], #modal-root:empty { visibility: hidden; }
+  </style>
+  <script>
+    window.kovAssetCacheReady = (async () => {
+      if (!navigator.serviceWorker || !window.caches) return false;
+      const workers = navigator.serviceWorker;
+      const url = new URL("/asset-worker.js?release=winter-2026-r44", location.href);
+      const ready = () => workers.controller?.scriptURL === url.href;
+      if (ready()) return true;
+      return new Promise(resolve => {
+        const done = (result) => {
+          clearTimeout(timer);
+          workers.removeEventListener("controllerchange", check);
+          resolve(result);
+        };
+        const check = () => { if (ready()) done(true); };
+        const timer = setTimeout(() => done(false), workers.controller ? 4000 : 1900);
+        workers.addEventListener("controllerchange", check);
+        workers.register(url.href, { scope: "/", updateViaCache: "none" }).then(check, () => done(false));
+        check();
+      });
+    })().catch(() => false);
+
+    window.kovStylesReady = window.kovAssetCacheReady.then(() => {
+      const styles = document.getElementById("kov-release-styles").content;
+      const app = document.createElement("link");
+      app.rel = "modulepreload";
+      app.href = "/static/releases/winter-2026-r44/app.js";
+      document.head.appendChild(app);
+      return Promise.all([...styles.querySelectorAll("link")].map(link => new Promise(resolve => {
+        link.onload = link.onerror = resolve;
+        document.head.appendChild(link);
+      })));
+    });
+  </script>
+  <script src="https://telegram.org/js/telegram-web-app.js?56"></script>
 </head>
 <body>
   <section id="entry-screen" class="entry-screen" role="status" aria-label="Загрузка Ковчега">
@@ -77,6 +118,18 @@
     </nav>
   </div>
   <div id="modal-root"></div>
-  <script type="module" src="/static/releases/winter-2026-r43/app.js"></script>
+  <script type="module">
+    try {
+      await window.kovStylesReady;
+      await import("/static/releases/winter-2026-r44/app.js");
+      document.getElementById("kov-entry-fallback")?.remove();
+    } catch (error) {
+      const retry = document.createElement("button");
+      retry.textContent = "Повторить вход";
+      retry.onclick = () => location.reload();
+      document.getElementById("entry-screen").replaceChildren(retry);
+      console.error(error);
+    }
+  </script>
 </body>
 </html>

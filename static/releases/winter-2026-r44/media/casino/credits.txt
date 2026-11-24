@@ -1,0 +1,27 @@
+Casino music
+Backbay Lounge by Kevin MacLeod (incompetech.com), CC BY 4.0
+https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1700068
+https://creativecommons.org/licenses/by/4.0/
+Audio transcoded for the game.
+
+Casino background
+Darya Sannikova, Pexels
+https://www.pexels.com/photo/slot-machines-3021120/
+
+Sound effects (CC0)
+Kenney: https://opengameart.org/node/12742
+aghirlandaio: https://freesound.org/people/aghirlandaio/sounds/415074/
+Qvantor: https://freesound.org/people/Qvantor/sounds/878618/
+ReadeOnly: https://freesound.org/people/ReadeOnly/sounds/186956/
+
+Slots sound set
+Kenney, Casino Audio and Music Jingles (CC0 1.0).
+https://kenney.nl/assets/casino-audio
+https://kenney.nl/assets/music-jingles
+Chip-stack and chip-impact sounds were shortened or mixed. The PIZZA04 and STEEL07
+jingles were shortened and transcoded. The jackpot also uses Jackpot Win by
+Qvantor (CC0 1.0, credited above). The existing reel sound loops for the spin.
+
+Roulette, rocket, dice and vault cues
+Original synthesized audio created for Kovcheg. No third-party recordings
+were used for the roulette-, rocket-, dice- and vault- prefixed effects.
