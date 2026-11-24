@@ -395,8 +395,10 @@ def _rocket_progress(row: models.CasinoRound, now: datetime | None = None) -> di
     }
 
 
-def _active_vault_round(db: Session, user_id: int) -> models.CasinoRound | None:
-    return (
+def _active_vault_round(
+    db: Session, user_id: int, *, lock: bool = False, token: str | None = None,
+) -> models.CasinoRound | None:
+    query = (
         db.query(models.CasinoRound)
         .filter(
             models.CasinoRound.user_id == user_id,
@@ -404,8 +406,12 @@ def _active_vault_round(db: Session, user_id: int) -> models.CasinoRound | None:
             models.CasinoRound.settled.is_(False),
         )
         .order_by(models.CasinoRound.created_at.desc())
-        .first()
     )
+    if token is not None:
+        query = query.filter(models.CasinoRound.token == token)
+    if lock:
+        query = query.with_for_update()
+    return query.first()
 
 
 def _vault_round_response(row: models.CasinoRound) -> dict:
@@ -439,14 +445,19 @@ def casino_wallet_transfer(
 
 @router.post("/casino/slots/bonus")
 def casino_slots_bonus(
+    claim: bool = Body(False, embed=True),
     user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    if not claim:
+        raise HTTPException(status_code=400, detail="Нажмите «Забрать», чтобы получить бонус")
     begin_game_write(db)
     account = casino_wallet.lock_account(db, user)
     awarded = not account.bonus_claimed
     if awarded:
-        account.bonus = casino_wallet.BONUS_AMOUNT
+        if account.bonus > casino_wallet.LIMIT - casino_wallet.BONUS_AMOUNT:
+            raise HTTPException(status_code=409, detail="Достигнут максимальный баланс бонусов")
+        account.bonus += casino_wallet.BONUS_AMOUNT
         account.bonus_claimed = True
         db.commit()
     return {"awarded": awarded, "wallet": casino_wallet.snapshot(user, account)}
@@ -645,6 +656,29 @@ def casino_settle(
     ).with_for_update().first()
     if not row or row.settled:
         raise HTTPException(status_code=409, detail="Раунд уже завершён или не найден")
+    return _settle_casino_round(db, user, row, multiplier=multiplier, vault_key=vault_key)
+
+
+@router.post("/casino/vault/collect")
+def casino_collect_vault(
+    token: str | None = Body(None, embed=True),
+    vault_key: str | None = Body(None, embed=True),
+    resume: bool = Body(False, embed=True),
+    user: models.User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    begin_game_write(db)
+    row = _active_vault_round(db, user.id, lock=True, token=None if resume else token)
+    if row is None:
+        return {"ok": True, "payout": 0,
+                "wallet": casino_wallet.snapshot(user, db.get(models.CasinoWallet, user.id))}
+    return _settle_casino_round(db, user, row, vault_key=vault_key if token == row.token else None)
+
+
+def _settle_casino_round(
+    db: Session, user: models.User, row: models.CasinoRound, *,
+    multiplier: float | None = None, vault_key: str | None = None,
+):
     if vault_key is not None and (row.game != "vault" or vault_key not in VAULT_KEYS):
         raise HTTPException(status_code=400, detail="Недопустимый ключ сейфа")
     payout = row.payout

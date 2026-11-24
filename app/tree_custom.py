@@ -14,7 +14,7 @@ LEGACY_SLOTS = ("tree_garland", "tree_toys", "tree_snow", "tree_gifts")
 
 
 def seed_tree_catalog(db: Session) -> None:
-    existing = {code for (code,) in db.query(models.Item.code).filter(models.Item.code.in_(TREE_CODES))}
+    existing = {item.code: item for item in db.query(models.Item).filter(models.Item.code.in_(TREE_CODES))}
     for entry in CATALOG:
         code = entry["code"]
         if code not in existing:
@@ -22,6 +22,8 @@ def seed_tree_catalog(db: Session) -> None:
                 code=code, name=entry["name"], rarity=entry["rarity"], category="Кастом",
                 icon="/static/img/ui/box.svg", can_gift=False, can_activate=False,
             ))
+        elif code == "tree_bauble_cube" and existing[code].name == "Шар «Белый куб»":
+            existing[code].name = entry["name"]
 
 
 def saved_tree_codes(db: Session, user_id: int) -> set[str]:

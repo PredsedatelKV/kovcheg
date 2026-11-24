@@ -546,7 +546,7 @@ def test_open_sections_stay_open_for_everyone_else(game_api):
         assert koverna.get("/api/shop/products", headers=headers).status_code == 200
         assert koverna.get("/api/market/listings", headers=headers).status_code == 200
         assert client.post(
-            "/api/arcade/casino/slots/bonus", json={}, headers=headers,
+            "/api/arcade/casino/slots/bonus", json={"claim": True}, headers=headers,
         ).status_code == 200
         assert client.get("/api/battlepass", headers=headers).status_code == 200
 
@@ -676,3 +676,48 @@ def test_non_skin_item_is_rejected(game_api):
     assert skins.post("/api/profile/skins/equip",
                       json={"item_id": prize_id, "slot": "head"},
                       headers=_headers()).status_code == 400
+
+@pytest.mark.parametrize("resume,decision,payout", [(True, None, 80), (False, "left", 160)])
+def test_vault_auto_collect_pays_only_once(game_api, monkeypatch, resume, decision, payout):
+    client, sessions = game_api
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "shuffle", lambda values: None)
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "choice", lambda keys: "left")
+    start = "/api/arcade/casino/start"
+    active = "/api/arcade/casino/vault/active"
+    collect = "/api/arcade/casino/vault/collect"
+    opened = client.post(start, json={"game": "vault", "amount": 100, "choice": "2", "ledger": 1},
+                         headers=_headers())
+    assert opened.status_code == 200
+    token = opened.json()["token"]
+    payload = {"resume": resume, "token": None if resume else token, "vault_key": decision}
+    assert client.post(collect, json=payload, headers=_headers(2)).json()["payout"] == 0
+    assert client.post(collect, json={"token": "already-settled"}, headers=_headers()).json()["payout"] == 0
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda _: client.post(collect, json=payload, headers=_headers()), range(2)))
+    assert all(response.status_code == 200 for response in responses)
+    assert sorted(response.json()["payout"] for response in responses) == [0, payout]
+    assert all(response.json()["wallet"]["cash"] == payout for response in responses)
+    assert client.get(active, headers=_headers()).json() == {"round": None}
+    assert _balance(sessions) == 100
+
+
+def test_slot_bonus_adds_to_existing_balance_once_after_explicit_claim(game_api):
+    client, sessions = game_api
+    with sessions() as db:
+        account = db.get(models.CasinoWallet, 1)
+        account.bonus = 37
+        db.commit()
+    bonus = "/api/arcade/casino/slots/bonus"
+    wallet = "/api/arcade/casino/wallet"
+    assert client.post(bonus, headers=_headers()).status_code == 400
+    assert client.get(wallet, headers=_headers()).json()["bonus"] == 37
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(
+            lambda _: client.post(bonus, json={"claim": True}, headers=_headers()), range(2),
+        ))
+    assert all(response.status_code == 200 for response in responses)
+    assert sorted(response.json()["awarded"] for response in responses) == [False, True]
+    assert all(response.json()["wallet"]["bonus"] == 1037 for response in responses)
+    assert client.get(wallet, headers=_headers(2)).json()["bonus_claimed"] is False

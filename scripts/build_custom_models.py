@@ -1,4 +1,8 @@
-"""Build the original 3D tree, its twenty decorations and the character wardrobe."""
+"""Build the 3D tree, decorations and character wardrobe.
+
+Pass the model output directory, the catalogue JSON path, and the directory
+created by export_ornament_boxes.py.
+"""
 from array import array
 import gzip
 import json
@@ -10,8 +14,11 @@ import sys
 
 DEST = Path(sys.argv[1])
 CATALOG = Path(sys.argv[2])
+BOX_MODELS = Path(sys.argv[3])
 DEST.mkdir(parents=True, exist_ok=True)
 VERTEX = struct.Struct("<3h3b9B")
+
+DECOR_LIGHTS = ("tree_garland_aurora", "tree_lights_gold")
 COLORS = {
     "gold": "#f5bd57", "cream": "#fff4d8", "wood": "#8b5032",
     "red": "#d62f4d", "pink": "#f77bad", "berry": "#a21b40", "violet": "#a663e8",
@@ -43,6 +50,7 @@ class Mesh:
     def __init__(self):
         self.vertices = []
         self.indices = []
+        self.lights = None
 
     def vertex(self, position, normal, surface):
         self.vertices.append((position, normal, surface))
@@ -80,9 +88,11 @@ class Mesh:
                     lookup[index] = len(lookup)
                     vertex_bytes += VERTEX.pack(*(round(v*8192) for v in sub(p,center)),
                                                 *(round(v*127) for v in n), *surface)
+                    if self.lights is not None:
+                        vertex_bytes += bytes(self.lights(p, n))
                 indices.append(lookup[index])
         parts.append((len(lookup),vertex_bytes,indices))
-        return struct.pack("<4sHHf",b"KBOX",2,len(parts),radius)+b"".join(
+        return struct.pack("<4sHHf",b"KBOX",3 if self.lights is not None else 2,len(parts),radius)+b"".join(
             struct.pack("<II",n,len(indices))+vertices+indices.tobytes()
             for n,vertices,indices in parts)
 
@@ -188,56 +198,113 @@ def star(mesh, size):
         tube(mesh,[(0,0,.083),(x*.82,y*.82,.049)], .012, material("cream",.55,.24),5)
 
 
-GREEN=[material(c, .04, .67) for c in ("#103c28", "#175337", "#1e673f", "#2a7a47", "#329251", "#45a561", "#62bc6d")]
+GREEN = [material(c, .02, .72) for c in
+         ("#093425", "#114933", "#175f3b", "#237744", "#318c49", "#4ba553", "#6bbd5d")]
+
+
+def foliage_fan(mesh, root, angle, length, width, thickness, tip, shade, subdivisions):
+    axis = (cos(angle), 0, sin(angle))
+    side = (-sin(angle), 0, cos(angle))
+    rings = 8
+    vertices = []
+    for row in range(subdivisions + 1):
+        t = row / subdivisions
+        spread = sin(pi*t) ** .87
+        plate = 1 + .095 * sin(5*pi*t) * spread
+        bend = tip * t - length * .12 * sin(pi*t)
+        row_points = []
+        for ring in range(rings):
+            alpha = tau * ring / rings
+            across = cos(alpha) * (.004 + width * spread) * plate
+            rise = sin(alpha) * (.002 + thickness * spread)
+            row_points.append(add(root, add(mul(axis, length*t), add(mul(side, across), (0, bend + rise, 0)))))
+        vertices.append(row_points)
+    start = len(mesh.vertices)
+    for row, row_points in enumerate(vertices):
+        t = row / subdivisions
+        for k, p in enumerate(row_points):
+            lengthwise = sub(vertices[min(row+1, subdivisions)][k], vertices[max(row-1, 0)][k])
+            crosswise = sub(row_points[(k+1) % rings], row_points[(k-1) % rings])
+            normal = norm(cross(lengthwise, crosswise))
+            tint = int(max(0, min(6, shade + normal[1]*1.1 + 1.2*t)))
+            visibility = round(77 + 50*min(1, .25 + t*.88 + max(0,normal[1])*.39))
+            mesh.vertex(p, normal, (*GREEN[tint][:-1], visibility))
+    for j in range(subdivisions):
+        for i in range(rings):
+            k = start + j*rings
+            next_i = (i+1) % rings
+            mesh.quad(k+i, k+rings+i, k+rings+next_i, k+next_i)
+
+
+def light_sampler():
+    bulbs = [(which, point, color(tint)) for which in range(2) for point, tint in bulbs_for(which)]
+    bins = {}
+    for bulb in bulbs:
+        bins.setdefault(int(bulb[1][1] * 4), []).append(bulb)
+
+    def sample(point, normal):
+        tint = [0.0, 0.0, 0.0, 0.0]
+        band = int(point[1] * 4)
+        for nearby in range(band - 2, band + 3):
+            for kind, bulb, rgb in bins.get(nearby, ()):
+                ray = sub(bulb, point)
+                distance_sq = dot(ray, ray)
+                if distance_sq > .19:
+                    continue
+                distance = sqrt(distance_sq)
+                angle = .30 + .70 * max(0, dot(norm(ray), normal))
+                fade = (1 - distance / .44) ** 2 * angle
+                if kind == 0:
+                    for i in range(3):
+                        tint[i] += (rgb[i]/255) ** 2 * fade
+                else:
+                    tint[3] += fade
+        return tuple(round(max(0, min(1, light)) * 255) for light in tint)
+
+    return sample
 
 
 def make_tree():
-    tree=Mesh()
-    rng=Random(891)
-    lathe(tree,(0,0,0),[(-2.52,.13),(-2.48,.20),(-2.19,.21),(-1.43,.13),(1.9,.019),(2.63,.006)],
-          lambda j,i: material(("#79503b","#8c5a3b","#a8744a","#69412b")[i%4],.05,.82),12)
-    for layer,(height,radius,count) in enumerate([
-        (-1.94,1.54,11),(-1.56,1.49,11),(-1.13,1.31,10),(-.68,1.17,10),
-        (-.20,1.00,9),(.25,.83,9),(.68,.65,8),(1.04,.49,7),(1.42,.34,6),(1.77,.235,5),(2.03,.14,5)]):
-        for b in range(count):
-            angle=tau*b/count+layer*.62+rng.uniform(-.07,.07)
-            length=radius*rng.uniform(.89,1.1)
-            y=height+rng.uniform(-.10,.10)
-            direction=(cos(angle),0,sin(angle))
-            side=(-sin(angle),0,cos(angle))
-            leaf_colors=[GREEN[max(0,min(6,layer//3+k))] for k in range(5)]
-            # Each bough has a lifted central tip and natural, staggered lateral sprays.
-            start=len(tree.vertices)
-            for j in range(10):
-                t=j/9
-                belly=(sin(pi*t)**.8)*length
-                tip_y=y+.42*(1-t)-.22*sin(pi*t*.85)+.10*t**6
-                for i in range(12):
-                    theta=tau*i/12
-                    scallop=.94+.06*sin(11*t+theta*3+layer*.55)
-                    w=cos(theta)*(.035+belly*.34*scallop)
-                    h=sin(theta)*(.015+belly*.14)
-                    p=add(add(mul(direction,length*t),mul(side,w)),(0,tip_y+h,0))
-                    n=norm(add(mul(side,cos(theta)),(0,sin(theta),0)))
-                    shade=min(4, round(1.9*(sin(theta)+1)+t*.41))
-                    tree.vertex(p,n,leaf_colors[shade])
-            for j in range(9):
-                for i in range(12):
-                    k=start+j*12
-                    n=(i+1)%12
-                    tree.quad(k+i,k+12+i,k+12+n,k+n)
-            for n in (-1,1):
-                for t in (.54,.73,.87):
-                    point=add(add(mul(direction,length*t),mul(side,length*n*(.19-.11*t))),(0,y+.08-t*.16,0))
-                    ellipsoid(tree,point,(length*.25,length*.075,length*.071), leaf_colors[3], 6,4, -angle+n*.38)
-    lathe(tree,(0,0,0),[(1.88,.19),(2.05,.16),(2.22,.105),(2.39,.068),(2.55,.032),(2.65,.001)], GREEN[4],12)
+    tree = Mesh()
+    tree.lights = light_sampler()
+    rng = Random(891)
+    lathe(tree, (0,0,0),
+          [(-2.51,.13),(-2.47,.20),(-2.19,.20),(-1.43,.13),(1.46,.049),(2.51,.009)],
+          lambda j,i: material(("#785038","#84563a","#ad7853","#68402c")[i%4],.02,.87), 16)
+    for layer, (height, radius, count) in enumerate([
+        (-1.96,1.46,12),(-1.64,1.42,12),(-1.26,1.28,11),(-.91,1.14,10),(-.55,1.04,10),
+        (-.16,.91,9),(.22,.80,9),(.62,.69,8),(.96,.56,8),(1.29,.44,7),
+        (1.60,.36,7),(1.88,.265,6),(2.09,.205,5),(2.27,.146,5),(2.41,.097,4),(2.52,.060,4),
+    ]):
+        for index in range(count):
+            angle = tau * index / count + layer*.69 + rng.uniform(-.065,.065)
+            length = radius * rng.uniform(.91,1.11)
+            y = height + rng.uniform(-.124,.124) * min(1,radius*3)
+            shade = 1.7 + rng.uniform(0, 2.0)
+            sweep = rng.uniform(.12, .26)
+            foliage_fan(tree, (0,y+.18*length,0), angle, length, .268*length, .094*length,
+                        -sweep*length + .14*layer/15, shade, 11)
+            for sign in (-1,1):
+                side = (-sin(angle)*sign,0,cos(angle)*sign)
+                for t in (.30, .48, .66, .80):
+                    wing = add((length*t*cos(angle),y+.12*length-t*sweep*length,length*t*sin(angle)),
+                               mul(side, length*(.07+.10*t)))
+                    reach = length*(.59-.30*t)*rng.uniform(.86,1.13)
+                    foliage_fan(tree, wing, angle+sign*(.96-.49*t), reach, .17*reach, .077*reach,
+                                -.12*reach, min(4.8,shade+.64), 6)
+            if layer > 3:
+                foliage_fan(tree, (0,y-.15,0), angle+.27, length*.63, length*.16, length*.05,
+                            length*.15, shade-.4, 7)
+    for i in range(5):
+        angle = i*tau/5
+        foliage_fan(tree, (0,2.43,0), angle, .054+i*.008, .028, .035, .225-i*.012, 5, 6)
     return tree
 
 
 CATALOG_ROWS = [
     ("tree_bauble_k","Рубиновый шар «К»","Игрушки","Обычный"),
     ("tree_bauble_snow","Шар «Снежинка»","Игрушки","Редкий"),
-    ("tree_bauble_cube","Шар «Белый куб»","Игрушки","Редкий"),
+    ("tree_bauble_cube","Шар «Ковчег»","Игрушки","Редкий"),
     ("tree_bauble_marble","Шар «Северный мрамор»","Игрушки","Эпический"),
     ("tree_box_bronze","Бронзовые ковбоксики","Игрушки","Редкий"),
     ("tree_box_legend","Радужные ковбоксики","Игрушки","Легендарный"),
@@ -263,13 +330,60 @@ def hanging_cap(mesh,y):
     tube(mesh,[(.034*sin(t*tau/12),y+.045+.037*cos(t*tau/12),0) for t in range(13)], .008,material("gold",.6,.22),5)
 
 
+def original_box(variant):
+    data = (BOX_MODELS / f"{variant}.bin").read_bytes()
+    magic, version, count, _ = struct.unpack_from("<4sHHf", data)
+    if magic != b"KBOX" or version != 2:
+        raise ValueError("Expected original KBOX model")
+    offset = 12
+    mesh = Mesh()
+    for _ in range(count):
+        vertices, indices = struct.unpack_from("<II", data, offset)
+        offset += 8
+        start = len(mesh.vertices)
+        for _ in range(vertices):
+            raw = VERTEX.unpack_from(data, offset)
+            pos = tuple(v / 8192 for v in raw[:3])
+            normal = norm(tuple(v / 127 for v in raw[3:6]))
+            mesh.vertices.append((pos, normal, raw[6:]))
+            offset += VERTEX.size
+        mesh.indices.extend(start + i for (i,) in struct.iter_unpack("<H", data[offset:offset+indices*2]))
+        offset += indices * 2
+    return mesh
+
+
+def globe_face(mesh, corners, mat, divisions=5):
+    def project(x, y):
+        z = .004 + .23 * sqrt(max(0,1 - (x/.23)**2 - (y/.239)**2))
+        normal = norm((x/.23, y/.239, z/.23))
+        return mesh.vertex((x,y,z), normal, mat)
+
+    def patch(points):
+        a,b,c = points
+        current = {}
+        for i in range(divisions+1):
+            for j in range(divisions-i+1):
+                u,v=i/divisions,j/divisions
+                current[i,j] = project(a[0]*(1-u-v)+b[0]*u+c[0]*v,
+                                       a[1]*(1-u-v)+b[1]*u+c[1]*v)
+        for i in range(divisions):
+            for j in range(divisions-i):
+                mesh.indices.extend((current[i,j],current[i+1,j],current[i,j+1]))
+                if i+j+1 < divisions:
+                    mesh.indices.extend((current[i+1,j],current[i+1,j+1],current[i,j+1]))
+
+    a,b,c,d = corners
+    patch((a,b,c))
+    patch((a,c,d))
+
+
 def ornament(index):
     m=Mesh()
     gold=material("gold",.63,.23)
     cream=material("cream",.07,.44)
     if index<4:
         def finish(j,i):
-            col=["red","blue","violet","teal"][index]
+            col=["red","blue","#c51f36","teal"][index]
             if index==3:
                 col=("teal","navy","gold","green")[(i//3+j//2)%4] if (i+j)%5<3 else "teal"
             return material(col,.58,.20)
@@ -287,22 +401,21 @@ def ornament(index):
                     f=angle+sign*.72
                     tube(m,[(.096*a[0],.096*a[1],.229),(.096*a[0]+.051*cos(f),.096*a[1]+.051*sin(f),.222)],.009,cream,5)
         elif index==2:
-            points=[(-.105,-.063),(-.105,.067),(0,.131),(.105,.067),(.105,-.063),(0,-.119)]
-            for a,b in list(zip(points,points[1:]+points[:1]))+[(points[1],(0,.007)),(points[3],(0,.007)),(points[5],(0,.007))]:
-                tube(m,[(x,y,.22) for x,y in (a,b)],.012,cream,6)
+            bottom = (0,-.124)
+            lower_left, upper_left = (-.115,-.056),(-.115,.070)
+            lower_right, upper_right = (.115,-.056),(.115,.070)
+            top, center = (0,.14),(0,.002)
+            globe_face(m,(lower_left,bottom,center,upper_left),material("#f1f4fa",.08,.35))
+            globe_face(m,(bottom,lower_right,upper_right,center),material("#c7d4e4",.08,.35))
+            globe_face(m,(upper_left,center,upper_right,top),material("#ffffff",.08,.31))
         else:
             path=[(.225*cos(t*tau/40),.065*sin(t*tau/20),.226*sin(t*tau/40)) for t in range(41)]
             tube(m,path,.010,gold,6)
     elif index in (4,5):
-        box(m,(0,0,0),(.34,.34,.34),material("bronze" if index==4 else "violet", .69,.24),.036)
-        trim=[gold]*4 if index==4 else [material(c,.55,.18,.12) for c in ("pink","teal","gold","violet")]
-        for y in (-.145,.145):
-            for i,(x,z,w,d) in enumerate([(.15,0,.029,.315),(-.15,0,.029,.315),(0,.15,.315,.029),(0,-.15,.315,.029)]):
-                box(m,(x,y,z),(w,.041,d),trim[i],.010)
-        box(m,(0,0,.17),(.20,.22,.032),gold,.015)
-        for a,b in [((-.048,-.078),(-.048,.075)),((-.046,.0),(.048,.07)),((-.046,0),(.048,-.074))]:
-            tube(m,[(x,y,.190) for x,y in (a,b)],.010,material("navy",.2,.51),5)
-        hanging_cap(m,.17)
+        model = original_box("bronze" if index==4 else "rainbow")
+        m.extend(model,scale=.155)
+        hanger_y = max(p[1] for p,_,_ in m.vertices) + .017
+        hanging_cap(m,hanger_y)
     elif index==6:
         lathe(m,(0,0,0),[(-.31,.005),(-.025,.109),(.082,.073),(.184,.018)],
               lambda j,i: material(("#8ccefa","#d7f9ff","#69b3ee")[i%3],.37,.19,.07),6)
@@ -352,35 +465,50 @@ def wrap_point(angle,height,radius):
     return (radius*cos(angle),height,radius*sin(angle))
 
 
-def garland(which, icon=False):
-    m=Mesh()
-    points=[]
-    steps=120 if not icon else 36
+GARLAND_COLORS = [
+    ("pink","teal","gold","ice","violet"), ("gold","cream"), ("cream","red","gold"),
+]
+
+
+def garland_points(which, icon=False):
+    points = []
+    steps = 124 if not icon else 36
     for i in range(steps+1):
         t=i/steps
         if icon:
             points.append((.50*(t-.5),-.088*sin(pi*t),0))
         else:
-            angle=tau*3.42*t+which*1.28
-            y=-1.97+4.13*t+.035*sin(tau*6*t)
-            points.append(wrap_point(angle,y,1.57*(1-t)**1.08+.125))
-    scale=1 if not icon else 1.20
+            angle=tau*3.7*t+which*1.46
+            height=-1.97+4.23*t+.043*sin(tau*7*t)
+            radius=1.46*(1-t)**1.07+.124 + .025*sin(angle*6)
+            points.append(wrap_point(angle,height,radius))
+    return points
+
+
+def bulbs_for(which, icon=False):
+    palette = GARLAND_COLORS[which]
+    points = garland_points(which,icon)[::(4 if which<2 else 3)]
+    return [(point,palette[i%len(palette)]) for i,point in enumerate(points)]
+
+
+def garland(which, icon=False):
+    m=Mesh()
+    points=garland_points(which,icon)
     if which==3:
         for i,(a,b) in enumerate(zip(points,points[1:])):
             side=norm(cross(norm(sub(b,a)),(0,1,0)))
             mat=material("red" if i%6<4 else "berry",.28,.35)
             k=len(m.vertices)
-            for p,w in [(a,-.055),(b,-.055),(b,.055),(a,.055)]:
+            for p,w in [(a,-.049),(b,-.049),(b,.049),(a,.049)]:
                 m.vertex(add(p,(0,w,0)),side,mat)
             m.quad(k,k+1,k+2,k+3)
             m.quad(k+3,k+2,k+1,k)
     else:
-        tube(m,points,.014,material("#526344" if which<2 else "gold",.19,.55),6)
-        for i,p in enumerate(points[::(4 if which<2 else 3)]):
-            colors=("pink","teal","gold","ice","violet") if which==0 else ("gold","cream") if which==1 else ("cream","red","gold")
-            col=colors[i%len(colors)]
-            size=(.039 if which!=1 else .027)*scale
-            ellipsoid(m,p,(size,size*(1.2 if which!=2 else 1),size),material(col,.32,.22,.36 if which!=2 else .03),7,5)
+        tube(m,points,.010,material("#546943" if which<2 else "gold",.19,.55),6)
+        for point, col in bulbs_for(which,icon):
+            size=(.035 if which!=1 else .028)*(1.2 if icon else 1)
+            ellipsoid(m,point,(size,size*(1.17 if which<2 else 1),size),
+                      material(col,.27,.19,.78 if which<2 else .045),8,6)
     return m
 
 
@@ -545,6 +673,11 @@ models={"tree":make_tree(),**decor,"person":make_person(),
 index=package(models,DEST/"models.bin")
 thumbnails={**preview, **wardrobe}
 thumb_index=package(thumbnails,DEST/"thumbnail-source.bin",True)
+(DEST/"lights.json").write_text(json.dumps({
+    code: [[*[round(c,5) for c in pos], *[component / 255 for component in color(tint)]]
+           for pos,tint in bulbs_for(which)]
+    for which,code in enumerate(DECOR_LIGHTS)
+},separators=(",",":")),encoding="utf8")
 (DEST/"models.json").write_text(json.dumps(index,separators=(",",":")),encoding="utf8")
 (DEST/"thumbnail-source.json").write_text(json.dumps(thumb_index,separators=(",",":")),encoding="utf8")
 CATALOG.write_text(json.dumps([dict(zip(("code","name","group","rarity"),r)) for r in CATALOG_ROWS],
