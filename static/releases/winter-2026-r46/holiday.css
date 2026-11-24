@@ -1,0 +1,3 @@
+.station-garland {position:absolute;top:max(0px,env(safe-area-inset-top));left:0;right:0;height:10px;display:flex;align-items:flex-start;justify-content:space-around;border-top:1px solid #7995af70;pointer-events:none;}
+.station-garland i {width:4px;height:7px;border-radius:2px 2px 50% 50%;background:var(--bulb);box-shadow:0 1px 6px 1px var(--bulb);border-top:2px solid #7794a4;}
+.holiday-off .station-garland,.holiday-off #winter-flakes {display:none;}

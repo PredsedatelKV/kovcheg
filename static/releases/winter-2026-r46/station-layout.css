@@ -1,0 +1,171 @@
+/* Compact, borderless top bar. The counter cluster stays left of the two actions. */
+.winter #station-header,
+.winter #station-header :is(.station-balance, .station-tool) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.winter .station-header-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: clamp(6px, 2vw, 14px);
+  padding-inline: clamp(10px, 3vw, 20px);
+}
+
+.winter .station-currencies {
+  display: flex;
+  align-items: center;
+  justify-self: start;
+  width: auto;
+  max-width: 100%;
+  gap: clamp(4px, 2.4vw, 18px);
+}
+
+.winter .station-currencies .station-balance {
+  width: auto;
+  flex: 0 1 auto;
+  min-height: 44px;
+  padding: 0 2px;
+  gap: clamp(3px, 1vw, 7px);
+}
+
+.winter .station-balance strong {
+  font-size: clamp(.75rem, 3.5vw, .95rem);
+  line-height: 1.1;
+  font-weight: 735;
+  text-align: left;
+}
+
+.winter .station-balance .ui-icon {
+  width: clamp(16px, 5vw, 22px);
+  height: clamp(16px, 5vw, 22px);
+}
+
+.winter .station-header .station-tools {
+  display: flex;
+  gap: 2px;
+  justify-self: end;
+}
+
+.winter .station-header .station-tool {
+  width: clamp(37px, 11.55vw, 44px);
+  height: 44px;
+  padding: 5px;
+}
+
+@media (hover: hover) {
+  .winter #station-header :is(.station-balance, .station-tool):hover {
+    background: var(--bg-hover);
+  }
+}
+
+.station-page-heading {
+  margin: 3px 0 15px;
+  color: var(--text);
+}
+
+.station-page-heading h1 {
+  margin: 0;
+  font-size: clamp(25px, 6vw, 36px);
+  line-height: 1.12;
+  letter-spacing: -.035em;
+}
+
+.station-page-heading :is(p, .subtitle) {
+  margin: 4px 0 0;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.station-profile-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.station-profile-avatar {
+  width: 45px;
+  height: 45px;
+  flex: 0 0 45px;
+}
+
+.station-profile-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  object-fit: contain;
+}
+
+.winter .bp-season-label {
+  margin-bottom: 8px;
+  color: #fff;
+  font-size: 12px;
+}
+
+.winter .station-sheet .station-chat-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: min(78dvh, calc(120px + var(--station-menu-rows, 4) * 79px));
+  padding: 12px 14px max(12px, env(safe-area-inset-bottom), var(--station-telegram-bottom, 0px));
+  overflow: hidden;
+}
+
+.station-chat-top {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.winter .station-chat-top h2 { margin: 0; }
+.winter .station-chat-top .close { padding-inline: 7px; }
+
+.station-chat-body,
+.station-chat-body .chat-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.winter .station-chat-body .chat-card {
+  padding: 0;
+  margin: 0;
+}
+
+.station-chat-avatars {
+  display: flex;
+  flex: none;
+  padding: 3px 0 7px;
+  overflow: hidden;
+}
+
+.station-chat-avatars:empty { display: none; }
+
+.winter .station-chat-dialog .chat-messages {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  padding: 8px 2px;
+  overscroll-behavior-y: contain;
+}
+
+.winter .station-chat-dialog .chat-input-row {
+  padding: 7px 0 0;
+  gap: clamp(4px, 1.5vw, 8px);
+  flex-shrink: 0;
+}
+
+.winter .station-chat-dialog :is(.chat-msg-mine, .chat-msg-other) {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.winter .station-chat-dialog .chat-msg-name { color: var(--primary-ink); }
