@@ -150,6 +150,51 @@ class WinterLootboxTests(unittest.TestCase):
                             u=db.get(models.User,self.uid)
                             self.assertEqual((u.wallet.balance,u.xp,profile.snowflake_balance(u)),(wallet_before,xp_before,snow_before))
 
+    def test_empty_tier_keeps_boxes_open_and_replays_the_same_reward(self):
+        with self.sessions() as db:
+            fragment = models.Item(code="box_fragment", name="Фрагмент ковбокса", icon="/fragment.svg")
+            db.add(fragment)
+            box_ids = {}
+            for code, rarity, archived in [
+                ("epic", "Эпический", False),
+                ("seasonal", "Легендарный", False),
+                ("legendary", "Легендарный", True),
+                ("mega", "Мега", True),
+            ]:
+                item = models.Item(code=f"box_{code}", name=code, icon="/box.svg", lootbox_pool_code=code)
+                db.add(item)
+                db.flush()
+                pool = models.LootboxPool(
+                    code=code, name=code, rarity=rarity, item_id=item.id, opening_mode="chest_v2",
+                    is_active=not archived, is_archived=archived, is_droppable=not archived,
+                )
+                db.add(pool)
+                db.flush()
+                db.add(models.InventoryItem(user_id=self.uid, item_id=item.id, quantity=1))
+                db.add(models.LootboxPoolEntry(
+                    pool_id=pool.id, reward_kind="super_special_pool" if code == "legendary" else "xp",
+                    amount_min=33, amount_max=66, weight=100, is_guaranteed=True,
+                ))
+                box_ids[code] = item.id
+            db.commit()
+        for code, item_id in box_ids.items():
+            with self.subTest(code=code), patch.object(profile.secrets, "randbelow", side_effect=lambda n: n-1):
+                payload = {"item_id": item_id, "request_id": f"no-stock-{code}"}
+                opened = self.client.post("/api/profile/inventory/open-lootbox", json=payload)
+                self.assertEqual(opened.status_code, 200, opened.text)
+                reward, = opened.json()["rewards"]
+                if code == "mega":
+                    self.assertEqual((reward["kind"], reward["amount"]), ("xp", 66))
+                else:
+                    self.assertEqual(reward["item"]["code"], "box_fragment")
+                    self.assertEqual(reward["amount"], 3 if code == "epic" else 4)
+                replayed = self.client.post("/api/profile/inventory/open-lootbox", json=payload)
+                self.assertEqual(replayed.status_code, 200, replayed.text)
+                self.assertTrue(replayed.json()["replayed"])
+                self.assertEqual(replayed.json()["rewards"], [reward])
+                with self.sessions() as db:
+                    self.assertIsNone(db.query(models.InventoryItem).filter_by(user_id=self.uid, item_id=item_id).one_or_none())
+
     def test_migration_preserves_other_boxes_and_later_admin_edits(self):
         self.seed()
         with self.sessions() as db:

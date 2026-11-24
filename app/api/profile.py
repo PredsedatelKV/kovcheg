@@ -676,7 +676,8 @@ def _lootbox_pool_for_item(db: Session, item: models.Item) -> models.LootboxPool
 
 def _validate_openable_pool(db: Session, pool: models.LootboxPool, user: models.User) -> list[models.LootboxPoolEntry]:
     now = models.now_utc()
-    if not pool.is_active:
+    retired_box = pool.is_archived and pool.code in {"legendary", "mega"}
+    if not pool.is_active and not retired_box:
         raise HTTPException(409, "Этот ковбокс временно отключён")
     if pool.starts_at and now < pool.starts_at:
         raise HTTPException(409, "Ковбокс ещё недоступен")
@@ -815,6 +816,10 @@ def _entry_available_for_user(db: Session, user: models.User, entry: models.Loot
     return product.stock != 0
 
 
+class _LootboxRewardUnavailable(HTTPException):
+    """A configured prize exists but its item pool cannot currently supply it."""
+
+
 def _fallback_shop_item(
     db: Session,
     user: models.User,
@@ -854,8 +859,8 @@ def _fallback_shop_item(
             "super_special": "сверхособом",
         }
         if tier in labels:
-            raise HTTPException(409, f"В {labels[tier]} пуле не осталось доступных товаров")
-        raise HTTPException(409, "В магазине не осталось доступных предметов для замены награды")
+            raise _LootboxRewardUnavailable(409, f"В {labels[tier]} пуле не осталось доступных товаров")
+        raise _LootboxRewardUnavailable(409, "В магазине не осталось доступных предметов для замены награды")
     return available[secrets.randbelow(len(available))]
 
 
@@ -1044,7 +1049,7 @@ def _roll_single_chest_reward(
     if final_stars >= 4:
         candidates.extend(super_entries)
     if not candidates:
-        raise HTTPException(409, "У ковбокса нет награды для достигнутой редкости")
+        raise _LootboxRewardUnavailable(409, "У ковбокса нет награды для достигнутой редкости")
     entry = _weighted_pick(candidates)
     amount = entry.amount_min + secrets.randbelow(entry.amount_max - entry.amount_min + 1)
     if entry.reward_kind == "special_pool":
@@ -1055,6 +1060,34 @@ def _roll_single_chest_reward(
     if entry.reward_kind == "item" and reward_item is not None:
         reward_item = _resolved_reward_item(db, user, reward_item)
     return entry.reward_kind, amount, reward_item, 0
+
+
+def _replacement_chest_reward(
+    db: Session,
+    user: models.User,
+    pool: models.LootboxPool,
+    entries: list[models.LootboxPoolEntry],
+    final_stars: int,
+) -> tuple[str, int, models.Item | None, int]:
+    # Older and seasonal boxes can still use their own configured digital prizes.
+    # The canonical one/two-star rows belong to those star levels only.
+    if pool.code not in LOOTBOX_STARTING_STARS:
+        alternatives = [
+            entry for entry in entries
+            if entry.is_active
+            and entry.reward_kind in {"item", "kovbucks", "kovcoins", "xp"}
+            and _entry_available_for_user(db, user, entry)
+        ]
+        if alternatives:
+            entry = _weighted_pick(alternatives)
+            amount = entry.amount_min + secrets.randbelow(entry.amount_max - entry.amount_min + 1)
+            return entry.reward_kind, amount, entry.item if entry.reward_kind == "item" else None, 0
+
+    fragment = db.query(models.Item).filter(models.Item.code == "box_fragment").one_or_none()
+    if fragment is None:
+        raise HTTPException(409, "Фрагмент ковбокса не настроен")
+    # One fragment per final star keeps the fallback proportional and below an assembled box.
+    return "item", final_stars, fragment, 0
 
 
 def _decrement_limited_stock(
@@ -1389,13 +1422,11 @@ def open_lootbox_for_user(
     else:
         starting_stars, star_sequence = _roll_lootbox_stars(mechanics_pool)
     final_stars = star_sequence[-1] if star_sequence else starting_stars
-    reward_spec = _roll_single_chest_reward(
-        db,
-        user,
-        mechanics_pool,
-        list(mechanics_pool.entries) if mechanics_pool is not pool else entries,
-        final_stars,
-    )
+    reward_entries = list(mechanics_pool.entries) if mechanics_pool is not pool else entries
+    try:
+        reward_spec = _roll_single_chest_reward(db, user, mechanics_pool, reward_entries, final_stars)
+    except _LootboxRewardUnavailable:
+        reward_spec = _replacement_chest_reward(db, user, mechanics_pool, reward_entries, final_stars)
     star_plan = {
         "starting_stars": starting_stars,
         "star_sequence": star_sequence,
