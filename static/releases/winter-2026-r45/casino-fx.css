@@ -1,0 +1,229 @@
+/* Roulette */
+.casino-wheel { --wheel-size: min(100%, 414px, 51svh); }
+.casino-wheel canvas { transition: none; }
+.casino-wheel[data-spinning] .casino-pointer { transform-origin: 50% 7%; }
+.casino-wheel::after {
+  content: "";
+  position: absolute;
+  inset: 1.2%;
+  border: 2px solid #a5f2bd;
+  border-radius: 50%;
+  box-shadow: 0 0 22px #8cfeb496, inset 0 0 22px #70d58d83;
+  opacity: 0;
+  pointer-events: none;
+}
+.casino-roulette[data-result="win"] .casino-wheel::after {
+  opacity: .8;
+  animation: roulette-win 900ms ease-out;
+}
+@keyframes roulette-win {
+  0% { opacity: 0; scale: .95; }
+  38% { opacity: 1; scale: 1.025; }
+  100% { opacity: .8; scale: 1; }
+}
+
+/* Rocket */
+.casino-flight {
+  background:
+    radial-gradient(ellipse at 73% 13%, #244874 0%, transparent 65%),
+    linear-gradient(154deg, #131f3e 5%, #091426 85%);
+}
+.casino-flight-rocket {
+  top: var(--flight-y, 85%);
+  left: var(--flight-x, 11%);
+  transition: none;
+}
+.casino-flight .casino-rocket-flame { opacity: 0; }
+.casino-surface[data-mode="flying"] .casino-flight:not(.is-crashed) .casino-rocket-flame {
+  opacity: 1;
+  animation: rocket-thrust 220ms ease-in-out alternate infinite;
+  transform-origin: top center;
+}
+.casino-flight strong { top: 13px; left: 14px; font-size: clamp(34px, 10vw, 60px); }
+.flight-pulse {
+  position: absolute;
+  top: var(--flight-y, 85%);
+  left: var(--flight-x, 11%);
+  width: 45px;
+  aspect-ratio: 1;
+  border: 2px solid #9bf6ff;
+  border-radius: 50%;
+  translate: -50% -50%;
+  opacity: 0;
+  pointer-events: none;
+}
+.casino-rocket[data-result="win"] .casino-flight {
+  border-color: #a2e7fb;
+  box-shadow: 0 0 26px #6bd6ff4d, inset 0 0 22px #6bd6ff25;
+}
+.casino-rocket[data-result="win"] .casino-flight strong { color: #f2fdff; text-shadow: 0 0 20px #7ee8ffb3; }
+.casino-rocket[data-result="win"] .flight-pulse {
+  animation: flight-pulse 920ms ease-out;
+  box-shadow: 0 0 22px #97edff, inset 0 0 18px #92bfff;
+}
+.casino-rocket[data-result="loss"] .is-crashed .flight-pulse {
+  border-color: #faa3a1;
+  box-shadow: 0 0 19px #fc8c98b0;
+  animation: flight-pulse 520ms ease-out;
+}
+@keyframes rocket-thrust {
+  from { transform: scaleY(.75); }
+  to { transform: scaleY(1.3); }
+}
+@keyframes flight-pulse {
+  0% { scale: .37; opacity: 1; }
+  48% { opacity: .7; }
+  100% { scale: 2.6; opacity: 0; }
+}
+
+/* Dice */
+.casino-dice-tray {
+  --cube: clamp(65px, 22vw, 94px);
+  position: relative;
+  isolation: isolate;
+  perspective: 510px;
+  min-height: clamp(152px, 29svh, 245px);
+  background: radial-gradient(ellipse at 50% 42%, #655084, #3d2957 66%, #271a3b);
+  overflow: hidden;
+}
+.casino-dice-tray::before,
+.dice-ripple {
+  position: absolute;
+  aspect-ratio: 2.8;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.casino-dice-tray::before {
+  content: "";
+  width: calc(var(--cube) * 1.24);
+  background: #1a0b2d7a;
+  filter: blur(6px);
+  transform: translateY(calc(var(--cube) * .54));
+}
+.dice-ripple {
+  width: calc(var(--cube) * 1.3);
+  border: 2px solid #edd3ff;
+  box-shadow: 0 0 16px #d699ff;
+  opacity: 0;
+  transform: translateY(calc(var(--cube) * .57));
+}
+.dice-toss, .dice-cube {
+  position: relative;
+  width: var(--cube);
+  height: var(--cube);
+  transform-style: preserve-3d;
+}
+.dice-toss { transform: rotateX(-8deg) rotateY(12deg); }
+.dice-face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  padding: 12%;
+  border: 1px solid #fff0ff;
+  border-radius: 17%;
+  backface-visibility: hidden;
+  background: linear-gradient(145deg, #fff2ff, #dec0f4 63%, #ae8ace);
+  box-shadow: inset 0 0 0 3px #f8e1ff7d, inset -3px -5px 10px #6d48a33d;
+  transform: var(--face-direction, rotateY(0deg)) translateZ(calc(var(--cube) / 2 - 1px));
+}
+.dice-face[data-face="2"] { --face-direction: rotateX(90deg); }
+.dice-face[data-face="3"] { --face-direction: rotateY(90deg); }
+.dice-face[data-face="4"] { --face-direction: rotateY(-90deg); }
+.dice-face[data-face="5"] { --face-direction: rotateX(-90deg); }
+.dice-face[data-face="6"] { --face-direction: rotateY(180deg); }
+.dice-face i {
+  place-self: center;
+  width: 66%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #452759;
+  box-shadow: inset 0 2px 3px #2a1439, 0 1px 0 #fff4ffb3;
+}
+.casino-dice[data-result="win"] .casino-dice-tray {
+  border-color: #e5bfff;
+  box-shadow: inset 0 0 30px #be7cff52, 0 0 20px #bf84ff45;
+}
+.casino-dice[data-result="win"] .dice-face {
+  border-color: #fff;
+  box-shadow: inset 0 0 12px #fff, 0 0 14px #d99eff;
+}
+.casino-dice[data-result="win"] .dice-ripple { animation: dice-ripple 830ms ease-out; }
+.casino-dice-tray[data-rolling] .dice-ripple { animation: dice-ripple 270ms 970ms ease-out; }
+@keyframes dice-ripple {
+  from { opacity: 1; scale: .66; }
+  to { opacity: 0; scale: 2.7; }
+}
+
+/* Vault */
+.vault-grid {
+  border-color: #bcc6d35c;
+  background: linear-gradient(150deg, #aeb7c52a, #3b414b 58%, #242833);
+}
+.vault-door {
+  border-color: #dfe5ee9c;
+  background:
+    linear-gradient(152deg, #f3f5fa31, transparent 44%),
+    linear-gradient(146deg, #8b94a1, #5e6470 52%, #393e49);
+}
+.vault-recess {
+  perspective: 620px;
+  background: radial-gradient(ellipse at 64% 48%, #373c49, #191c27 68%, #141721);
+}
+.vault-cell.vault-locking .vault-keypad { animation: vault-lock 320ms ease-out; }
+.vault-cell.vault-animating .vault-door {
+  transition: transform 610ms cubic-bezier(.19,.71,.24,1), filter 220ms;
+}
+.vault-cell.vault-animating .vault-value {
+  animation: vault-reveal 540ms 115ms both ease-out;
+}
+.vault-turn-key {
+  position: absolute;
+  z-index: 2;
+  right: 21%;
+  top: 45%;
+  width: 24px;
+  height: 12px;
+  color: #edf1fd;
+  opacity: 0;
+  transform: scale(1.45);
+}
+.vault-cell[data-turn-key] .vault-turn-key { animation: vault-turn 480ms both ease-in-out; }
+.vault-cell[data-turn-key="right"] .vault-turn-key { color: #ffe096; }
+.vault-cell[data-turn-key] .vault-value { opacity: .24; }
+.casino-vault[data-result="win"] .vault-cell[data-open] {
+  border-color: #ffe7ac;
+  box-shadow: 0 0 19px #ffd99062, inset 0 0 0 1px #ffd28264;
+}
+.casino-vault[data-result="win"] .vault-cell[data-open] .vault-recess {
+  background: radial-gradient(ellipse at 69% 41%, #af853b, #503728 65%, #221e21);
+}
+.casino-vault[data-result="win"] .vault-cell[data-open] .vault-value {
+  color: #fff4ce;
+  animation: vault-glow 830ms ease-out;
+}
+.casino-vault[data-result="loss"] .vault-cell[data-open] .vault-value { color: #e5d5d3; }
+@keyframes vault-lock {
+  40%, 68% { filter: brightness(1.9); box-shadow: 0 0 9px #e1ecff; }
+}
+@keyframes vault-reveal {
+  from { opacity: 0; translate: 0 4px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes vault-turn {
+  0% { opacity: 0; transform: translateX(11px) rotate(-30deg) scale(1.45); }
+  27% { opacity: 1; transform: rotate(-30deg) scale(1.45); }
+  74% { opacity: 1; transform: rotate(66deg) scale(1.45); }
+  to { opacity: 0; transform: rotate(66deg) scale(1.1); }
+}
+@keyframes vault-glow {
+  34% { transform: scale(1.15); text-shadow: 0 0 14px #fff0bd; }
+}
+
+.motion-lite .casino-board :is(.flight-pulse,.casino-rocket-flame,.dice-ripple,.vault-keypad,.vault-turn-key,.vault-value),
+.motion-lite .casino-wheel::after { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .casino-board :is(.flight-pulse,.casino-rocket-flame,.dice-ripple,.vault-keypad,.vault-turn-key,.vault-value),
+  .casino-wheel::after { animation: none !important; }
+}

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru" class="winter dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d1733">
+  <script>
+    try {
+      const saved = JSON.parse(localStorage.getItem("kovcheg.settings") || "{}") || {};
+      document.documentElement.classList.toggle("dark", saved.darkMode !== false);
+      if (saved.reduceMotion) document.documentElement.classList.add("motion-lite");
+    } catch (_) {}
+  </script>
+  <title>Ковчег</title>
+    <link rel="license" href="/static/releases/winter-2026-r45/media/casino/credits.txt">
+  <template id="kov-release-styles">
+  <link rel="stylesheet" href="/static/style.css?v=288">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/winter.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/pig-overhang-v2.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/appearance.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/frozen-glass.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/station-layout.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/final-polish.css?dock=2">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/holiday.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/courier.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/snow-arena.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/thin-ice.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/polar-express.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/mobile-window.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/casino.css?layout=2">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/casino-fx.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/kovbox-stage.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/inventory.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/custom-3d.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r45/entry.css">
+  </template>
+  <style id="kov-entry-fallback">
+    #entry-screen { position: fixed; inset: 0; display: grid; place-items: center; z-index: 500; background: #0d1733; }
+    #entry-screen .entry-cube { display: block; width: 24px; height: 24px; border: 2px solid #aac8f3; border-radius: 5px; transform: rotate(45deg); }
+    #entry-screen button { color: #0d1733; background: #b6d8ff; border: 0; border-radius: 10px; padding: 12px 18px; }
+    #app[inert], #modal-root:empty { visibility: hidden; }
+  </style>
+  <script>
+    window.kovAssetCacheReady = (async () => {
+      if (!navigator.serviceWorker || !window.caches) return false;
+      const workers = navigator.serviceWorker;
+      const url = new URL("/asset-worker.js?release=winter-2026-r45", location.href);
+      const ready = () => workers.controller?.scriptURL === url.href;
+      if (ready()) return true;
+      return new Promise(resolve => {
+        const done = (result) => {
+          clearTimeout(timer);
+          workers.removeEventListener("controllerchange", check);
+          resolve(result);
+        };
+        const check = () => { if (ready()) done(true); };
+        const timer = setTimeout(() => done(false), workers.controller ? 4000 : 1900);
+        workers.addEventListener("controllerchange", check);
+        workers.register(url.href, { scope: "/", updateViaCache: "none" }).then(check, () => done(false));
+        check();
+      });
+    })().catch(() => false);
+
+    window.kovStylesReady = window.kovAssetCacheReady.then(() => {
+      const styles = document.getElementById("kov-release-styles").content;
+      const app = document.createElement("link");
+      app.rel = "modulepreload";
+      app.href = "/static/releases/winter-2026-r45/app.js";
+      document.head.appendChild(app);
+      return Promise.all([...styles.querySelectorAll("link")].map(link => new Promise(resolve => {
+        link.onload = link.onerror = resolve;
+        document.head.appendChild(link);
+      })));
+    });
+  </script>
+  <script src="https://telegram.org/js/telegram-web-app.js?56"></script>
+</head>
+<body>
+  <section id="entry-screen" class="entry-screen" role="status" aria-label="Загрузка Ковчега">
+    <div class="entry-glass"><span class="entry-cube" aria-hidden="true"><i></i><i></i><i></i></span><i class="entry-line" role="progressbar" aria-label="Подготовка игры"></i><span class="entry-count" aria-hidden="true"></span></div>
+  </section>
+  <svg class="ice-optics" width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <filter id="ice-refraction" x="-10%" y="-25%" width="120%" height="150%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency=".022 .043" numOctaves="1" seed="17" result="ice-ripples"/>
+        <feDisplacementMap in="SourceGraphic" in2="ice-ripples" scale="16" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
+  <div id="app" inert>
+    <div id="winter-flakes" aria-hidden="true"></div>
+    <header class="station-header" id="station-header" hidden>
+      <div class="station-garland" aria-hidden="true"><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i><i style="--bulb:#ef8589"></i><i style="--bulb:#7cbfff"></i><i style="--bulb:#f4d477"></i><i style="--bulb:#8dd6a6"></i></div>
+      <div class="station-header-inner">
+        <div class="station-currencies">
+          <button type="button" class="station-balance" data-shell="profile" aria-label="Ковбаксы" data-balance><span data-icon="coin"></span><strong>—</strong></button>
+          <button type="button" class="station-balance" data-shell="profile" aria-label="Снежинки" data-snowflakes><span data-icon="snowflake"></span><strong>—</strong></button>
+          <button type="button" class="station-balance" data-shell="battlepass" aria-label="Уровень боевого пропуска" data-pass-level><span data-icon="xp"></span><strong>0</strong></button>
+        </div>
+        <div class="station-tools">
+          <button type="button" class="station-tool" data-shell="chat" aria-label="Чат" data-icon="chat"></button>
+          <button type="button" class="station-tool" data-shell="menu" aria-label="Меню" data-icon="menu"></button>
+        </div>
+      </div>
+    </header>
+    <main id="view" class="view" aria-label="Ковчег"></main>
+    <nav id="tabbar" class="tabbar" aria-label="Основная навигация" hidden>
+      <div class="station-nav">
+        <div class="station-nav-glass" aria-hidden="true">
+          <span class="station-nav-lens" hidden><span></span></span>
+        </div>
+        <button type="button" class="tabbtn" data-tab="koverna"><span data-icon="koverna"></span><span>Коверна</span></button>
+        <button type="button" class="tabbtn" data-tab="profile"><span data-icon="profile"></span><span>Профиль</span></button>
+        <button type="button" class="tabbtn" data-tab="home"><span data-icon="home"></span><span>Главная</span></button>
+        <button type="button" class="tabbtn" data-tab="arcade"><span data-icon="arcade"></span><span>Игры</span></button>
+        <button type="button" class="tabbtn" data-tab="battlepass"><span data-icon="battlepass"></span><span>Пропуск</span></button>
+      </div>
+    </nav>
+  </div>
+  <div id="modal-root"></div>
+  <script type="module">
+    try {
+      await window.kovStylesReady;
+      await import("/static/releases/winter-2026-r45/app.js");
+      document.getElementById("kov-entry-fallback")?.remove();
+    } catch (error) {
+      const retry = document.createElement("button");
+      retry.textContent = "Повторить вход";
+      retry.onclick = () => location.reload();
+      document.getElementById("entry-screen").replaceChildren(retry);
+      console.error(error);
+    }
+  </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-import { renderHome } from "/static/releases/classic-2540455/pages/home.js?v=288";
+import { renderHome } from "/static/releases/classic-2540455/pages/home.js?v=carousel-r45";
 import { renderProfile } from "/static/releases/classic-2540455/pages/profile.js?v=289";
 import { renderKoverna } from "/static/releases/classic-2540455/pages/koverna.js?v=287";
 import { renderArcade } from "/static/releases/classic-2540455/pages/arcade.js?v=287";

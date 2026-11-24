@@ -4756,6 +4756,14 @@ html.dark .game-balance strong { color: var(--text); }
   scroll-snap-align: center;
   scroll-snap-stop: always;
 }
+#bn-carousel .kc-viewport {
+  position: relative;
+  padding-inline: 0;
+  scroll-padding-inline: 0;
+}
+#bn-carousel .kc-slide {
+  flex-basis: 100%;
+}
 
 /* Reserve the badge corner so it never covers a title or game artwork. */
 .game-tile[data-game="moshonka"],

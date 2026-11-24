@@ -16,6 +16,10 @@ const isHiddenHomeBlock = (key) => HIDDEN_HOME_BLOCKS.has(key);
 
 const dailyLoadVersions = new WeakMap();
 
+const classicBanners = ["kovboxes", "clicker", "gift"].map((name) => ({
+  image_url: `/static/releases/classic-2540455/img/home/${name}.webp`,
+}));
+
 const fmtDate = (iso) =>
   new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
 
@@ -172,7 +176,7 @@ export async function renderHome(root) {
       <div class="hero-art home-cube-art" title="Ковчег"><img src="/static/releases/classic-2540455/img/ui/home_cube.png?v=287" alt="Ковчег" class="hero-img"/></div>
     </section>
 
-${bannerCarousel(data.banners)}
+${bannerCarousel(classicBanners)}
 
     ${assistantCard()}
 
