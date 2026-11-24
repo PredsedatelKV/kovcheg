@@ -592,64 +592,175 @@ HUMAN_PALETTES=[
 ]
 
 
+# All pieces use the same body grid, so sleeves, trousers and boots
+# can be replaced independently without drawing two shells in one slot.
+ARM_X = .680
+LEG_X = .238
+FOOT_Y = -1.805
+FABRIC = .70
+
+
+def voxel(mesh, point, size, tint, *, metal=0, rough=FABRIC, bevel=.016, shade=1):
+    surface = material(tint, metal, rough)
+    box(mesh, point, size, (*surface[:-1], round(shade * 127)), bevel)
+
+
+def pixels(mesh, rows, palette, x, y, z, cell, *, back=False, metal=0):
+    normal = (0, 0, -1 if back else 1)
+    for j, row in enumerate(rows):
+        for i, tone in enumerate(row):
+            if tone == ".":
+                continue
+            left, bottom = x + i * cell, y - (j+1) * cell
+            surface = material(palette[tone], metal, .60)
+            start = len(mesh.vertices)
+            for dx, dy in ((0,0), (cell,0), (cell,cell), (0,cell)):
+                mesh.vertex((left+dx, bottom+dy, z), normal, surface)
+            if back:
+                mesh.quad(start, start+3, start+2, start+1)
+            else:
+                mesh.quad(start, start+1, start+2, start+3)
+
+
 def make_person():
-    m=Mesh()
-    skin=material("#efb889",.02,.67)
-    shadow=material("#8b5740",.0,.62)
-    ellipsoid(m,(0,1.20,0),(.58,.65,.46),skin,20,14)
-    ellipsoid(m,(0,.59,0),(.24,.30,.24),skin)
-    ellipsoid(m,(0,-.03,0),(.57,.65,.31),material("#50839e"),16,11)
-    for s in (-1,1):
-        ellipsoid(m,(s*.56,1.13,.003),(.117,.166,.121),skin)
-        ellipsoid(m,(s*.24,1.23,.421),(.060,.083,.038),material("#382b35"),10,8)
-        ellipsoid(m,(s*.23,1.26,.452),(.019,.022,.011),material("cream"),6,4)
-        ellipsoid(m,(s*.62,-.25,.013),(.19,.61,.21),material("#50839e"))
-        ellipsoid(m,(s*.65,-.77,.026),(.16,.20,.18),skin)
-        ellipsoid(m,(s*.275,-1.03,0),(.243,.54,.254),material("#344b68"))
-        ellipsoid(m,(s*.27,-1.54,.12),(.248,.18,.37),material("#664438"))
-    ellipsoid(m,(0,1.10,.447),(.092,.083,.085),skin)
-    tube(m,[(-.09,1.008,.418),(0,.990,.441),(.089,1.011,.419)],.018,shadow,6)
-    return m
+    mesh = Mesh()
+    voxel(mesh, (0, 1.42, 0), (.92, .92, .92), "#e8af83", rough=.64)
+    voxel(mesh, (0, .90, 0), (.37, .19, .34), "#c58664", shade=.74)
+    pixels(mesh, [
+        "........",
+        "........",
+        "........",
+        "XL....LX",
+        "WE....EW",
+        "B..NN..B",
+        "...MM...",
+        "........",
+    ], {"X":"#6b4034","L":"#a56b51","W":"#fff1d1","E":"#254350","B":"#d28e75",
+        "N":"#c68b6a","M":"#9d5a57"}, -.408, 1.809, .462, .102)
+    for side in (-1, 1):
+        voxel(mesh, (side * ARM_X, -.104, 0), (.397, .884, .429), "#e8af83", shade=.91)
+    return mesh
 
 
-def garment(kind, color_hex, code):
-    m=Mesh()
-    mat=material(color_hex,.54 if kind in {"armor","crown"} or "helm" in code else .08,.32)
-    if kind=="crown":
-        lathe(m,(0,1.59,0),[(0,.48),(.035,.52),(.205,.52)],mat,24)
-        for i in range(8):
-            a=i*tau/8
-            ellipsoid(m,wrap_point(a,1.83,.49),(.09,.12,.09),mat,10,6)
-        ellipsoid(m,(0,1.729,.525),(.112,.075,.039),material("red",.55,.23),8,6)
-    elif kind=="head":
-        lathe(m,(0,1.19,-.012),[(.127,.561),(.30,.553),(.44,.515),(.61,.376),(.70,.04)],mat,21)
-        if "ushanka" in code or "helm" in code:
-            for s in (-1,1):
-                ellipsoid(m,(s*.527,1.237,-.007),(.12,.322,.275),mat)
-        if "hair" in code:
-            for i in range(4):
-                ellipsoid(m,(-.378+.23*i,1.548+.046*i,.348),(.179,.213,.25),mat,9,6,-.2)
-    elif kind in ("torso","stripe","armor","mantle"):
-        def bands(j,i):
-            return material("cream" if j%3==1 else color_hex,.08,.56)
-        ellipsoid(m,(0,-.031,.012),(.581,.664,.329),bands if kind=="stripe" else mat,18,12)
-        for s in (-1,1):
-            ellipsoid(m,(s*.62,-.258,.015),(.211,.55,.233),mat)
-        if kind=="armor":
-            box(m,(0,.072,.319),(.56,.56,.125),mat,.12)
-        if kind=="mantle":
-            ellipsoid(m,(0,-.43,-.31),(.68,.80,.16),mat)
-            tube(m,[(-.52,.38,.248),(0,.274,.349),(.52,.38,.248)], .055,material("gold",.5,.29),9)
-    elif kind in ("legs","parade"):
-        for s in (-1,1):
-            ellipsoid(m,(s*.272,-1.029,.01),(.254,.55,.268),mat)
-            if kind=="parade":
-                tube(m,[(s*.458,-.57,.147),(s*.491,-.97,.164),(s*.429,-1.44,.142)],.024,material("gold",.42,.32),7)
+def person_ground():
+    mesh = Mesh()
+    surface = material("#151d2d")
+    for x, z in ((-1.20,.85), (1.20,.85), (1.20,-.98), (-1.20,-.98)):
+        mesh.vertex((x, FOOT_Y-.012, z), (0,1,0), surface)
+    mesh.quad(0,1,2,3)
+    return mesh
+
+
+def headpiece(mesh, code, tint):
+    if code == "skin_head_hair":
+        voxel(mesh, (0, 1.805, -.011), (.964, .19, .962), tint, bevel=.011)
+        voxel(mesh, (0, 1.589, -.426), (.94, .34, .13), "#523225")
+        for side in (-1,1):
+            voxel(mesh, (side*.416, 1.670, -.114), (.125, .25, .682), "#65402c")
+        pixels(mesh, ["HHHHHHHH", "HMLHHLL.", "H.H...L."],
+               {"H":tint,"L":"#815139","M":"#4d2f25"}, -.46, 1.886, .473, .115)
+        return
+    if code == "skin_head_crown":
+        gold = "#efba55"
+        for z in (-.403, .403):
+            voxel(mesh, (0,1.846,z), (.97,.147,.158), gold, metal=.54, rough=.28)
+            for x in (-.402, 0, .402):
+                voxel(mesh, (x,1.970 + (.016 if x == 0 else 0),z), (.143,.15,.155), tint, metal=.53, rough=.25)
+        for x in (-.402, .402):
+            voxel(mesh, (x,1.846,0), (.159,.146,.80), gold, metal=.54, rough=.28)
+            voxel(mesh, (x,1.972,0), (.153,.15,.13), tint, metal=.53, rough=.26)
+        voxel(mesh, (0,1.873,.495), (.151,.132,.035), "#c13b59", metal=.34, rough=.22)
+        voxel(mesh, (-.024,1.908,.515), (.044,.039,.01), "#ff9a98", rough=.28, bevel=.004)
+        return
+    iron = code == "skin_head_iron_helm"
+    trim = "#c2d4e3" if iron else "#d8ae93"
+    voxel(mesh, (0,1.793,0), (1.013,.251,1.008), tint, metal=.53 if iron else .02, rough=.37 if iron else .80)
+    voxel(mesh, (0,1.563,-.421), (.99,.34,.178), tint, metal=.48 if iron else .02)
+    for side in (-1,1):
+        voxel(mesh, (side*.441,1.494,-.063), (.155,.48,.677), tint, metal=.48 if iron else .02)
+        voxel(mesh, (side*.525,1.461,.098), (.021,.27,.292), trim, metal=.42 if iron else .02, bevel=.006)
+    voxel(mesh, (0,1.687,.492), (.70,.172,.08), trim, metal=.46 if iron else .01, rough=.45)
+
+
+def outfit(mesh, kind, tint):
+    metal = .36 if kind == "armor" else 0
+    voxel(mesh, (0,.188,0), (.909,1.261,.477), tint, metal=metal)
+    long_sleeve = kind != "torso"
+    for side in (-1, 1):
+        length = .899 if long_sleeve else .493
+        voxel(mesh, (side * ARM_X, .808-length/2,0), (.411,length,.464), tint, metal=metal, shade=.91)
+        if kind == "armor":
+            voxel(mesh, (side*.689,.645,.012), (.445,.31,.505), "#a1b6c7", metal=.47, rough=.29)
+        elif kind == "stripe":
+            for y in (.09,.33,.57):
+                voxel(mesh, (side*ARM_X,y,0), (.414,.101,.466), "#e2e0d0", bevel=.009)
+    if kind == "stripe":
+        for y in (-.303,-.049,.205,.459,.713):
+            voxel(mesh, (0,y,0), (.913,.105,.482), "#e6e4d7", bevel=.008)
+    elif kind == "armor":
+        pixels(mesh, ["L.L.L.L.",".L.L.L.L","L.L.L.L.",".L.L.L.L","L.L.L.L.",".L.L.L.L",
+                      "L.L.L.L.",".L.L.L.L","L.L.L.L."],
+               {"L":"#a9bac8"}, -.412,.688,.240,.103,metal=.41)
+        voxel(mesh, (0,-.378,0), (.929,.126,.49), "#515968", metal=.21)
+        voxel(mesh, (0,-.372,.254), (.166,.127,.051), "#d9b267", metal=.45)
+    elif kind == "mantle":
+        voxel(mesh, (0,-.164,-.284), (1.047,1.823,.132), "#6e3ba2", rough=.59)
+        for y in (.696,-1.042):
+            voxel(mesh, (0,y,-.286), (1.052,.093,.141), "#cf9e56", metal=.20, rough=.47)
+        pixels(mesh, ["..G..",".G.G.","G...G",".G.G.","..G.."],
+               {"G":"#dcac5a"}, -.275, .275, -.352,.11,back=True,metal=.13)
+        voxel(mesh, (0,.65,.251), (.25,.161,.081), "#edba56", metal=.48, rough=.32)
+        voxel(mesh, (0,.651,.297), (.087,.087,.035), "#a24477", metal=.30, rough=.24)
     else:
-        for s in (-1,1):
-            ellipsoid(m,(s*.273,-1.48,.014),(.259,.243,.271),mat)
-            ellipsoid(m,(s*.272,-1.565,.137),(.255,.179,.373),mat)
-    return m
+        voxel(mesh, (0,.726,.237), (.385,.124,.024), "#284954", bevel=.008)
+        pixels(mesh, ["A...A","A..A.","A.A..","AA...","A.A..","A..A.","A...A"],
+               {"A":"#e2ce9c"}, -.161,.496,.240,.065)
+
+
+def trousers(mesh, kind, tint, code):
+    plate = code == "skin_legs_plates"
+    puffy = code == "skin_legs_vatniki"
+    for side in (-1,1):
+        x = side*LEG_X
+        voxel(mesh, (x,-.961,0), (.449,1.067,.454), tint, metal=.38 if plate else 0, shade=.91)
+        if kind == "parade":
+            voxel(mesh, (x+side*.174,-.964,.23), (.056,1.029,.026), "#d4a873", bevel=.004)
+        elif plate:
+            voxel(mesh, (x,-.984,.222), (.335,.317,.084), "#b6c7d3", metal=.46, rough=.36)
+        elif puffy:
+            for offset in (-.117,0,.117):
+                voxel(mesh, (x+offset,-.968,.231), (.022,.995,.018), "#596b52", bevel=.005)
+        else:
+            voxel(mesh, (x,-.586,.227), (.251,.222,.028), "#57748d", bevel=.01)
+            voxel(mesh, (x,-1.445,0), (.453,.101,.461), "#374f62", bevel=.008)
+
+
+def boots(mesh, tint, code):
+    gold = code == "skin_feet_golden"
+    for side in (-1,1):
+        x = side*LEG_X
+        voxel(mesh, (x,FOOT_Y+.167,.074), (.455,.29,.631), tint, metal=.51 if gold else .02, rough=.34 if gold else .66)
+        sole = "#644622" if gold else "#30343f"
+        voxel(mesh, (x,FOOT_Y+.042,.074), (.463,.084,.647), sole, bevel=.012)
+        if code == "skin_feet_sneakers" or code == "skin_feet_bercy":
+            for z in (.16,.251,.33):
+                voxel(mesh, (x,FOOT_Y+.317,z), (.225,.02,.038),
+                      "#f3ead9" if code == "skin_feet_sneakers" else "#8797a2", bevel=.004)
+        elif gold:
+            voxel(mesh, (x,FOOT_Y+.16,.388), (.278,.104,.025), "#f4c665", metal=.56, rough=.26, bevel=.009)
+
+
+def garment(kind, tint, code):
+    mesh = Mesh()
+    if kind in ("head", "crown"):
+        headpiece(mesh, code, tint)
+    elif kind in ("torso", "stripe", "armor", "mantle"):
+        outfit(mesh, kind, tint)
+    elif kind in ("legs", "parade"):
+        trousers(mesh, kind, tint, code)
+    else:
+        boots(mesh, tint, code)
+    return mesh
 
 
 def package(models,path, reframe=False):
@@ -668,8 +779,13 @@ def package(models,path, reframe=False):
 
 decor,preview=make_decor()
 wardrobe={code:garment(kind,tint,code) for code,kind,tint in HUMAN_PALETTES}
-models={"tree":make_tree(),**decor,"person":make_person(),
-        "person_hair_default":garment("head","#604232","skin_head_hair"),**wardrobe}
+defaults = {
+    "person_hair_default": garment("head", "#65402c", "skin_head_hair"),
+    "person_torso_default": garment("torso", "#407c87", "default"),
+    "person_legs_default": garment("legs", "#40596f", "default"),
+    "person_feet_default": garment("feet", "#835b49", "default"),
+}
+models={"tree":make_tree(),**decor,"person":make_person(),"person_ground":person_ground(),**defaults,**wardrobe}
 index=package(models,DEST/"models.bin")
 thumbnails={**preview, **wardrobe}
 thumb_index=package(thumbnails,DEST/"thumbnail-source.bin",True)
