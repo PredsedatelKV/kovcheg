@@ -16,6 +16,7 @@
   <template id="kov-release-styles">
   <link rel="stylesheet" href="/static/style.css?v=288">
   <link rel="stylesheet" href="/static/releases/winter-2026-r46/winter.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r46/winter-opening-0112.css">
   <link rel="stylesheet" href="/static/releases/winter-2026-r46/pig-overhang-v2.css">
   <link rel="stylesheet" href="/static/releases/winter-2026-r46/appearance.css">
   <link rel="stylesheet" href="/static/releases/winter-2026-r46/frozen-glass.css">
@@ -65,7 +66,7 @@
       const styles = document.getElementById("kov-release-styles").content;
       const app = document.createElement("link");
       app.rel = "modulepreload";
-      app.href = "/static/releases/winter-2026-r46/app.js";
+      app.href = "/static/releases/winter-2026-r46/app.js?opening=0112";
       document.head.appendChild(app);
       return Promise.all([...styles.querySelectorAll("link")].map(link => new Promise(resolve => {
         link.onload = link.onerror = resolve;
@@ -121,7 +122,7 @@
   <script type="module">
     try {
       await window.kovStylesReady;
-      await import("/static/releases/winter-2026-r46/app.js");
+      await import("/static/releases/winter-2026-r46/app.js?opening=0112");
       document.getElementById("kov-entry-fallback")?.remove();
     } catch (error) {
       const retry = document.createElement("button");

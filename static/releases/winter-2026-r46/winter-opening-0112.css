@@ -1,0 +1,48 @@
+html.winter-gate body,
+html.winter-gate .view {
+  background: #081623;
+}
+
+.winter-gate .view .winter-cover {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 5;
+  display: block;
+  width: 100%;
+  height: var(--kov-height, 100dvh);
+  isolation: isolate;
+  background: #081623;
+}
+
+.winter-cover-art,
+.winter-cover-art img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.winter-cover-art img {
+  object-fit: cover;
+  object-position: 49% 16%;
+}
+
+.winter-cover-date {
+  position: absolute;
+  inset: max(10%, calc(var(--kov-safe-top, env(safe-area-inset-top)) + 12px)) 0 auto;
+  color: #f0f8ff;
+  font: 750 clamp(30px, 8.5vmin, 100px) / 1 system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .055em;
+  text-align: center;
+  text-shadow: 0 2px 18px #071525, 0 0 24px #9bd2ff45;
+}
+
+@media (max-aspect-ratio: 5/4) {
+  .winter-cover-art img { object-position: 49% 22%; }
+}
+
+@media (max-aspect-ratio: 2/3) {
+  .winter-cover-art img { object-position: 50% 46%; }
+  .winter-cover-date { top: max(23%, calc(var(--kov-safe-top, env(safe-area-inset-top)) + 12px)); }
+}

@@ -712,7 +712,12 @@ function renderWinterGate() {
   document.documentElement.classList.add("winter-gate");
   viewEl.innerHTML = `
     <section class="winter-cover" aria-label="До открытия Ковчега">
-      <img src="/static/releases/winter-2026-r3/media/poster.webp" alt="01.12">
+      <picture class="winter-cover-art">
+        <source media="(max-aspect-ratio: 2/3)" srcset="/static/releases/winter-2026-r46/media/winter-opening-0112/phone.webp">
+        <source media="(max-aspect-ratio: 5/4)" srcset="/static/releases/winter-2026-r46/media/winter-opening-0112/tablet.webp">
+        <img src="/static/releases/winter-2026-r46/media/winter-opening-0112/wide.webp" alt="">
+      </picture>
+      <h1 class="winter-cover-date">01.12</h1>
       ${tg?.initData ? "" : '<button type="button" class="winter-cover-owner">Вход владельца</button>'}
     </section>`;
   viewEl.querySelector(".winter-cover-owner")?.addEventListener("click", () => {
