@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app import access, casino_slots, models
+from app import access, casino_math, casino_slots, models
 from app.api import arcade, battlepass, home, profile, shop, wheel
 from app.auth import current_user
 from app.db import Base, get_db
@@ -344,16 +344,51 @@ def test_legacy_casino_payout_is_rejected(game_api):
 
 def test_casino_tables_have_exact_nominal_rtp():
     rtp = arcade.CASINO_RTP_PERCENT
+    assert rtp == 93
     assert sum(payout * weight for payout, weight in arcade.ROULETTE_PAYOUTS) == rtp * 10_000
     assert sum(weight for _, weight in arcade.ROULETTE_PAYOUTS) == 10_000
     assert sum(percent * chance for percent, chance in arcade.RISKWHEEL_PAYOUTS) == rtp * 100
     assert sum(chance for _, chance in arcade.RISKWHEEL_PAYOUTS) == 100
-    base, _, _, _ = casino_slots.measure_strips()
+    base, _, jackpots, maximum = casino_slots.measure_strips()
+    assert jackpots == 144
+    assert casino_slots.PAYTABLE["S"][-1] == 4000
+    assert maximum * 3 == 13857
     assert base == casino_slots.BASE_TOTAL
     assert base + casino_slots.DOUBLE_TICKETS + 2 * casino_slots.TRIPLE_TICKETS == rtp * casino_slots.TOTAL_STOPS
     assert arcade.DICE_EXACT_PAYOUT_PERCENT / 6 == rtp
     assert arcade.DICE_EVEN_PAYOUT_PERCENT / 2 == rtp
     assert sum(arcade.VAULT_PAYOUTS) / len(arcade.VAULT_PAYOUTS) == rtp
+
+
+def test_whole_kovbucks_rounding_preserves_expected_payout(monkeypatch):
+    # 101 × 1.86 = 187.86. Draw every possible rounding ticket exactly once.
+    tickets = iter(range(100))
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "randrange", lambda upper: next(tickets))
+    paid = [casino_math.pay_percent(101, 186, arcade.SYSTEM_RANDOM) for _ in range(100)]
+    assert set(paid) == {187, 188}
+    assert sum(paid) == 18786
+    assert casino_math.pay_percent(100, 186, arcade.SYSTEM_RANDOM) == 186
+
+
+def test_roulette_jackpot_exact_weight():
+    assert arcade.ROULETTE_PAYOUTS[-1] == (1000, 30)
+
+
+def test_rocket_tick_boundaries_preserve_rtp_including_cap(monkeypatch):
+    def alive_at(outcome, ticks):
+        return round(outcome["crash_at"] * 100) > ticks or outcome["auto_cashout_at_cap"]
+
+    for ticks in range(100, 501):
+        threshold = casino_math.RTP_PERCENT / ticks
+        monkeypatch.setattr(arcade.SYSTEM_RANDOM, "random", lambda: threshold - 1e-8)
+        assert alive_at(arcade._new_rocket_outcome(), ticks)
+        monkeypatch.setattr(arcade.SYSTEM_RANDOM, "random", lambda: threshold + 1e-8)
+        assert not alive_at(arcade._new_rocket_outcome(), ticks)
+
+    monkeypatch.setattr(arcade.SYSTEM_RANDOM, "random", lambda: .18601)
+    at_cap = arcade._new_rocket_outcome()
+    assert at_cap["crash_at"] == 5.0
+    assert not at_cap["auto_cashout_at_cap"]
 
 
 def test_rocket_immediate_bust_threshold_matches_rtp(monkeypatch):

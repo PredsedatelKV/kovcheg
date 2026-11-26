@@ -10,7 +10,12 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import StrictInt
 from sqlalchemy.orm import Session
 
-from app import casino_slots, models, schemas
+from app import casino_math, casino_slots, models, schemas
+from app.casino_math import (
+    RTP_PERCENT as CASINO_RTP_PERCENT,
+    DICE_EVEN_PAYOUT_PERCENT, DICE_EXACT_PAYOUT_PERCENT, RISKWHEEL_PAYOUTS,
+    ROCKET_MAX_MULTIPLIER, ROULETTE_PAYOUTS, VAULT_KEYS, VAULT_PAYOUTS,
+)
 from app.access import FAILURE_FRAGMENTS_ENABLED, can_use_clicker
 from app.api import _casino_wallet as casino_wallet
 from app.api._helpers import ensure_wallet, require_open_section
@@ -230,102 +235,32 @@ def arcade_bet(
 
 
 CASINO_GAMES = {"riskwheel", "dice", "rocket", "vault"}
-
-# Номинальная отдача до округления выплат до целых Ковбаксов.
-CASINO_RTP_PERCENT = 90
 CASINO_MIN_BET = 100
 CASINO_MAX_BET = 10_000
-
-# Ограничений по числу раундов нет. Защитная пауза включается только если
-# чистый убыток за скользящий час достиг половины стартового баланса.
-
-# Все выплаты хранятся в процентах от ставки (целые числа), а не во float:
-# payout = ставка * процент // 100 считается точно и не даёт копеечных
-# расхождений между показанным множителем и реально зачисленной суммой.
-
-# Колесо риска: 9 секторов, шансы в процентах, сумма шансов = 100.
-# sum(процент выплаты * шанс) = 9000.
-RISKWHEEL_PAYOUTS = ((5, 15), (25, 13), (50, 15), (75, 16), (100, 15),
-                     (150, 11), (200, 8), (250, 4), (300, 3))
-
-# Рулетка имеет фиксированную ставку и показывает реальные суммы, а не
-# множители. Шансы заданы в базисных пунктах (1/100 процента), чтобы редкие
-# выплаты не приходилось грубо округлять. Сумма весов = 10_000, а
-# sum(выплата * вес) / 10_000 = 90 при ставке 100.
-ROULETTE_FIXED_BET = 100
 FAILURE_FRAGMENT_MIN_BET = 100
-ROULETTE_PAYOUTS = (
-    (10, 900),
-    (20, 1_100),
-    (30, 1_000),
-    (40, 1_000),
-    (50, 1_000),
-    (100, 3_490),
-    (200, 1_200),
-    (500, 300),
-    (1_000, 10),
-)
-
-# Кубик: 1/6 × 540% = 1/2 × 180% = 90%.
-DICE_EXACT_PAYOUT_PERCENT = 540
-DICE_EVEN_PAYOUT_PERCENT = 180
-
-# Вероятность дожить до множителя x равна RTP/x.
 ROCKET_GROWTH_PER_SECOND = 0.25
-ROCKET_MAX_MULTIPLIER = 5.0
-ROCKET_MIN_MULTIPLIER = 1.0
-
-# The four safe doors are uniformly shuffled. The mean offer is 90%.
-# Guessing the key doubles the integer offer with probability 1/2.
-VAULT_PAYOUTS = (45, 80, 100, 135)
-VAULT_KEYS = ("left", "right")
 
 
-def _weighted_percent(table: tuple) -> tuple[int, int]:
-    """Выбрать (процент выплаты, индекс) по таблице (процент, шанс).
-
-    Шансы — прямые проценты и обязаны давать в сумме 100: так таблица
-    одновременно задаёт и вероятности, и RTP, который можно проверить глазами.
-    """
-    percents = [percent for percent, _ in table]
-    chances = [chance for _, chance in table]
-    if sum(chances) != 100:
-        raise HTTPException(status_code=503, detail="Таблица шансов казино повреждена")
-    ticket = SYSTEM_RANDOM.randrange(1, 101)
-    current = 0
-    for index, chance in enumerate(chances):
-        current += chance
-        if ticket <= current:
-            return percents[index], index
-    raise HTTPException(status_code=503, detail="Не удалось выбрать исход раунда")
+def _weighted_percent(table):
+    return _casino_weighted_payout(table, 100)
 
 
-def _weighted_basis_points(table: tuple[tuple[int, int], ...]) -> tuple[int, int]:
-    """Return (value, index) from an exact 10,000-basis-point table."""
-    if sum(weight for _, weight in table) != 10_000:
-        raise HTTPException(status_code=503, detail="Таблица шансов казино повреждена")
-    ticket = SYSTEM_RANDOM.randrange(1, 10_001)
-    current = 0
-    for index, (value, weight) in enumerate(table):
-        current += weight
-        if ticket <= current:
-            return value, index
-    raise HTTPException(status_code=503, detail="Не удалось выбрать исход раунда")
+def _weighted_basis_points(table):
+    return _casino_weighted_payout(table, 10_000)
+
+
+def _casino_weighted_payout(table, tickets):
+    if sum(weight for _, weight in table) != tickets:
+        raise HTTPException(status_code=503, detail="Раунд временно недоступен")
+    return casino_math.weighted_payout(table, SYSTEM_RANDOM, tickets)
 
 
 def _rocket_crash_point() -> float:
-    """Draw the crash point. Round only the multiplier shown and paid."""
-    roll = SYSTEM_RANDOM.random()
-    rtp = CASINO_RTP_PERCENT / 100
-    if roll >= rtp:
-        return ROCKET_MIN_MULTIPLIER
-    if roll <= rtp / ROCKET_MAX_MULTIPLIER:
-        return ROCKET_MAX_MULTIPLIER
-    return rtp / roll
+    return casino_math.rocket_crash_point(SYSTEM_RANDOM)
 
 
 def _new_rocket_outcome() -> dict:
-    return {"crash_at": _rocket_crash_point(), "auto_cashout_at_cap": True}
+    return casino_math.rocket_outcome(_rocket_crash_point())
 
 
 def _grant_failure_fragment(db: Session, user: models.User, bet: int, payout: int) -> tuple[int, int]:
@@ -491,10 +426,11 @@ def _paid_spin(db: Session, user: models.User, account: models.CasinoWallet, *,
         cash_used, bonus_used = casino_wallet.spend(account, amount, use_bonus=game == "slots")
         if game == "slots":
             outcome = casino_slots.spin(SYSTEM_RANDOM)
-            payout = amount * outcome["payout_percent"] // 100
+            payout = casino_math.pay_percent(amount, outcome["payout_percent"], SYSTEM_RANDOM)
         else:
             payout, index = _weighted_basis_points(ROULETTE_PAYOUTS)
-            outcome = {"index": index, "payout_percent": payout}
+            outcome = {"index": index, "payout_percent": payout,
+                       "jackpot": payout == casino_math.ROULETTE_JACKPOT}
         casino_wallet.credit(account, payout)
         row = models.CasinoRound(
             token=token, user_id=user.id, game=game, bet=amount, balance_before=cash_before,
@@ -558,23 +494,16 @@ def casino_start(
     payout = 0
     if game == "riskwheel":
         payout_percent, index = _weighted_percent(RISKWHEEL_PAYOUTS)
-        payout = amount * payout_percent // 100
+        payout = casino_math.pay_percent(amount, payout_percent, SYSTEM_RANDOM)
         outcome = {"payout_percent": payout_percent, "index": index}
     elif game == "dice":
-        allowed = {"odd", "even", "low", "high", "1", "2", "3", "4", "5", "6"}
-        if choice not in allowed:
-            raise HTTPException(status_code=400, detail="Некорректный выбор")
-        roll = SYSTEM_RANDOM.randint(1, 6)
-        won = ((choice == "odd" and roll % 2 == 1) or (choice == "even" and roll % 2 == 0)
-               or (choice == "low" and roll <= 3) or (choice == "high" and roll >= 4) or choice == str(roll))
-        payout_percent = DICE_EXACT_PAYOUT_PERCENT if choice.isdigit() else DICE_EVEN_PAYOUT_PERCENT
-        payout = amount * payout_percent // 100 if won else 0
-        outcome = {"roll": roll, "choice": choice, "payout_percent": payout_percent if won else 0}
+        if choice not in casino_math.DICE_CHOICES:
+            raise HTTPException(status_code=400, detail="Выберите прогноз для кубика")
+        outcome = casino_math.roll_dice(choice, SYSTEM_RANDOM)
+        payout = casino_math.pay_percent(amount, outcome["payout_percent"], SYSTEM_RANDOM)
     elif game == "vault":
-        offers = list(VAULT_PAYOUTS)
-        SYSTEM_RANDOM.shuffle(offers)
-        payout = amount * offers[int(choice) - 1] // 100
-        outcome = {"choice": choice, "offer": payout, "winning_key": SYSTEM_RANDOM.choice(VAULT_KEYS)}
+        outcome = casino_math.open_vault(choice, amount, SYSTEM_RANDOM)
+        payout = outcome["offer"]
     else:
         outcome = _new_rocket_outcome()
 
@@ -697,10 +626,11 @@ def _settle_casino_round(
         if rocket_result["crashed"]:
             payout = 0
         else:
-            payout = min(
-                row.bet * int(ROCKET_MAX_MULTIPLIER),
-                row.bet * rocket_result["_settlement_hundredths"] // 100,
-            )
+            percent = rocket_result["_settlement_hundredths"]
+            if json.loads(row.outcome).get("round_payout") is True:
+                payout = casino_math.pay_percent(row.bet, percent, SYSTEM_RANDOM)
+            else:
+                payout = row.bet * percent // 100
     funding = db.get(models.CasinoFunding, row.token)
     account = casino_wallet.lock_account(db, user) if funding else None
     row.settled = True

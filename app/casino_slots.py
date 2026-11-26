@@ -2,6 +2,8 @@
 from itertools import product
 from math import prod
 
+from app.casino_math import RTP_PERCENT
+
 STRIPS = tuple(tuple(strip) for strip in (
     "CLCGCLDGCLGS",
     "LCGLWCGDLCGS",
@@ -15,11 +17,11 @@ LINES = (
     (2, 2, 1, 0, 0), (1, 0, 1, 2, 1), (1, 2, 1, 0, 1),
 )
 PAYTABLE = {
-    "C": (30, 100, 240),
-    "L": (32, 110, 280),
-    "G": (45, 150, 360),
+    "C": (47, 125, 250),
+    "L": (49, 129, 295),
+    "G": (59, 162, 380),
     "D": (75, 225, 650),
-    "S": (100, 400, 1600),
+    "S": (100, 400, 4000),
 }
 WINDOWS = tuple(tuple(
     (reel[(stop - 1) % len(reel)], reel[stop], reel[(stop + 1) % len(reel)])
@@ -65,8 +67,8 @@ def measure_strips():
 
 # Exact sum of the base line awards across TOTAL_STOPS. A weighted choice of
 # ×1, ×2, or ×3 calibrates the return without changing the drawn reel stops.
-BASE_TOTAL = 17_549_208
-EXTRA_TOTAL = 90 * TOTAL_STOPS - BASE_TOTAL
+BASE_TOTAL = 21_076_056
+EXTRA_TOTAL = RTP_PERCENT * TOTAL_STOPS - BASE_TOTAL
 TRIPLE_TICKETS = EXTRA_TOTAL // 6
 DOUBLE_TICKETS = EXTRA_TOTAL - 2 * TRIPLE_TICKETS
 
