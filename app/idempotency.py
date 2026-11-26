@@ -4,10 +4,13 @@ import hashlib
 import logging
 import os
 import re
+import sqlite3
 
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse, Response
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError, OperationalError
+from starlette.concurrency import run_in_threadpool
 
 from app import models
 from app.auth import WEB_SESSION_COOKIE, validate_init_data, web_session_user
@@ -99,14 +102,23 @@ def _finish_receipt(
     response_content_type: str | None = None,
 ) -> None:
     with SessionLocal() as db:
-        receipt = db.get(models.IdempotencyReceipt, key)
-        if receipt is not None and receipt.status == "processing":
-            receipt.status = status
-            receipt.response_status = response_status
-            receipt.response_body = response_body
-            receipt.response_content_type = response_content_type
-            receipt.completed_at = models.now_utc()
-            db.commit()
+        # One conditional write avoids upgrading a stale read snapshot while
+        # another round is committing on SQLite.
+        db.execute(
+            update(models.IdempotencyReceipt)
+            .where(
+                models.IdempotencyReceipt.key == key,
+                models.IdempotencyReceipt.status == "processing",
+            )
+            .values(
+                status=status,
+                response_status=response_status,
+                response_body=response_body,
+                response_content_type=response_content_type,
+                completed_at=models.now_utc(),
+            )
+        )
+        db.commit()
 
 
 def _duplicate_response(storage_key: str) -> Response:
@@ -138,6 +150,34 @@ def _duplicate_response(storage_key: str) -> Response:
             content={"detail": detail},
             headers={"X-Idempotency-Status": receipt_status},
         )
+
+
+def _reserve_receipt(storage_key: str, method: str, path: str) -> Response | None:
+    try:
+        with SessionLocal() as db:
+            db.add(models.IdempotencyReceipt(
+                key=storage_key,
+                method=method,
+                path=path,
+                status="processing",
+                created_at=models.now_utc(),
+            ))
+            db.commit()
+    except IntegrityError:
+        return _duplicate_response(storage_key)
+    except OperationalError as exc:
+        code = getattr(exc.orig, "sqlite_errorcode", 0)
+        if not isinstance(exc.orig, sqlite3.OperationalError) or (code & 0xFF) not in (
+            sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED,
+        ):
+            raise
+        # The endpoint has not started. The client can retry the same action.
+        return JSONResponse(
+            {"detail": "Попробуйте ещё раз"},
+            status_code=503,
+            headers={"Retry-After": "1"},
+        )
+    return None
 
 
 async def _capture_response(response: Response) -> tuple[Response, bytes]:
@@ -176,7 +216,7 @@ async def protect_game_mutation(request: Request, call_next):
         _economy_is_frozen()
         and request.method in MUTATING_METHODS
         and request.url.path.startswith("/api/")
-        and not _emergency_freeze_exempt(request)
+        and not await run_in_threadpool(_emergency_freeze_exempt, request)
     ):
         return JSONResponse(
             status_code=423,
@@ -207,20 +247,9 @@ async def protect_game_mutation(request: Request, call_next):
         f"{request.method}\n{request.url.path}\n{auth_scope}\n{key}".encode("utf-8")
     ).hexdigest()
 
-    now = models.now_utc()
-    with SessionLocal() as db:
-        try:
-            db.add(models.IdempotencyReceipt(
-                key=storage_key,
-                method=request.method,
-                path=request.url.path,
-                status="processing",
-                created_at=now,
-            ))
-            db.commit()
-        except IntegrityError:
-            db.rollback()
-            return _duplicate_response(storage_key)
+    duplicate = await run_in_threadpool(_reserve_receipt, storage_key, request.method, request.url.path)
+    if duplicate is not None:
+        return duplicate
 
     try:
         response = await call_next(request)
@@ -228,7 +257,7 @@ async def protect_game_mutation(request: Request, call_next):
     except Exception:
         # The endpoint may already have committed before response rendering or
         # a notification failed. Keep uncertain receipts to prevent a replay.
-        _finish_receipt(storage_key, "failed")
+        await run_in_threadpool(_finish_receipt, storage_key, "failed")
         raise
 
     if response.status_code < 400:
@@ -236,7 +265,8 @@ async def protect_game_mutation(request: Request, call_next):
         if len(response_body) <= MAX_STORED_RESPONSE_BYTES and (
             content_type is None or len(content_type) <= 256
         ):
-            _finish_receipt(
+            await run_in_threadpool(
+                _finish_receipt,
                 storage_key,
                 "completed",
                 response_status=response.status_code,
@@ -246,7 +276,7 @@ async def protect_game_mutation(request: Request, call_next):
         else:
             # The operation has succeeded, so it must never be executed again.
             # Avoid unbounded database growth while retaining a durable guard.
-            _finish_receipt(storage_key, "unreplayable")
+            await run_in_threadpool(_finish_receipt, storage_key, "unreplayable")
     else:
-        _finish_receipt(storage_key, "failed")
+        await run_in_threadpool(_finish_receipt, storage_key, "failed")
     return response

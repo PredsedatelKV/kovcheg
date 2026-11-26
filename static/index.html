@@ -12,28 +12,28 @@
     } catch (_) {}
   </script>
   <title>Ковчег</title>
-    <link rel="license" href="/static/releases/winter-2026-r47/media/casino/credits.txt">
+    <link rel="license" href="/static/releases/winter-2026-r48/media/casino/credits.txt">
   <template id="kov-release-styles">
   <link rel="stylesheet" href="/static/style.css?v=288">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/winter.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/winter-opening-0112.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/pig-overhang-v2.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/appearance.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/frozen-glass.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/station-layout.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/final-polish.css?dock=2">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/holiday.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/courier.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/snow-arena.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/thin-ice.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/polar-express.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/mobile-window.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/casino.css?layout=2">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/casino-fx.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/kovbox-stage.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/inventory.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/custom-3d.css">
-  <link rel="stylesheet" href="/static/releases/winter-2026-r47/entry.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/winter.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/winter-opening-0112.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/pig-overhang-v2.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/appearance.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/frozen-glass.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/station-layout.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/final-polish.css?dock=2">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/holiday.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/courier.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/snow-arena.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/thin-ice.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/polar-express.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/mobile-window.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/casino.css?layout=2">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/casino-fx.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/kovbox-stage.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/inventory.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/custom-3d.css">
+  <link rel="stylesheet" href="/static/releases/winter-2026-r48/entry.css">
   </template>
   <style id="kov-entry-fallback">
     #entry-screen { position: fixed; inset: 0; display: grid; place-items: center; z-index: 500; background: #0d1733; }
@@ -45,7 +45,7 @@
     window.kovAssetCacheReady = (async () => {
       if (!navigator.serviceWorker || !window.caches) return false;
       const workers = navigator.serviceWorker;
-      const url = new URL("/asset-worker.js?release=winter-2026-r47", location.href);
+      const url = new URL("/asset-worker.js?release=winter-2026-r48", location.href);
       const ready = () => workers.controller?.scriptURL === url.href;
       if (ready()) return true;
       return new Promise(resolve => {
@@ -66,7 +66,7 @@
       const styles = document.getElementById("kov-release-styles").content;
       const app = document.createElement("link");
       app.rel = "modulepreload";
-      app.href = "/static/releases/winter-2026-r47/app.js?opening=0112";
+      app.href = "/static/releases/winter-2026-r48/app.js?opening=0112";
       document.head.appendChild(app);
       return Promise.all([...styles.querySelectorAll("link")].map(link => new Promise(resolve => {
         link.onload = link.onerror = resolve;
@@ -122,7 +122,7 @@
   <script type="module">
     try {
       await window.kovStylesReady;
-      await import("/static/releases/winter-2026-r47/app.js?opening=0112");
+      await import("/static/releases/winter-2026-r48/app.js?opening=0112");
       document.getElementById("kov-entry-fallback")?.remove();
     } catch (error) {
       const retry = document.createElement("button");

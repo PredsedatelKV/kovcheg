@@ -1,0 +1,185 @@
+.winter .inventory-grid.inv-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(7px, 2vw, 12px);
+}
+.inventory-grid > .empty { grid-column: 1 / -1; }
+@media (max-width: 600px) {
+  .winter .inventory-grid.inv-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 366px) {
+  .winter .inventory-grid.inv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.winter .inventory-grid .inv-cell {
+  display: grid;
+  grid-template-rows: 101px minmax(42px, auto);
+  align-items: center;
+  align-content: start;
+  justify-items: center;
+  min-width: 0;
+  padding: 19px 5px 8px;
+  border-radius: 13px;
+  background: var(--surface-2);
+}
+.inventory-grid .inv-cell > .img-frame-lg {
+  grid-row: 1;
+  display: grid;
+  place-items: center;
+  width: min(66px, 100%);
+  height: auto;
+  max-width: none;
+  aspect-ratio: 1;
+  margin: 0;
+  transform: none;
+}
+.inventory-grid .inv-cell[data-kovbox] > .img-frame-lg {
+  width: min(98px, 100%);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.inventory-grid .inv-cell[data-kovbox] > .img-frame-lg img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  padding: 4%;
+}
+.inventory-grid .inv-cell > .qty {
+  inset-block-start: 5px;
+  inset-inline-end: 6px;
+  padding: 2px 5px;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.inventory-grid .inv-cell > .name {
+  grid-row: 2;
+  align-self: start;
+  height: auto;
+  max-height: 3.6em;
+  margin: 0;
+  padding: 2px 1px 0;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.17;
+  text-wrap: balance;
+  -webkit-line-clamp: 3;
+}
+.inventory-grid .inv-cell:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+#modal-root > .modal-underlay {
+  z-index: 99;
+  pointer-events: none;
+}
+#modal-root .modal:is(.inventory-item-dialog, .inventory-dialog) {
+  --inventory-dialog-background: #fcfdff;
+  position: relative;
+  overscroll-behavior: contain;
+  background: var(--inventory-dialog-background);
+}
+html.dark #modal-root .modal:is(.inventory-item-dialog, .inventory-dialog) {
+  --inventory-dialog-background: #1e2737;
+}
+.modal.inventory-item-dialog > .close, .inventory-dialog-head > .close {
+  position: absolute;
+  z-index: 2;
+  float: none;
+  inset-block-start: 8px;
+  inset-inline-end: 9px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+.inventory-dialog-head {
+  position: relative;
+  z-index: 3;
+  margin: -8px -4px 6px;
+  padding: 10px 37px 9px;
+  background: var(--inventory-dialog-background);
+  border-radius: 9px;
+  text-align: center;
+}
+.inventory-dialog-head > h2 { margin: 0; min-height: 27px; display: grid; place-items: center; }
+.inventory-dialog-head > .close { inset-block-start: 3px; inset-inline-end: 0; }
+.inventory-item-dialog .item-actions-head { width: 100%; }
+.inventory-item-dialog .item-actions-grid > .btn {
+  grid-column: auto;
+  min-height: 42px;
+}
+.inventory-item-dialog .item-actions-grid > .item-action-wide { grid-column: 1 / -1; }
+
+
+.winter .profile-overview-grid { display: block; }
+.winter .station-wallet-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(5px, 2vw, 12px);
+  align-items: stretch;
+}
+.winter .station-wallet-stats .station-wallet-stat {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 26px minmax(22px, auto) minmax(21px, auto);
+  align-content: center;
+  place-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 9px 4px 6px;
+  min-width: 0;
+  text-align: center;
+}
+.winter .station-wallet-stats .station-wallet-stat > img,
+.winter .station-wallet-stats .station-wallet-stat > .ui-icon {
+  grid-area: 1 / 1;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  margin: 0;
+}
+.winter .station-wallet-stats .station-wallet-stat > strong {
+  grid-area: 2 / 1;
+  margin: 0;
+  font-size: clamp(.90rem, 4vw, 1.15rem);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.winter .station-wallet-stats .station-wallet-stat > span {
+  grid-area: 3 / 1;
+  margin: 0;
+  font-size: clamp(.62rem, 2.6vw, .75rem);
+  text-align: center;
+  line-height: 1.1;
+}
+
+.winter:not(.solid-surfaces) .inventory-grid .inv-cell {
+  background: linear-gradient(145deg, #f2fbff80, #b6d6f536 58%, #ffffff45);
+  border-color: #f7fcffe0;
+  box-shadow: inset 0 1px 0 #ffffffcb, 0 3px 10px #23436f20;
+}
+.winter.dark:not(.solid-surfaces) .inventory-grid .inv-cell {
+  background: linear-gradient(145deg, #a4ccff27, #4c78b218 53%, #061b3236);
+  border-color: #d0e7ff40;
+  box-shadow: inset 0 1px 0 #e2f3ff44, 0 3px 12px #06162a35;
+}
+.winter:not(.solid-surfaces) #modal-root .modal:is(.inventory-dialog, .inventory-item-dialog) {
+  --inventory-dialog-background: transparent;
+  background: linear-gradient(151deg, #ffffffa0, transparent 48%), #dfedff9e;
+  -webkit-backdrop-filter: blur(21px) saturate(1.36);
+  backdrop-filter: blur(21px) saturate(1.36);
+  border: 1px solid #ffffffa8;
+  box-shadow: inset 0 1px 0 #ffffffe8, inset 0 -1px #c8e5ff4d, 0 15px 52px #0b20394d;
+}
+.winter.dark:not(.solid-surfaces) #modal-root .modal:is(.inventory-dialog, .inventory-item-dialog) {
+  background: linear-gradient(147deg, #96c7ff35, transparent 49%), #122d4baa;
+  border-color: #c3dfff69;
+  box-shadow: inset 0 1px 0 #ebf6ff5e, inset 0 -1px #b1d6ff1a, 0 17px 52px #04122493;
+}

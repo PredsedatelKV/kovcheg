@@ -8,7 +8,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 
 from app import idempotency, models
@@ -39,6 +39,10 @@ def guarded_api(tmp_path, monkeypatch):
     }
     app = FastAPI()
     app.middleware("http")(idempotency.protect_game_mutation)
+
+    @app.get("/health")
+    async def health():
+        return {"ok": True}
 
     @app.post("/api/tasks/claim")
     def claim():
@@ -146,6 +150,35 @@ def test_same_client_key_is_isolated_by_path_and_auth_scope(guarded_api):
     assert client.post("/api/tasks/created", headers=first_scope).status_code == 201
     assert calls["ok"] == 2
     assert calls["created"] == 1
+
+
+def test_sqlite_busy_reservation_does_not_block_public_requests(guarded_api):
+    client, calls, sessions = guarded_api
+    engine = sessions.kw["bind"]
+    writing = Event()
+
+    def detect_insert(conn, cursor, statement, parameters, context, executemany):
+        if statement.startswith("INSERT INTO idempotency_receipts"):
+            writing.set()
+
+    event.listen(engine, "before_cursor_execute", detect_insert)
+    try:
+        with client, engine.connect() as lock, ThreadPoolExecutor(max_workers=2) as pool:
+            lock.execute(text("BEGIN IMMEDIATE"))
+            headers = _headers("51515151-5151-4151-8151-515151515151")
+            started = pool.submit(client.post, "/api/tasks/claim", headers=headers)
+            try:
+                assert writing.wait(timeout=2)
+                health = pool.submit(client.get, "/health").result(timeout=2)
+                assert health.status_code == 200
+                assert calls["ok"] == 0
+            finally:
+                lock.rollback()
+            assert started.result(timeout=2).status_code == 200
+            assert client.post("/api/tasks/claim", headers=headers).status_code == 200
+            assert calls["ok"] == 1
+    finally:
+        event.remove(engine, "before_cursor_execute", detect_insert)
 
 
 def test_parallel_mutation_enters_endpoint_once(guarded_api):
